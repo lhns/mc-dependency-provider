@@ -39,11 +39,12 @@ import java.util.function.Supplier;
  *       and delegate to the language-specific {@link EntrypointAdapter}.</li>
  * </ol>
  * <p>
- * <b>NeoForge 21.x note.</b> This compiles against {@code neoforgespi:9.0.2}, the last standalone
- * publication. In NeoForge 21.x for MC 1.21.1+ the SPI has been merged into the main
- * {@code net.neoforged:neoforge} artifact. The interface shape shown here is the same, so the
- * class should map over; if NeoForge tightens the return type of {@code loadMod} to a specific
- * {@code ModContainer} base class we'll wrap the mod instance accordingly during Phase 9.
+ * <b>NeoForge 21.x note.</b> This compiles against standalone {@code neoforgespi:9.0.2} for the
+ * interface surface and against the bundled {@code fancymodloader:loader:4.0.42} /
+ * {@code net.neoforged:bus:8.0.5} (as {@code compileOnly}) for {@link McLibModContainer}.
+ * Both artifact versions align with NeoForge 21.1.x for Minecraft 1.21.1+; the SPI has been merged
+ * into the main {@code net.neoforged:neoforge} distribution at runtime but the class shapes
+ * referenced here are stable.
  */
 public final class McLibLanguageLoader implements IModLanguageProvider {
 
@@ -109,11 +110,11 @@ public final class McLibLanguageLoader implements IModLanguageProvider {
             Class<?> entryClass = loadEntryClass(info, loader, modId);
             Object instance = construct(manifest.lang(), entryClass, info, modId);
 
-            // ModContainer wrapping is deferred to Phase 9 (see class Javadoc). Returning the
-            // mod instance directly; NeoForge may coerce this through a generic T cast.
+            // NeoForge casts the return to net.neoforged.fml.ModContainer. Wrap our instance in
+            // McLibModContainer so the cast succeeds and the event bus is wired.
             @SuppressWarnings("unchecked")
-            T coerced = (T) instance;
-            return coerced;
+            T container = (T) new McLibModContainer(info, instance);
+            return container;
         }
 
         private static Manifest readManifest(Path modFile, String modId) {

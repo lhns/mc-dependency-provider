@@ -71,4 +71,68 @@ class McLibProviderPluginTest {
                     "expected http(s) URL for " + l.coords() + ": " + l.url());
         }
     }
+
+    /**
+     * Exercises {@link RunTaskClasspathPatch} via a synthetic {@code JavaExec} named
+     * {@code runServer}. JavaExec will fail when it tries to invoke a non-existent main class,
+     * which is exactly what we want: the patch's {@code doFirst} has already run by then, so the
+     * lifecycle log reports the strip count. We verify the count matches the number of entries
+     * in the generated manifest.
+     */
+    @Test
+    void stripsManifestJarsFromRunTaskClasspath(@TempDir Path tmp) throws IOException {
+        Path buildFile = tmp.resolve("build.gradle.kts");
+        Files.writeString(buildFile, """
+                import org.gradle.api.tasks.JavaExec
+
+                plugins {
+                    `java-library`
+                    id("io.github.mclibprovider")
+                }
+
+                repositories {
+                    mavenCentral()
+                }
+
+                dependencies {
+                    implementation("org.tomlj:tomlj:1.1.1")
+                }
+
+                mclibprovider {
+                    lang.set("java")
+                }
+
+                // Synthetic run task that mimics ModDevGradle's runServer shape. The patch's
+                // doFirst runs before the main action; once it logs the strip count we're done.
+                tasks.register<JavaExec>("runServer") {
+                    classpath = sourceSets["main"].runtimeClasspath
+                    mainClass.set("non.existent.Main")
+                }
+                """);
+
+        Files.writeString(tmp.resolve("settings.gradle.kts"), "rootProject.name = \"test-mod\"\n");
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("runServer", "--stacktrace")
+                .withPluginClasspath()
+                .buildAndFail();
+
+        String out = result.getOutput();
+        // Lifecycle log from RunTaskClasspathPatch. Format: "stripped N manifest-listed jars from <task> classpath".
+        assertTrue(out.contains("stripped") && out.contains("manifest-listed jars from runServer"),
+                "patch lifecycle log missing; output: " + out);
+
+        // Parse the strip count and cross-check it against the generated manifest.
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("stripped (\\d+) manifest-listed jars").matcher(out);
+        assertTrue(m.find(), "expected 'stripped N manifest-listed jars' in log");
+        int stripped = Integer.parseInt(m.group(1));
+
+        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mc-jvm-mod.toml");
+        assertTrue(Files.exists(manifestFile), "manifest should have been generated");
+        Manifest manifest = ManifestIo.read(manifestFile);
+        assertEquals(manifest.libraries().size(), stripped,
+                "strip count should equal manifest library count; manifest=" + manifest.libraries());
+    }
 }

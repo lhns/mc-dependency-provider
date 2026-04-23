@@ -40,6 +40,11 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                 "net.fabricmc:*",
                 "com.mojang:*",
                 "io.github.mclibprovider:*"));
+        ext.getPatchRunTasks().convention(List.of(
+                "runClient",
+                "runServer",
+                "runGameTestServer",
+                "runData"));
 
         // Locate the project's runtimeClasspath. Mod authors apply `java-library` (or similar),
         // which creates it. The task is lazily configured so we don't force resolution at
@@ -83,6 +88,9 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                 jarTask.from(generate.flatMap(g -> g.getOutputFile().map(f -> f.getAsFile().getParentFile().getParentFile())),
                         copy -> copy.include("META-INF/mc-jvm-mod.toml"));
             });
+
+            // ADR-0007 dev-mode parity: strip manifest-listed jars from run task classpaths.
+            RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks().getOrElse(List.of()));
         });
     }
 }

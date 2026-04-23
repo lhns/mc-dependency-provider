@@ -26,6 +26,18 @@ public abstract class McLibProviderExtension {
     /** {@code groupId:artifactId} patterns to drop from the manifest (platform-provided libs). */
     public abstract ListProperty<String> getExclusions();
 
+    /**
+     * Names of run tasks (ModDevGradle's {@code runClient} / {@code runServer} etc., or Fabric
+     * Loom's equivalents) whose classpath should be stripped of any jar that also appears in the
+     * generated manifest. This is the dev-mode parity hook from ADR-0007: once stripped, the
+     * provider's {@code ManifestConsumer} + {@code ModClassLoader} pipeline is the only route by
+     * which deps reach the mod at runtime, exactly as in production.
+     * <p>
+     * Defaults to the standard task names on both platforms. Projects that use non-standard run
+     * task names should override this explicitly.
+     */
+    public abstract ListProperty<String> getPatchRunTasks();
+
     /** Shortcut: exclude every artifact with the given {@code groupId}. Emits {@code group:*}. */
     public void excludeGroup(String group) {
         getExclusions().add(group + ":*");

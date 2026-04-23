@@ -7,6 +7,8 @@ jetbrains-annotations = "26.0.1"
 shadow = "8.3.5"
 fabric-loader = "0.16.9"
 neoforge-spi = "9.0.2"
+neoforge-fml-loader = "4.0.42"
+neoforge-bus = "8.0.5"
 
 [libraries]
 tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
@@ -21,6 +23,8 @@ jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "j
 
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 neoforge-spi = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi" }
+neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
+neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
