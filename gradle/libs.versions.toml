@@ -1,0 +1,21 @@
+[versions]
+tomlj = "1.1.1"
+maven-resolver = "1.9.22"
+maven-resolver-provider = "3.9.9"
+junit = "5.11.3"
+jetbrains-annotations = "26.0.1"
+shadow = "8.3.5"
+
+[libraries]
+tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
+
+maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "maven-resolver" }
+maven-resolver-provider = { module = "org.apache.maven:maven-resolver-provider", version.ref = "maven-resolver-provider" }
+
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
