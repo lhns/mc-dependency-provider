@@ -1,0 +1,16 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "mclibprovider"
+version = "${file.jarVersion}"
+displayName = "mc-lib-provider"
+description = '''
+JVM-language mod provider with per-mod Maven dependency resolution for NeoForge.
+Resolves deps at install-time via SHA-pinned manifests; isolates every mod's libraries
+into its own URLClassLoader so vanilla cats / circe / Jackson / etc. load unmodified
+and without JPMS keyword-package conflicts.
+'''
+authors = "mc-lib-provider contributors"
+displayURL = "https://gitea.lhns.de/lhns/mc-lib-provider"

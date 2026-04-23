@@ -5,6 +5,8 @@ maven-resolver-provider = "3.9.9"
 junit = "5.11.3"
 jetbrains-annotations = "26.0.1"
 shadow = "8.3.5"
+fabric-loader = "0.16.9"
+neoforge-spi = "9.0.2"
 
 [libraries]
 tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
@@ -16,6 +18,9 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "jun
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
+
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+neoforge-spi = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
