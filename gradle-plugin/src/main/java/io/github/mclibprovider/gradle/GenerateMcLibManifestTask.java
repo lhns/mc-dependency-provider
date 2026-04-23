@@ -18,10 +18,17 @@ import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -66,13 +73,15 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
         List<String> repoUrls = getRepositoryUrls().get();
         List<ArtifactCoord> coords = getArtifactCoords().get();
 
+        UrlResolver urlResolver = new UrlResolver(repoUrls);
+
         List<Manifest.Library> libs = new ArrayList<>();
         for (ArtifactCoord c : coords) {
             if (matchesAny(excludePatterns, c.group(), c.name())) continue;
 
             byte[] bytes = Files.readAllBytes(Path.of(c.filePath()));
             String sha = Sha256.hex(bytes);
-            String url = urlFor(c, repoUrls);
+            String url = urlResolver.resolve(c, getLogger()::info);
 
             String displayCoords = c.group() + ":" + c.name() + ":" + c.version()
                     + (c.classifier() == null || c.classifier().isEmpty() ? "" : ":" + c.classifier());
@@ -89,21 +98,92 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
         ManifestIo.write(manifest, out);
     }
 
-    private static String urlFor(ArtifactCoord c, List<String> repoUrls) {
-        String groupPath = c.group().replace('.', '/');
-        String filename = c.name() + "-" + c.version()
-                + (c.classifier() == null || c.classifier().isEmpty() ? "" : "-" + c.classifier())
-                + "." + (c.extension() == null || c.extension().isEmpty() ? "jar" : c.extension());
-        String relative = groupPath + "/" + c.name() + "/" + c.version() + "/" + filename;
+    /**
+     * Finds the canonical download URL for each artifact. With a single declared repo we emit
+     * against that repo directly (fast path). With multiple repos, HEAD-probes each one in order
+     * and picks the first to return 200, caching the repo-of-record per {@code group:name:version}
+     * so we do not re-probe the same coordinate twice. Falls back to the first declared repo (or
+     * Maven Central if none are HTTP) when all probes fail — keeps manifest generation non-fatal
+     * while still pinning a stable URL.
+     */
+    static final class UrlResolver {
+        private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(5);
 
-        // Try each declared remote; pick the first that makes sense. For now we emit the first
-        // one — HEAD-probe validation can be added later if needed.
-        for (String base : repoUrls) {
-            if (!base.startsWith("http://") && !base.startsWith("https://")) continue;
-            String b = base.endsWith("/") ? base : base + "/";
-            return b + relative;
+        private final List<String> httpRepos;
+        private final Map<String, String> coordRepoCache = new HashMap<>();
+        private HttpClient http; // lazy — avoid instantiation for single-repo projects
+
+        UrlResolver(List<String> repoUrls) {
+            List<String> cleaned = new ArrayList<>();
+            for (String u : repoUrls) {
+                if (u.startsWith("http://") || u.startsWith("https://")) {
+                    cleaned.add(u.endsWith("/") ? u : u + "/");
+                }
+            }
+            this.httpRepos = cleaned;
         }
-        return "https://repo1.maven.org/maven2/" + relative;
+
+        String resolve(ArtifactCoord c, java.util.function.Consumer<String> log) {
+            String relative = relativePathFor(c);
+
+            if (httpRepos.isEmpty()) {
+                return "https://repo1.maven.org/maven2/" + relative;
+            }
+            if (httpRepos.size() == 1) {
+                return httpRepos.get(0) + relative;
+            }
+
+            String coordKey = c.group() + ":" + c.name() + ":" + c.version();
+            String cached = coordRepoCache.get(coordKey);
+            if (cached != null) return cached + relative;
+
+            for (String repo : httpRepos) {
+                String candidate = repo + relative;
+                if (headOk(candidate)) {
+                    coordRepoCache.put(coordKey, repo);
+                    return candidate;
+                }
+            }
+            // None responded with 200 — emit against the first repo anyway. Mod authors can fix
+            // up their repos list if the resulting URL 404s at runtime.
+            String fallback = httpRepos.get(0);
+            log.accept("mc-lib-provider: HEAD probe failed for " + coordKey
+                    + " across " + httpRepos.size() + " repos; emitting against " + fallback);
+            coordRepoCache.put(coordKey, fallback);
+            return fallback + relative;
+        }
+
+        private boolean headOk(String url) {
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                        .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                        .timeout(PROBE_TIMEOUT)
+                        .build();
+                HttpResponse<Void> res = httpClient().send(req, HttpResponse.BodyHandlers.discarding());
+                return res.statusCode() / 100 == 2;
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
+        private HttpClient httpClient() {
+            if (http == null) {
+                http = HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .connectTimeout(PROBE_TIMEOUT)
+                        .build();
+            }
+            return http;
+        }
+
+        private static String relativePathFor(ArtifactCoord c) {
+            String groupPath = c.group().replace('.', '/');
+            String filename = c.name() + "-" + c.version()
+                    + (c.classifier() == null || c.classifier().isEmpty() ? "" : "-" + c.classifier())
+                    + "." + (c.extension() == null || c.extension().isEmpty() ? "jar" : c.extension());
+            return groupPath + "/" + c.name() + "/" + c.version() + "/" + filename;
+        }
     }
 
     private static boolean matchesAny(List<Pattern> patterns, String group, String name) {

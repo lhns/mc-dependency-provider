@@ -74,6 +74,11 @@ public final class ManifestConsumer {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted downloading " + url, e);
+        } catch (IOException e) {
+            // JDK's HttpClient often throws ConnectException / UnknownHostException with a null
+            // message. Wrapping ensures the user sees the URL in the log.
+            throw new IOException("Failed to download " + url + ": " + e.getClass().getSimpleName()
+                    + (e.getMessage() != null ? " — " + e.getMessage() : ""), e);
         }
         if (res.statusCode() / 100 != 2) {
             throw new IOException("HTTP " + res.statusCode() + " downloading " + url);
