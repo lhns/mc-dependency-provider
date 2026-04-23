@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "fabric_example",
+  "version": "${version}",
+  "name": "mc-lib-provider Fabric example",
+  "description": "Smoke-test mod that exercises the mc-lib-provider Scala entrypoint + Maven dep resolution path on Fabric.",
+  "authors": ["mc-lib-provider contributors"],
+  "license": "Apache-2.0",
+
+  "environment": "*",
+
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "mclibprovider",
+        "value": "com.example.ExampleMod"
+      }
+    ]
+  },
+
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "mclibprovider": "*"
+  }
+}
