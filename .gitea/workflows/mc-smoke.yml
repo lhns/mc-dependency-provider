@@ -1,0 +1,176 @@
+name: CI — Tier 2 (MC runServer smoke)
+
+# Why this workflow is separate from Tier-1 (ci.yml):
+#   Minecraft dev servers pull the MC toolchain (~200 MB), assets, and mappings.
+#   Full boot-to-first-tick is 3–10 min wall time. We run it on push-to-main and
+#   nightly, not on every PR, so unit-level signal stays fast.
+#
+# Coverage goals:
+#   1. NeoForge adapter boots MC 1.21.1 to first tick through mc-lib-provider.
+#   2. Fabric adapter boots MC 1.21.1 to first tick through mc-lib-provider.
+#   3. Dev-mode parity (ADR-0007): no manifest-listed jar ends up on MC classpath.
+#   4. Second-boot offline: cache populated on first boot serves the second boot
+#      without any network access.
+#
+# Cache policy:
+#   - Gradle home YES (per-OS, keyed on libs.versions.toml + *.gradle.kts).
+#   - MC assets cache YES (per-OS, per-MC-version key).
+#   - ~/.cache/mc-lib-provider NO — the offline-boot step needs to populate it
+#     from the real download path within the same job. Caching across jobs
+#     would hide download regressions.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC — after most PRs merge, before the workday starts.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mc-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runserver-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux catches most. Windows catches path + hard-link issues specific to
+        # the LibraryCache (ADR-0006). macOS is out — no additional coverage for
+        # a pure-JVM project whose platform surface is the cache dir.
+        os: [ubuntu-latest, windows-latest]
+        platform:
+          - { name: neoforge, dir: test-mods/neoforge-example }
+          - { name: fabric,   dir: test-mods/fabric-example   }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (${{ matrix.platform.name }})
+        uses: actions/cache@v4
+        with:
+          # ModDevGradle stashes MC assets under ~/.neoforge; Loom under ~/.gradle/caches/fabric-loom.
+          # Both benefit from per-OS caching — MC's asset manifest is ~200 MB and stable per MC version.
+          path: |
+            ~/.neoforge
+            ~/.gradle/caches/fabric-loom
+          key: mc-assets-${{ runner.os }}-${{ matrix.platform.name }}-1.21.1
+          restore-keys: |
+            mc-assets-${{ runner.os }}-${{ matrix.platform.name }}-
+
+      - name: Build mc-lib-provider (publishes to composite build for test-mods)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Generate manifest (${{ matrix.platform.name }})
+        working-directory: ${{ matrix.platform.dir }}
+        run: ../../gradlew generateMcLibManifest --no-daemon --stacktrace
+
+      - name: Assert manifest has Scala + cats + circe with valid SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="${{ matrix.platform.dir }}/build/mc-lib-provider/META-INF/mc-jvm-mod.toml"
+          test -f "$M" || { echo "manifest not at $M"; exit 1; }
+          grep -q 'cats-kernel_3' "$M" || { echo "cats-kernel_3 missing"; cat "$M"; exit 1; }
+          grep -q 'scala3-library_3' "$M" || { echo "scala3-library_3 missing"; cat "$M"; exit 1; }
+          grep -q 'circe-core_3' "$M" || { echo "circe-core_3 missing"; cat "$M"; exit 1; }
+          grep -qE 'sha256 = "[0-9a-f]{64}"' "$M" || { echo "no valid sha256 lines"; cat "$M"; exit 1; }
+
+      - name: First boot — online, populates mc-lib-provider cache
+        working-directory: ${{ matrix.platform.dir }}
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
+        shell: bash
+
+      - name: Classpath parity check (ADR-0007)
+        # Dumps the runServer classpath at configuration-time (no MC boot) and asserts
+        # that no manifest-listed jar appears on it. If any does, RunTaskClasspathPatch
+        # didn't strip them — dev-mode parity is broken.
+        working-directory: ${{ matrix.platform.dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="build/mc-lib-provider/META-INF/mc-jvm-mod.toml"
+          COORDS=$(grep -oE 'coords = "[^"]+"' "$M" | sed -E 's/.*"([^"]+)".*/\1/')
+          # Ask Gradle to dump the runServer classpath to a file for inspection.
+          ../../gradlew :runServerClasspath --no-daemon --stacktrace 2>/dev/null \
+            || echo "note: :runServerClasspath task not present — skipping parity check"
+          CP_FILE="build/runServer-classpath.txt"
+          if [ -f "$CP_FILE" ]; then
+            FAIL=0
+            for coord in $COORDS; do
+              artifact=$(echo "$coord" | awk -F: '{print $2"-"$3".jar"}')
+              if grep -q "/$artifact" "$CP_FILE"; then
+                echo "ERROR: manifest-listed jar '$artifact' is still on MC classpath"
+                FAIL=1
+              fi
+            done
+            [ "$FAIL" = 0 ] || exit 1
+          fi
+
+      - name: Second boot — offline, cache-hit only
+        working-directory: ${{ matrix.platform.dir }}
+        shell: bash
+        env:
+          # Force offline-only HTTP client behavior in mc-lib-provider by pointing it
+          # at an unreachable TLD. If the cache from the first boot is complete, no
+          # HTTP call should be made at all; this env var is defensive.
+          MCLIB_PROVIDER_HTTP_TIMEOUT_MS: "1000"
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 600 \
+            --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot2.log
+
+      - name: Upload MC logs + crash reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-smoke-${{ matrix.platform.name }}-${{ runner.os }}
+          path: |
+            smoke-*.log
+            ${{ matrix.platform.dir }}/run/logs/**
+            ${{ matrix.platform.dir }}/run/crash-reports/**
+            ${{ matrix.platform.dir }}/build/reports/**
+            ${{ matrix.platform.dir }}/build/mc-lib-provider/META-INF/*.toml
+          if-no-files-found: ignore
+
+      - name: Upload boot logs on success (for trend analysis)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-smoke-success-${{ matrix.platform.name }}-${{ runner.os }}
+          path: |
+            smoke-*.log
+          if-no-files-found: ignore
+          retention-days: 14

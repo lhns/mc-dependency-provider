@@ -1,0 +1,109 @@
+name: CI — Tier 3 (runClient nightly via xvfb)
+
+# Why a separate workflow from Tier-2 (mc-smoke.yml):
+#   runClient exercises the rendering path (LWJGL, shaders, texture atlases) which
+#   is slower, fatter (downloads client-only assets ~100 MB), and flakier than
+#   runServer (xvfb, OpenGL version quirks on CI hosts). Isolating this keeps
+#   Tier-2 tight and PR-unblocking.
+#
+# Matrix: Linux only (xvfb). Windows runClient in CI is a hornet's nest — we
+# avoid it before v0.1.
+#
+# Coverage goals at Tier 3:
+#   1. Title-screen reached via runClient on NeoForge + Fabric with mc-lib-provider.
+#   2. Mixin bridge smoke (#23) once the test mixin lands — currently stubbed.
+
+on:
+  schedule:
+    # 04:30 UTC — after Tier-2 nightly (03:00 UTC) has reported.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mc-client-nightly
+  cancel-in-progress: true
+
+jobs:
+  runclient-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { name: neoforge, dir: test-mods/neoforge-example }
+          - { name: fabric,   dir: test-mods/fabric-example   }
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install xvfb + mesa (software GL fallback)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgl1-mesa-dri \
+            libxi6 \
+            libxcursor1 \
+            libxrandr2 \
+            libxxf86vm1
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-Linux-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-Linux-
+
+      - name: Cache Minecraft assets
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.neoforge
+            ~/.gradle/caches/fabric-loom
+          key: mc-assets-Linux-${{ matrix.platform.name }}-1.21.1
+          restore-keys: |
+            mc-assets-Linux-${{ matrix.platform.name }}-
+
+      - name: Build mc-lib-provider
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: runClient smoke — wait for first rendered frame, then exit
+        working-directory: ${{ matrix.platform.dir }}
+        env:
+          # Software rasterizer — no GPU on CI runners.
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          MESA_GL_VERSION_OVERRIDE: "4.6"
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x720x24" \
+            python3 ../../.gitea/scripts/mc_smoke.py \
+              --cwd . \
+              --task :runClient \
+              --timeout 1200 \
+              --log-file ../../client-${{ matrix.platform.name }}.log
+
+      - name: Upload logs + crash reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-client-${{ matrix.platform.name }}-failure
+          path: |
+            client-*.log
+            ${{ matrix.platform.dir }}/run/logs/**
+            ${{ matrix.platform.dir }}/run/crash-reports/**
+          if-no-files-found: ignore

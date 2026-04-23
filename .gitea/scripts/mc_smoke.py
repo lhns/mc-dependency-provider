@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""
+mc_smoke.py — boot a Minecraft dev server via Gradle (ModDevGradle `runServer`
+or Loom `runServer`), wait for the first-tick marker ("Done (Xs)!"), then
+shut it down cleanly.
+
+Used by .gitea/workflows/mc-smoke.yml. Exits 0 on clean first-tick shutdown,
+1 on timeout, 2 on fatal-log match (e.g. Invalid package name, ResolutionException).
+
+Why this script exists rather than inline shell: the MC server prints the
+first-tick marker, but runServer has no flag to self-exit after it. We spawn
+the gradle task, tail stdout, and terminate once we see the marker.
+
+Cross-platform: uses `subprocess` + a signal-agnostic terminate() call, so
+it runs identically on Linux + Windows runners.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+DEFAULT_SERVER_MARKER = r'Done \([\d.]+s\)! For help, type "help"'
+# For runClient: the title screen loader reaches this marker a few seconds after
+# "Setting user:" when assets are already cached. Good enough for a boot smoke.
+DEFAULT_CLIENT_MARKER = r"Created: \d+x\d+x\d+ minecraft:textures/atlas"
+
+# Log lines that indicate mc-lib-provider is broken. Any match triggers exit 2
+# even if the first-tick marker eventually appears.
+FATAL_PATTERNS = [
+    re.compile(r"Invalid package name"),
+    re.compile(r"java\.lang\.module\.ResolutionException"),
+    re.compile(r"java\.lang\.NoClassDefFoundError"),
+    re.compile(r"java\.lang\.ClassCastException"),
+    re.compile(r"mc-lib-provider: .*failed to"),
+]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Boot MC server + stop on first tick.")
+    parser.add_argument("--cwd", required=True, help="Project directory with gradlew")
+    parser.add_argument("--task", default=":runServer", help="Gradle task to invoke")
+    parser.add_argument("--timeout", type=int, default=600, help="Hard timeout in seconds")
+    parser.add_argument("--log-file", help="Copy all output here for CI artifact upload")
+    parser.add_argument(
+        "--marker",
+        help="Regex; shutdown when matched. Defaults to the server first-tick marker; "
+        "pass a client-visible marker for runClient.",
+    )
+    args = parser.parse_args()
+
+    marker_re = re.compile(
+        args.marker if args.marker else
+        (DEFAULT_CLIENT_MARKER if "runClient" in args.task else DEFAULT_SERVER_MARKER)
+    )
+
+    project = Path(args.cwd).resolve()
+    if not (project / "gradlew").exists() and not (project / "gradlew.bat").exists():
+        print(f"error: no gradlew in {project}", file=sys.stderr)
+        return 1
+
+    gradlew = "gradlew.bat" if os.name == "nt" else "./gradlew"
+    cmd = [gradlew, args.task, "--no-daemon", "--stacktrace"]
+    print(f"[mc-smoke] cwd={project}", flush=True)
+    print(f"[mc-smoke] cmd={' '.join(cmd)}", flush=True)
+
+    log_fh = open(args.log_file, "w", encoding="utf-8") if args.log_file else None
+
+    # Accept the EULA silently — the first server boot writes eula.txt=false and
+    # stops; we pre-set it to true so the boot progresses. The run/ directory is
+    # ModDevGradle's default; Loom puts it in the project root too.
+    for run_dir in (project / "run", project):
+        if run_dir.exists():
+            (run_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+            break
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(project),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+    )
+
+    state = {"first_tick": False, "fatal": None, "start": time.monotonic()}
+
+    def reader():
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            if log_fh:
+                log_fh.write(line)
+                log_fh.flush()
+            if marker_re.search(line):
+                state["first_tick"] = True
+                print("[mc-smoke] shutdown marker seen — stopping", flush=True)
+                _terminate(proc)
+            for pat in FATAL_PATTERNS:
+                if pat.search(line):
+                    state["fatal"] = line.strip()
+                    print(f"[mc-smoke] fatal log match: {line.strip()}", flush=True)
+                    _terminate(proc)
+                    break
+
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+
+    try:
+        proc.wait(timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        print(f"[mc-smoke] timeout after {args.timeout}s — killing", flush=True)
+        proc.kill()
+        proc.wait()
+        if log_fh:
+            log_fh.close()
+        return 1
+
+    if log_fh:
+        log_fh.close()
+
+    if state["fatal"]:
+        return 2
+    if state["first_tick"]:
+        return 0
+    # Gradle exited without marker and no fatal — treat as failure.
+    print(f"[mc-smoke] gradle exited ({proc.returncode}) without shutdown marker", flush=True)
+    return 1
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+    except Exception as e:  # noqa: BLE001
+        print(f"[mc-smoke] terminate failed: {e}", flush=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
