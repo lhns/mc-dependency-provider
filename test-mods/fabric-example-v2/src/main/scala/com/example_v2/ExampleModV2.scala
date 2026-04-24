@@ -1,6 +1,7 @@
 package com.example_v2
 
 import cats.syntax.all.*
+import net.fabricmc.api.ModInitializer
 
 /**
  * Second mod for the version-isolation smoke (#22).
@@ -9,7 +10,9 @@ import cats.syntax.all.*
  * Paired with fabric-example (which pins cats 2.13.0), CI greps the log for two
  * `[mclib-smoke]` lines and asserts the classloader IDs differ — proving ADR-0001.
  */
-object ExampleModV2 {
+object ExampleModV2 extends ModInitializer {
+
+  override def onInitialize(): Unit = { onLoad(); () }
 
   def onLoad(): String = {
     val greeting = List("mc-lib-provider", "v2").combineAll

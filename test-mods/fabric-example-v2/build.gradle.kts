@@ -12,6 +12,12 @@ plugins {
     id("io.github.mclibprovider")
 }
 
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven("https://maven.fabricmc.net/")
+}
+
 group = "com.example"
 version = "0.1.0"
 
@@ -29,6 +35,11 @@ dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
+
+    // The mc-lib-provider Fabric adapter (consumed as a shadow jar from mavenLocal,
+    // same recipe as fabric-example). Provides the `mclibprovider` LanguageAdapter that
+    // this mod's fabric.mod.json references.
+    modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
 
     implementation("org.scala-lang:scala3-library_3:3.5.2")
     // Deliberately different cats version from fabric-example so the two mods' cats
