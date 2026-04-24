@@ -25,6 +25,16 @@ Two supporting pieces in `core/`:
 - **`@McLibMixin(impl = "fully.qualified.ImplClassName")`** — annotation placed on the mixin class. Declares which impl class to instantiate, resolved through the mod's per-mod classloader.
 - **`McLibProvider.loadMixinImpl(Class<I> iface)`** — static helper that walks the stack to find the calling mixin class, reads its `@McLibMixin`, looks up the mod's `ModClassLoader`, loads the impl, casts to `I`, returns. Result is cached per mixin class.
 
+### Owner resolution — three paths, checked in order
+
+`loadMixinImpl` must map the calling mixin class to the right `ModClassLoader`. The resolver tries three strategies in order:
+
+1. **Annotation `modId` (recommended).** If the mixin's `@McLibMixin(modId = "...")` is set, use it. **This is the recommended form** — Mixin merges the annotated method body into the target class (e.g. `MinecraftServer`), and when Mixin rewrites the `<clinit>` static-field init the runtime caller on the JVM stack is the target class, not the mixin. The stack walk in paths 2–3 may then miss. Setting `modId` explicitly sidesteps the ambiguity.
+2. **Pre-registered FQN map.** Platform adapters can call `McLibProvider.registerMixinOwner(fqn, modId)` during boot (typically after reading each mod's Mixin config) so the resolver can look up a mixin class's owning mod without a stack walk. Useful when the mod author didn't set `modId` but the adapter knows the mapping.
+3. **Stack walk + single-mod fallback.** Last resort: walk frames to find a class outside `McLibProvider` that carries `@McLibMixin`. If none is found and there's exactly one mod registered, that mod is assumed the owner. This is enough for single-mod dev boots; it's **not** enough under multi-mod configurations, which is why 1 and 2 exist.
+
+Mod authors should prefer path 1. Platform adapters may implement path 2 as a defense-in-depth fix for mods that forget to set `modId`.
+
 ### Worked example
 
 ```java

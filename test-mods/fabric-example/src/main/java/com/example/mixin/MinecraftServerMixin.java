@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * the first invocation, keeping log noise bounded while still proving the path.
  */
 @Mixin(MinecraftServer.class)
-@McLibMixin(impl = "com.example.impl.MixinBridgeLogicScala")
+@McLibMixin(modId = "fabric_example", impl = "com.example.impl.MixinBridgeLogicScala")
 public abstract class MinecraftServerMixin {
 
     private static final MixinBridgeLogic LOGIC = McLibProvider.loadMixinImpl(MixinBridgeLogic.class);

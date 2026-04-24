@@ -38,6 +38,18 @@ class McLibProviderTest {
         }
     }
 
+    /**
+     * Mixin without an explicit {@code modId} — simulates the common case where a mod author
+     * relies on the platform adapter having pre-registered {@code registerMixinOwner} instead of
+     * spelling the modId at the callsite.
+     */
+    @McLibMixin(impl = "io.github.mclibprovider.api.FakeImpl")
+    public static class FqnOnlyMixin {
+        public static Logic load() {
+            return McLibProvider.loadMixinImpl(Logic.class);
+        }
+    }
+
     @Test
     void loadsAndInstantiatesImplFromModLoader(@TempDir Path tmp) throws Exception {
         // Write a compiled FakeImpl class file that implements Logic and returns 42.
@@ -68,6 +80,55 @@ class McLibProviderTest {
     void failsWithoutRegistration() {
         IllegalStateException ex = assertThrows(IllegalStateException.class, FakeMixin::load);
         assertTrue(ex.getMessage().contains("no ModClassLoader"), ex.getMessage());
+    }
+
+    /**
+     * With two mods registered, an annotation-less-modId mixin must route via the
+     * {@code registerMixinOwner} FQN map rather than hitting the size-1 fallback (which would
+     * throw in multi-mod configurations). Regression coverage for the multi-mod Mixin bug
+     * documented in {@code docs/pitfalls.md} and ADR-0008.
+     */
+    @Test
+    void routesViaMixinOwnerFqnMapAcrossMultipleMods(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+
+        try (ModClassLoader decoy = new ModClassLoader(
+                "other-mod", new URL[0], getClass().getClassLoader(), List.of());
+             ModClassLoader real = new ModClassLoader(
+                     "real-mod",
+                     new URL[]{implJar.toUri().toURL()},
+                     getClass().getClassLoader(),
+                     List.of())) {
+
+            McLibProvider.registerMod("other-mod", decoy);
+            McLibProvider.registerMod("real-mod", real);
+            McLibProvider.registerMixinOwner(FqnOnlyMixin.class.getName(), "real-mod");
+
+            Logic l = FqnOnlyMixin.load();
+            assertNotNull(l);
+            assertEquals(42, l.compute());
+        }
+    }
+
+    /**
+     * Without a pre-registered FQN mapping and with two mods registered, the size-1 fallback
+     * can't pick a winner — the caller must either set {@code modId} at the annotation or the
+     * adapter must call {@code registerMixinOwner}. Either way, the error must be loud.
+     */
+    @Test
+    void failsLoudlyWithMultipleModsAndNoModIdOrFqnMapping(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+
+        try (ModClassLoader a = new ModClassLoader("a", new URL[0], getClass().getClassLoader(), List.of());
+             ModClassLoader b = new ModClassLoader("b", new URL[]{implJar.toUri().toURL()}, getClass().getClassLoader(), List.of())) {
+            McLibProvider.registerMod("a", a);
+            McLibProvider.registerMod("b", b);
+
+            IllegalStateException ex = assertThrows(IllegalStateException.class, FqnOnlyMixin::load);
+            assertTrue(ex.getMessage().contains("no ModClassLoader"), ex.getMessage());
+        }
     }
 
     @Test

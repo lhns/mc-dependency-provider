@@ -79,9 +79,10 @@ public final class LoaderCoordinator {
     }
 
     /**
-     * Variant of {@link #register(String, Manifest, List, List)} that lets the caller override
-     * the parent of this mod's aggregate library loader — used by stdlib promotion to splice a
-     * shared promoted-stdlib loader into the parent chain above the per-mod libs.
+     * Canonical {@code register} overload. Both platform adapters (Fabric {@code McLibPreLaunch},
+     * NeoForge {@code McLibLanguageLoader}) call this form directly so the stdlib-promoted parent
+     * loader can be spliced in above the per-mod libs. The 3-arg and 4-arg overloads delegate here
+     * with {@link #parent} as the library-loader parent and exist for tests and external callers.
      */
     public ModClassLoader register(String modId, Manifest manifest, List<Path> modPaths,
                                    List<Path> libraryJars, ClassLoader parentLibLoader) {
