@@ -21,14 +21,20 @@ public final class ManifestConsumer {
 
     private final LibraryCache cache;
     private final HttpClient http;
+    private final RepoWhitelist whitelist;
 
     public ManifestConsumer(LibraryCache cache) {
-        this(cache, defaultClient());
+        this(cache, defaultClient(), RepoWhitelist.fromEnv());
     }
 
     public ManifestConsumer(LibraryCache cache, HttpClient http) {
+        this(cache, http, RepoWhitelist.fromEnv());
+    }
+
+    public ManifestConsumer(LibraryCache cache, HttpClient http, RepoWhitelist whitelist) {
         this.cache = cache;
         this.http = http;
+        this.whitelist = whitelist;
     }
 
     private static HttpClient defaultClient() {
@@ -53,6 +59,10 @@ public final class ManifestConsumer {
     public Path resolve(Manifest.Library lib) throws IOException {
         if (cache.contains(lib.sha256())) {
             return cache.pathFor(lib.sha256());
+        }
+        if (whitelist != null && !whitelist.allows(lib.url())) {
+            throw new IOException(whitelist.rejectionMessage(lib.url())
+                    + " (coords=" + lib.coords() + ")");
         }
         byte[] bytes = download(lib.url());
         String actual = Sha256.hex(bytes);
