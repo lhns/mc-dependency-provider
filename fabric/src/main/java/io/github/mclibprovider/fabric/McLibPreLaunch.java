@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,11 +66,11 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
                 throw new IllegalStateException("mc-lib-provider: failed to download libs for " + modId, e);
             }
 
-            Path modJar = mod.getRootPaths().isEmpty()
-                    ? manifestPath.get().getFileSystem().getPath("")
-                    : mod.getRootPaths().get(0);
+            List<Path> modPaths = mod.getRootPaths().isEmpty()
+                    ? List.of(manifestPath.get().getFileSystem().getPath(""))
+                    : expandDevRoots(mod.getRootPaths());
 
-            ModClassLoader loader = COORDINATOR.register(modId, manifest, modJar, libs);
+            ModClassLoader loader = COORDINATOR.register(modId, manifest, modPaths, libs);
             McLibProvider.registerMod(modId, loader);
             LANG_BY_MOD.put(modId, manifest.lang());
         }
@@ -78,5 +79,36 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
     /** Used by {@link McLibLanguageAdapter} to pick the right {@code EntrypointAdapter}. */
     static String langFor(String modId) {
         return LANG_BY_MOD.getOrDefault(modId, "java");
+    }
+
+    // Dev-mode only: Loom exposes a mod's build/resources/main directory as the sole rootPath,
+    // not the sibling build/classes/<lang>/main directories. Without the compiled-class dirs on
+    // our ModClassLoader's URL list, Class.forName falls through to Knot, which defeats isolation.
+    // Walk from each rootPath to its siblings and add any that exist.
+    private static List<Path> expandDevRoots(List<Path> roots) {
+        List<Path> out = new ArrayList<>(roots.size() * 2);
+        for (Path p : roots) {
+            out.add(p);
+            if (p.getFileSystem() != java.nio.file.FileSystems.getDefault()) continue;
+            Path fileName = p.getFileName();
+            Path parent = p.getParent();
+            if (fileName == null || parent == null) continue;
+            if (!"main".equals(fileName.toString())) continue;
+            // parent = <project>/build/resources, grand = <project>/build
+            Path grand = parent.getParent();
+            if (grand == null) continue;
+            Path classes = grand.resolve("classes");
+            if (!java.nio.file.Files.isDirectory(classes)) continue;
+            try (var stream = java.nio.file.Files.newDirectoryStream(classes)) {
+                for (Path lang : stream) {
+                    Path candidate = lang.resolve("main");
+                    if (java.nio.file.Files.isDirectory(candidate) && !out.contains(candidate)) {
+                        out.add(candidate);
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        return List.copyOf(out);
     }
 }

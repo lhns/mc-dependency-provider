@@ -36,6 +36,16 @@ public final class LoaderCoordinator {
      * {@code ModClassLoader → library-of-sha1 → library-of-sha2 → ... → parent}.
      */
     public ModClassLoader register(String modId, Manifest manifest, Path modJar, List<Path> libraryJars) {
+        return register(modId, manifest, List.of(modJar), libraryJars);
+    }
+
+    /**
+     * Variant of {@link #register(String, Manifest, Path, List)} that accepts multiple mod-owned
+     * roots (useful in dev-mode where Loom/ModDevGradle expose the mod as separate
+     * {@code build/classes/.../main} and {@code build/resources/main} directories rather than a
+     * single jar).
+     */
+    public ModClassLoader register(String modId, Manifest manifest, List<Path> modPaths, List<Path> libraryJars) {
         if (manifest.libraries().size() != libraryJars.size()) {
             throw new IllegalArgumentException(
                     "library-count mismatch: manifest=" + manifest.libraries().size() + ", paths=" + libraryJars.size());
@@ -65,17 +75,20 @@ public final class LoaderCoordinator {
 
         final URL[] libUrlsFinal = libUrls;
         URLClassLoader libsLoader = libraryLoaders.computeIfAbsent(aggregateKey, k ->
-                new URLClassLoader("mc-lib-provider-libs:" + k.substring(0, Math.min(16, k.length())),
+                new LibraryClassLoader("mc-lib-provider-libs:" + k.substring(0, Math.min(16, k.length())),
                         libUrlsFinal, parent));
 
-        URL modUrl;
-        try {
-            modUrl = modJar.toUri().toURL();
-        } catch (MalformedURLException e) {
-            throw new IllegalStateException("bad mod jar URL: " + modJar, e);
+        URL[] modUrls = new URL[modPaths.size()];
+        for (int i = 0; i < modPaths.size(); i++) {
+            Path p = modPaths.get(i);
+            try {
+                modUrls[i] = p.toUri().toURL();
+            } catch (MalformedURLException e) {
+                throw new IllegalStateException("bad mod jar URL: " + p, e);
+            }
         }
 
-        ModClassLoader modCl = new ModClassLoader(modId, new URL[]{modUrl}, libsLoader, manifest.sharedPackages());
+        ModClassLoader modCl = new ModClassLoader(modId, modUrls, libsLoader, manifest.sharedPackages());
         modLoaders.put(modId, modCl);
         return modCl;
     }
