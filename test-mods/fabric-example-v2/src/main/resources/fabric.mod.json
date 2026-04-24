@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "fabric_example_v2",
+  "version": "${version}",
+  "name": "mc-lib-provider Fabric example v2 (cats 2.10.0)",
+  "description": "Second Fabric smoke mod pinning a different cats version. Paired with fabric-example to verify per-mod classloader isolation (task #22).",
+  "authors": ["mc-lib-provider contributors"],
+  "license": "Apache-2.0",
+
+  "environment": "*",
+
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "mclibprovider",
+        "value": "com.example_v2.ExampleModV2"
+      }
+    ]
+  },
+
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "mclibprovider": "*"
+  }
+}
