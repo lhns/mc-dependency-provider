@@ -3,6 +3,7 @@ package io.github.mclibprovider.fabric;
 import io.github.mclibprovider.api.McLibProvider;
 import io.github.mclibprovider.core.LoaderCoordinator;
 import io.github.mclibprovider.core.ModClassLoader;
+import io.github.mclibprovider.core.StdlibPromotion;
 import io.github.mclibprovider.deps.LibraryCache;
 import io.github.mclibprovider.deps.Manifest;
 import io.github.mclibprovider.deps.ManifestConsumer;
@@ -47,6 +48,10 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
         LibraryCache cache = LibraryCache.defaultCache();
         ManifestConsumer consumer = new ManifestConsumer(cache);
 
+        // Two-pass: collect every mod's manifest + resolved libs first so StdlibPromotion can
+        // see the full union before we build any classloader. Adding mods in a single loop
+        // would force stdlib-version decisions per-mod, undoing cross-mod promotion.
+        List<ModEntry> entries = new ArrayList<>();
         for (ModContainer mod : fabric.getAllMods()) {
             Optional<Path> manifestPath = mod.findPath(MANIFEST_PATH);
             if (manifestPath.isEmpty()) continue;
@@ -70,11 +75,55 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
                     ? List.of(manifestPath.get().getFileSystem().getPath(""))
                     : expandDevRoots(mod.getRootPaths());
 
-            ModClassLoader loader = COORDINATOR.register(modId, manifest, modPaths, libs);
-            McLibProvider.registerMod(modId, loader);
-            LANG_BY_MOD.put(modId, manifest.lang());
+            entries.add(new ModEntry(modId, manifest, libs, modPaths));
+        }
+
+        StdlibPromotion policy = StdlibPromotion.defaults();
+        List<Manifest> allManifests = new ArrayList<>(entries.size());
+        for (ModEntry e : entries) allManifests.add(e.manifest);
+        Map<String, Manifest.Library> selected = policy.selectPromotions(allManifests);
+
+        java.net.URLClassLoader promoted = null;
+        if (!selected.isEmpty()) {
+            List<Path> promotedJars = new ArrayList<>(selected.size());
+            List<String> promotedShas = new ArrayList<>(selected.size());
+            for (Manifest.Library lib : selected.values()) {
+                try {
+                    promotedJars.add(consumer.resolve(lib));
+                } catch (IOException e) {
+                    throw new IllegalStateException("mc-lib-provider: failed to resolve promoted lib " + lib.coords(), e);
+                }
+                promotedShas.add(lib.sha256());
+            }
+            promoted = COORDINATOR.buildSharedLibraryLoader(promotedJars, promotedShas);
+        }
+
+        for (ModEntry e : entries) {
+            Manifest reducedManifest = new Manifest(
+                    e.manifest.lang(),
+                    e.manifest.sharedPackages(),
+                    policy.stripPromoted(e.manifest, selected));
+            List<Path> reducedLibs = filterNonPromoted(e.manifest, e.libs, selected);
+            ClassLoader libParent = promoted != null ? promoted : McLibPreLaunch.class.getClassLoader();
+            ModClassLoader loader = COORDINATOR.register(
+                    e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
+            McLibProvider.registerMod(e.modId, loader);
+            LANG_BY_MOD.put(e.modId, e.manifest.lang());
         }
     }
+
+    private static List<Path> filterNonPromoted(Manifest m, List<Path> libs,
+                                                Map<String, Manifest.Library> selected) {
+        List<Path> out = new ArrayList<>(libs.size());
+        List<Manifest.Library> declared = m.libraries();
+        for (int i = 0; i < declared.size(); i++) {
+            String stem = StdlibPromotion.stemOf(declared.get(i).coords());
+            if (!selected.containsKey(stem)) out.add(libs.get(i));
+        }
+        return out;
+    }
+
+    private record ModEntry(String modId, Manifest manifest, List<Path> libs, List<Path> modPaths) {}
 
     /** Used by {@link McLibLanguageAdapter} to pick the right {@code EntrypointAdapter}. */
     static String langFor(String modId) {

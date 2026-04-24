@@ -94,7 +94,7 @@ public final class StdlibPromotion {
         return out;
     }
 
-    static String stemOf(String coords) {
+    public static String stemOf(String coords) {
         int firstColon = coords.indexOf(':');
         int secondColon = coords.indexOf(':', firstColon + 1);
         if (firstColon < 0 || secondColon < 0) {

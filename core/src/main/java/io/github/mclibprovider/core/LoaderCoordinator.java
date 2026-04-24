@@ -46,6 +46,45 @@ public final class LoaderCoordinator {
      * single jar).
      */
     public ModClassLoader register(String modId, Manifest manifest, List<Path> modPaths, List<Path> libraryJars) {
+        return register(modId, manifest, modPaths, libraryJars, parent);
+    }
+
+    /**
+     * Build a shared {@link LibraryClassLoader} over a given set of jars, keyed by the sorted SHA
+     * set. Intended for stdlib promotion (ADR-0010 / {@link StdlibPromotion}): adapters call this
+     * once with the selected promoted libs and hand the returned loader as the
+     * {@code parentLibLoader} to subsequent {@link #register} calls, so promoted classes resolve
+     * from one shared loader regardless of which mod triggers the lookup.
+     */
+    public URLClassLoader buildSharedLibraryLoader(List<Path> jars, List<String> sha256s) {
+        if (jars.size() != sha256s.size()) {
+            throw new IllegalArgumentException("jar/sha count mismatch: jars=" + jars.size() + ", shas=" + sha256s.size());
+        }
+        if (jars.isEmpty()) return null;
+        URL[] urls = new URL[jars.size()];
+        for (int i = 0; i < jars.size(); i++) {
+            try {
+                urls[i] = jars.get(i).toUri().toURL();
+            } catch (MalformedURLException e) {
+                throw new IllegalStateException("bad jar URL: " + jars.get(i), e);
+            }
+        }
+        List<String> sortedShas = new ArrayList<>(sha256s);
+        Collections.sort(sortedShas);
+        String key = "promoted:" + String.join(",", sortedShas);
+        final URL[] urlsFinal = urls;
+        return libraryLoaders.computeIfAbsent(key, k ->
+                new LibraryClassLoader("mc-lib-provider-promoted:" + k.substring(10, Math.min(26, k.length())),
+                        urlsFinal, parent));
+    }
+
+    /**
+     * Variant of {@link #register(String, Manifest, List, List)} that lets the caller override
+     * the parent of this mod's aggregate library loader — used by stdlib promotion to splice a
+     * shared promoted-stdlib loader into the parent chain above the per-mod libs.
+     */
+    public ModClassLoader register(String modId, Manifest manifest, List<Path> modPaths,
+                                   List<Path> libraryJars, ClassLoader parentLibLoader) {
         if (manifest.libraries().size() != libraryJars.size()) {
             throw new IllegalArgumentException(
                     "library-count mismatch: manifest=" + manifest.libraries().size() + ", paths=" + libraryJars.size());
@@ -74,9 +113,12 @@ public final class LoaderCoordinator {
         String aggregateKey = String.join(",", shas);
 
         final URL[] libUrlsFinal = libUrls;
-        URLClassLoader libsLoader = libraryLoaders.computeIfAbsent(aggregateKey, k ->
-                new LibraryClassLoader("mc-lib-provider-libs:" + k.substring(0, Math.min(16, k.length())),
-                        libUrlsFinal, parent));
+        // Cache key includes the override parent so two mods with the same reduced-lib SHA set
+        // but different promoted-stdlib parents don't collide into a single loader.
+        String cacheKey = aggregateKey + "|" + System.identityHashCode(parentLibLoader);
+        URLClassLoader libsLoader = libraryLoaders.computeIfAbsent(cacheKey, k ->
+                new LibraryClassLoader("mc-lib-provider-libs:" + aggregateKey.substring(0, Math.min(16, aggregateKey.length())),
+                        libUrlsFinal, parentLibLoader));
 
         URL[] modUrls = new URL[modPaths.size()];
         for (int i = 0; i < modPaths.size(); i++) {

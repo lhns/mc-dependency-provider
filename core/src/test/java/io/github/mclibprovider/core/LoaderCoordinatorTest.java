@@ -55,6 +55,60 @@ class LoaderCoordinatorTest {
     }
 
     @Test
+    void promotedParentSharesClassAcrossDistinctShaMods(@TempDir Path tmp) throws Exception {
+        // Two mods pin DIFFERENT Scala 3 patch versions. SHA-keyed coalescing alone would give
+        // them distinct stdlib loaders and distinct scala.runtime.Statics Class identities.
+        // StdlibPromotion selects one winner and the adapter hands that loader to register() as
+        // the parentLibLoader, so both mods see the same promoted Class.
+        String promotedInternal = "com/example/stdlib/Statics";
+        Path promotedJar = tmp.resolve("scala-library-winner.jar");
+        SyntheticJar.writeJar(promotedJar, Map.of(promotedInternal + ".class",
+                SyntheticJar.emptyClass(promotedInternal)));
+        String promotedSha = Sha256.hex(Files.readAllBytes(promotedJar));
+
+        Path libA = tmp.resolve("libA.jar");
+        SyntheticJar.writeJar(libA, Map.of("com/example/libA/Foo.class",
+                SyntheticJar.emptyClass("com/example/libA/Foo")));
+        Path libB = tmp.resolve("libB.jar");
+        SyntheticJar.writeJar(libB, Map.of("com/example/libB/Bar.class",
+                SyntheticJar.emptyClass("com/example/libB/Bar")));
+        String shaLibA = Sha256.hex(Files.readAllBytes(libA));
+        String shaLibB = Sha256.hex(Files.readAllBytes(libB));
+
+        Path modA = tmp.resolve("modA.jar");
+        SyntheticJar.writeJar(modA, Map.of("com/example/modA/Entry.class",
+                SyntheticJar.emptyClass("com/example/modA/Entry")));
+        Path modB = tmp.resolve("modB.jar");
+        SyntheticJar.writeJar(modB, Map.of("com/example/modB/Entry.class",
+                SyntheticJar.emptyClass("com/example/modB/Entry")));
+
+        Manifest reducedA = new Manifest("scala", List.of(),
+                List.of(new Manifest.Library("c:libA:1", "http://x/libA.jar", shaLibA)));
+        Manifest reducedB = new Manifest("scala", List.of(),
+                List.of(new Manifest.Library("c:libB:1", "http://x/libB.jar", shaLibB)));
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        try {
+            URLClassLoader promoted = coordinator.buildSharedLibraryLoader(
+                    List.of(promotedJar), List.of(promotedSha));
+            assertNotNull(promoted);
+
+            ModClassLoader clA = coordinator.register("modA", reducedA, List.of(modA), List.of(libA), promoted);
+            ModClassLoader clB = coordinator.register("modB", reducedB, List.of(modB), List.of(libB), promoted);
+
+            Class<?> sA = clA.loadClass("com.example.stdlib.Statics");
+            Class<?> sB = clB.loadClass("com.example.stdlib.Statics");
+
+            assertSame(sA, sB,
+                    "promoted-stdlib loader is shared across mods with distinct reduced-lib SHAs");
+            assertSame(promoted, sA.getClassLoader(),
+                    "promoted class resolves through the shared promoted loader, not a per-mod loader");
+        } finally {
+            closeAll(coordinator);
+        }
+    }
+
+    @Test
     void differentShasGiveDistinctClasses(@TempDir Path tmp) throws Exception {
         Path libA = tmp.resolve("libA.jar");
         SyntheticJar.writeJar(libA, Map.of("com/example/lib/V.class", SyntheticJar.emptyClass("com/example/lib/V")));
