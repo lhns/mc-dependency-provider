@@ -37,6 +37,11 @@ dependencies {
     implementation("org.typelevel:cats-core_3:2.13.0")
     implementation("io.circe:circe-core_3:0.14.10")
     implementation("io.circe:circe-parser_3:0.14.10")
+
+    // Mixin bridge smoke (#23). The mixin class references @McLibMixin + McLibProvider
+    // at compile time; both are runtime-provided by the mc-lib-provider mod jar, so
+    // compileOnly is correct — excluded from the generated manifest too.
+    compileOnly("io.github.mclibprovider:core:0.1.0-SNAPSHOT")
 }
 
 mclibprovider {

@@ -9,6 +9,10 @@
 
   "environment": "*",
 
+  "mixins": [
+    "fabric_example.mixins.json"
+  ],
+
   "entrypoints": {
     "main": [
       {
