@@ -53,8 +53,22 @@ public final class McLibProviderPlugin implements Plugin<Project> {
         project.getPluginManager().withPlugin("java", applied -> {
             JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
             SourceSet main = java.getSourceSets().getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-            Configuration runtimeClasspath = project.getConfigurations()
-                    .getByName(main.getRuntimeClasspathConfigurationName());
+
+            // A dedicated resolvable configuration that captures *only* the mod author's
+            // declared library dependencies plus their transitive closure. In Loom / ModDevGradle
+            // projects, runtimeClasspath includes the entire Minecraft game classpath
+            // (guava, gson, icu4j, oshi, mixinextras, the game jar itself). Those are
+            // platform-provided and must never land in the mod's manifest. We extend only
+            // from the standard bucket configurations the mod author declares into.
+            Configuration mcLibManifest = project.getConfigurations().maybeCreate("mcLibManifest");
+            mcLibManifest.setCanBeResolved(true);
+            mcLibManifest.setCanBeConsumed(false);
+            mcLibManifest.setVisible(false);
+            for (String bucket : List.of("api", "implementation", "runtimeOnly")) {
+                Configuration src = project.getConfigurations().findByName(bucket);
+                if (src != null) mcLibManifest.extendsFrom(src);
+            }
+            Configuration runtimeClasspath = mcLibManifest;
 
             var generate = project.getTasks().register(
                     "generateMcLibManifest", GenerateMcLibManifestTask.class, t -> {

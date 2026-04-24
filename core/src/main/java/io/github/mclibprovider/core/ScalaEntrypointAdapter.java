@@ -13,6 +13,16 @@ public final class ScalaEntrypointAdapter implements EntrypointAdapter {
     public Object construct(Class<?> entryClass, Object... args) throws ReflectiveOperationException {
         Object singleton = scalaModuleInstance(entryClass);
         if (singleton != null) return singleton;
+        // Scala compiles `object Foo` to a forwarder class `Foo` plus a companion class
+        // `Foo$` carrying the MODULE$ singleton. Fabric/NeoForge entrypoints are usually
+        // declared against the forwarder name, so look up the companion by suffixing `$`.
+        try {
+            Class<?> companion = Class.forName(entryClass.getName() + "$", true, entryClass.getClassLoader());
+            Object companionSingleton = scalaModuleInstance(companion);
+            if (companionSingleton != null) return companionSingleton;
+        } catch (ClassNotFoundException ignored) {
+            // fall through to constructor-arity dispatch
+        }
         return new JavaEntrypointAdapter().construct(entryClass, args);
     }
 
