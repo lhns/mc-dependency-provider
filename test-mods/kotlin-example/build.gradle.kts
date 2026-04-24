@@ -1,7 +1,13 @@
 plugins {
-    `java-library`
     kotlin("jvm") version "2.1.0"
+    id("net.neoforged.moddev") version "2.0.78"
     id("io.github.mclibprovider")
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven("https://maven.neoforged.net/releases/")
 }
 
 group = "com.example"
@@ -13,10 +19,24 @@ java {
     }
 }
 
+neoForge {
+    version = "21.1.77"
+
+    runs {
+        create("client") { client() }
+        create("server") { server() }
+    }
+
+    mods {
+        create("kotlin_example") {
+            sourceSet(sourceSets.main.get())
+        }
+    }
+}
+
 dependencies {
-    // Representative Kotlin-ecosystem deps: the stdlib is bundled as a transitive of the Kotlin
-    // plugin, kotlinx-coroutines-core is the canonical "I want a Kotlin library" dependency, and
-    // it exercises the manifest-generation path for a JVM Kotlin mod.
+    implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
+
     implementation(kotlin("stdlib"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 }
@@ -24,9 +44,15 @@ dependencies {
 mclibprovider {
     lang.set("kotlin")
     sharedPackages.add("com.example.api")
-    // Platforms provide these at runtime — never bundle them.
     excludeGroup("net.minecraft")
     excludeGroup("net.neoforged")
     excludeGroup("net.fabricmc")
     excludeGroup("com.mojang")
+}
+
+tasks.processResources {
+    inputs.property("version", project.version)
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand("version" to project.version)
+    }
 }

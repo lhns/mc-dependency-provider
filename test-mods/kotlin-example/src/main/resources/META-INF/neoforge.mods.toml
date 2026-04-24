@@ -1,0 +1,28 @@
+modLoader = "mclibprovider"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+issueTrackerURL = "https://gitea.lhns.de/lhns/mc-lib-provider/issues"
+
+[[mods]]
+modId = "kotlin_example"
+version = "${version}"
+displayName = "mc-lib-provider Kotlin example"
+description = "Smoke-test mod that exercises the mc-lib-provider Kotlin entrypoint + Maven dep resolution on NeoForge."
+authors = "mc-lib-provider contributors"
+
+[modproperties.kotlin_example]
+entrypoint = "com.example.ExampleMod"
+
+[[dependencies.kotlin_example]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.kotlin_example]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.22)"
+ordering = "NONE"
+side = "BOTH"
