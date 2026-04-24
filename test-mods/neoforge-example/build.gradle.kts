@@ -4,6 +4,12 @@ plugins {
     id("io.github.mclibprovider")
 }
 
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven("https://maven.neoforged.net/releases/")
+}
+
 group = "com.example"
 version = "0.1.0"
 
@@ -31,6 +37,14 @@ neoForge {
 }
 
 dependencies {
+    // ADR-0012: the mclibprovider NeoForge adapter, consumed as a single shadow jar
+    // from mavenLocal. Lands on the sourceSet runtimeClasspath which MDG 2.0.78 feeds
+    // to runServer/runClient; FML discovers it on java.class.path via its bundled
+    // META-INF/neoforge.mods.toml and picks up the IModLanguageProvider via
+    // META-INF/services. (The `additionalRuntimeClasspath` configuration is for
+    // non-mod libs that FML would otherwise mis-scan — not for actual mod jars.)
+    implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
+
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
     // These are served through mc-lib-provider's manifest + per-mod classloader,
     // NOT the normal NeoForge classpath. RunTaskClasspathPatch strips them from

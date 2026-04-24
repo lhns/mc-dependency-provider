@@ -41,23 +41,32 @@ public final class LoaderCoordinator {
                     "library-count mismatch: manifest=" + manifest.libraries().size() + ", paths=" + libraryJars.size());
         }
 
-        ClassLoader chain = parent;
+        // ADR-0006 originally proposed chaining one URLClassLoader per library SHA. That
+        // only works when the manifest is topologically sorted — otherwise a library
+        // class referencing a class defined by a "sibling" library fails to link at
+        // defineClass time (each URLClassLoader only sees its own jar + ancestors).
+        // To keep correctness simple while preserving per-mod isolation, bundle all
+        // library URLs into one aggregate URLClassLoader keyed by the sorted SHA set
+        // so two mods declaring an identical library closure still share a loader.
+        URL[] libUrls = new URL[libraryJars.size()];
+        List<String> shas = new java.util.ArrayList<>(manifest.libraries().size());
         for (int i = 0; i < manifest.libraries().size(); i++) {
             String sha = manifest.libraries().get(i).sha256();
             Path jar = libraryJars.get(i);
-            final ClassLoader chainSnapshot = chain;
-            URLClassLoader lib = libraryLoaders.computeIfAbsent(sha, s -> {
-                try {
-                    return new URLClassLoader(
-                            "mc-lib-provider-lib:" + s,
-                            new URL[]{jar.toUri().toURL()},
-                            chainSnapshot);
-                } catch (MalformedURLException e) {
-                    throw new IllegalStateException("bad jar URL: " + jar, e);
-                }
-            });
-            chain = lib;
+            try {
+                libUrls[i] = jar.toUri().toURL();
+            } catch (MalformedURLException e) {
+                throw new IllegalStateException("bad jar URL: " + jar, e);
+            }
+            shas.add(sha);
         }
+        java.util.Collections.sort(shas);
+        String aggregateKey = String.join(",", shas);
+
+        final URL[] libUrlsFinal = libUrls;
+        URLClassLoader libsLoader = libraryLoaders.computeIfAbsent(aggregateKey, k ->
+                new URLClassLoader("mc-lib-provider-libs:" + k.substring(0, Math.min(16, k.length())),
+                        libUrlsFinal, parent));
 
         URL modUrl;
         try {
@@ -66,7 +75,7 @@ public final class LoaderCoordinator {
             throw new IllegalStateException("bad mod jar URL: " + modJar, e);
         }
 
-        ModClassLoader modCl = new ModClassLoader(modId, new URL[]{modUrl}, chain, manifest.sharedPackages());
+        ModClassLoader modCl = new ModClassLoader(modId, new URL[]{modUrl}, libsLoader, manifest.sharedPackages());
         modLoaders.put(modId, modCl);
         return modCl;
     }

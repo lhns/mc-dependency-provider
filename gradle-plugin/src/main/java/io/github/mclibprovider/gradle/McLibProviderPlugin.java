@@ -76,7 +76,21 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                         t.setDescription("Emits META-INF/mc-jvm-mod.toml from runtimeClasspath.");
                         t.getLang().set(ext.getLang());
                         t.getSharedPackages().set(ext.getSharedPackages());
-                        t.getExclusions().set(ext.getExclusions());
+                        // Gradle ListProperty `convention()` is discarded once the user calls
+                        // `.add()` — so as soon as a mod author uses `excludeGroup(...)` their
+                        // platform-exclusion defaults vanish. Re-merge them here so the
+                        // platform jars are always excluded regardless of user config.
+                        t.getExclusions().set(ext.getExclusions().map(userList -> {
+                            List<String> mandatory = List.of(
+                                    "net.minecraft:*",
+                                    "net.neoforged:*",
+                                    "net.fabricmc:*",
+                                    "com.mojang:*",
+                                    "io.github.mclibprovider:*");
+                            List<String> merged = new java.util.ArrayList<>(userList);
+                            for (String m : mandatory) if (!merged.contains(m)) merged.add(m);
+                            return merged;
+                        }));
                         t.getOutputFile().set(project.getLayout().getBuildDirectory()
                                 .file("mc-lib-provider/META-INF/mc-jvm-mod.toml"));
 
@@ -88,7 +102,7 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                                 GenerateMcLibManifestTask.collectArtifactCoords(runtimeClasspath)));
                     });
 
-            project.getTasks().register(
+            var prepareCache = project.getTasks().register(
                     "prepareMcLibDevCache", PrepareDevCacheTask.class, t -> {
                         t.setGroup("mc-lib-provider");
                         t.setDescription("Hard-links resolved jars into the shared mc-lib-provider cache.");
@@ -96,6 +110,18 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                         t.getManifestFile().set(generate.flatMap(GenerateMcLibManifestTask::getOutputFile));
                         t.getArtifactFiles().from(runtimeClasspath);
                     });
+
+            // ADR-0007 dev-mode parity: run tasks are expected to cache-hit at runtime, not
+            // download. Wire the pre-warm task as a dependency of each configured run task
+            // so the local Gradle-cached jars are hard-linked into the provider cache before
+            // the mod is loaded.
+            project.afterEvaluate(p -> {
+                List<String> runNames = ext.getPatchRunTasks().getOrElse(List.of());
+                for (String name : runNames) {
+                    var existing = project.getTasks().findByName(name);
+                    if (existing != null) existing.dependsOn(prepareCache);
+                }
+            });
 
             // Bake the generated manifest into processResources output so it's on the
             // runtime classpath in both production (inside the jar) and dev mode (inside
