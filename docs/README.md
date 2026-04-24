@@ -2,7 +2,7 @@
 
 A JVM-language mod provider for Fabric and NeoForge (Minecraft 1.21.1+, Java 21). Supports Java, Scala (2.13 + 3), and Kotlin mods, and resolves Maven dependencies per-mod at install time so mods don't need to bundle or shade their deps.
 
-The individual architectural decisions are recorded in [`adr/`](adr/). This document is the high-level synthesis.
+The individual architectural decisions are recorded in [`adr/`](adr/). This document is the high-level synthesis. Real failures seen during development — SPI quirks, classloader delegation surprises, Loom caching, Mixin gotchas — are collected in [`pitfalls.md`](pitfalls.md).
 
 ## When to choose this loader
 
