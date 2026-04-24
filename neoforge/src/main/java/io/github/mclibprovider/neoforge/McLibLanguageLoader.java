@@ -3,6 +3,7 @@ package io.github.mclibprovider.neoforge;
 import io.github.mclibprovider.api.McLibProvider;
 import io.github.mclibprovider.core.EntrypointAdapter;
 import io.github.mclibprovider.core.LoaderCoordinator;
+import io.github.mclibprovider.core.MixinConfigScanner;
 import io.github.mclibprovider.core.ModClassLoader;
 import io.github.mclibprovider.core.StdlibPromotion;
 import io.github.mclibprovider.deps.LibraryCache;
@@ -11,6 +12,7 @@ import io.github.mclibprovider.deps.ManifestConsumer;
 import io.github.mclibprovider.deps.ManifestIo;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.loading.LoadingModList;
+import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
 import net.neoforged.neoforgespi.language.ModFileScanData;
@@ -87,6 +89,7 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McLibProvider.registerMod(modId, loader);
+        registerMixinOwnersForNeoForgeMod(info, modId);
 
         Class<?> entryClass = loadEntryClass(info, loader, modId);
         Object instance = construct(manifest.lang(), entryClass, info, modId);
@@ -138,6 +141,40 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
                 promotedLoader = COORDINATOR.buildSharedLibraryLoader(jars, shas);
             }
             promotionSelection = selected;
+        }
+    }
+
+    /**
+     * Pre-register mixin class FQNs → owning modId from this mod's {@code neoforge.mods.toml}
+     * {@code [[mixins]]} entries (ADR-0008 path 2). Uses FML's own {@link IConfigurable} view so we
+     * don't re-parse the TOML. Silent on any failure — the annotation {@code modId} path (path 1)
+     * stays primary.
+     */
+    private static void registerMixinOwnersForNeoForgeMod(IModInfo info, String modId) {
+        try {
+            IConfigurable fileConfig = info.getOwningFile().getConfig();
+            if (fileConfig == null) return;
+            List<String> configPaths = new ArrayList<>();
+            for (IConfigurable entry : fileConfig.getConfigList("mixins")) {
+                entry.<String>getConfigElement("config").ifPresent(configPaths::add);
+            }
+            if (configPaths.isEmpty()) return;
+
+            List<Path> resolved = new ArrayList<>(configPaths.size());
+            List<String> relative = new ArrayList<>(configPaths.size());
+            for (String cfg : configPaths) {
+                Path p = info.getOwningFile().getFile().findResource(cfg);
+                if (p != null) {
+                    // Normalize to a root+relative view MixinConfigScanner expects.
+                    resolved.add(p.getParent() != null ? p.getParent() : p);
+                    relative.add(p.getFileName().toString());
+                }
+            }
+            for (int k = 0; k < resolved.size(); k++) {
+                MixinConfigScanner.registerMixinOwnersFromConfigs(
+                        modId, List.of(resolved.get(k)), List.of(relative.get(k)));
+            }
+        } catch (RuntimeException ignored) {
         }
     }
 

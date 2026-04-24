@@ -2,6 +2,7 @@ package io.github.mclibprovider.fabric;
 
 import io.github.mclibprovider.api.McLibProvider;
 import io.github.mclibprovider.core.LoaderCoordinator;
+import io.github.mclibprovider.core.MixinConfigScanner;
 import io.github.mclibprovider.core.ModClassLoader;
 import io.github.mclibprovider.core.StdlibPromotion;
 import io.github.mclibprovider.deps.LibraryCache;
@@ -109,6 +110,29 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
             McLibProvider.registerMod(e.modId, loader);
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
+            registerMixinOwnersForFabricMod(e);
+        }
+    }
+
+    /**
+     * Best-effort pre-registration of mixin class FQNs → owning modId so
+     * {@link McLibProvider#loadMixinImpl} can route correctly under multi-mod configurations
+     * without relying on {@code @McLibMixin(modId = "...")} at the callsite. See ADR-0008 path 2.
+     * Silent on any parse/read failure — the annotation path remains the primary guarantee.
+     */
+    private static void registerMixinOwnersForFabricMod(ModEntry e) {
+        try {
+            Path fmj = null;
+            for (Path r : e.modPaths) {
+                Path c = r.resolve("fabric.mod.json");
+                if (Files.exists(c)) { fmj = c; break; }
+            }
+            if (fmj == null) return;
+            String text = Files.readString(fmj);
+            List<String> configs = MixinConfigScanner.parseFabricMixinConfigs(text);
+            if (configs.isEmpty()) return;
+            MixinConfigScanner.registerMixinOwnersFromConfigs(e.modId, e.modPaths, configs);
+        } catch (IOException | RuntimeException ignored) {
         }
     }
 
