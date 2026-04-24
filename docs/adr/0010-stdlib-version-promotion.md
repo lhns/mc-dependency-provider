@@ -1,6 +1,6 @@
 # ADR-0010 — Opt-in stdlib version promotion
 
-**Status:** Accepted (policy shipped; platform integration deferred until post-v0.1 memory profiling)
+**Status:** Accepted — policy + platform integration shipped in v0.1.0. Fabric (`McLibPreLaunch` two-pass) and NeoForge (`McLibLanguageLoader` lazy-init on first `loadMod`) both batch-collect manifests, call `selectPromotions`, build one shared promoted-stdlib loader via `LoaderCoordinator.buildSharedLibraryLoader`, and pass it as `parentLibLoader` to per-mod `register` calls.
 
 ## Context
 
