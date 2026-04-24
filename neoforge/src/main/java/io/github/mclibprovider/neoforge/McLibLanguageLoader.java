@@ -4,20 +4,27 @@ import io.github.mclibprovider.api.McLibProvider;
 import io.github.mclibprovider.core.EntrypointAdapter;
 import io.github.mclibprovider.core.LoaderCoordinator;
 import io.github.mclibprovider.core.ModClassLoader;
+import io.github.mclibprovider.core.StdlibPromotion;
 import io.github.mclibprovider.deps.LibraryCache;
 import io.github.mclibprovider.deps.Manifest;
 import io.github.mclibprovider.deps.ManifestConsumer;
 import io.github.mclibprovider.deps.ManifestIo;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.loading.LoadingModList;
 import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
 import net.neoforged.neoforgespi.language.ModFileScanData;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * NeoForge language loader. Registered via
@@ -40,6 +47,11 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
     private static final LibraryCache CACHE = LibraryCache.defaultCache();
     private static final ManifestConsumer CONSUMER = new ManifestConsumer(CACHE);
 
+    private static final StdlibPromotion PROMOTION_POLICY = StdlibPromotion.defaults();
+    private static final Object PROMOTION_LOCK = new Object();
+    private static volatile Map<String, Manifest.Library> promotionSelection;
+    private static volatile URLClassLoader promotedLoader;
+
     @Override
     public String name() {
         return LANGUAGE_ID;
@@ -61,13 +73,83 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         Manifest manifest = readManifest(modFile, manifestResource, modId);
         List<Path> libs = downloadLibs(manifest, modId);
 
-        ModClassLoader loader = COORDINATOR.register(modId, manifest, modFile, libs);
+        ensurePromotionInitialized();
+        Map<String, Manifest.Library> selected = promotionSelection;
+        Manifest reducedManifest = new Manifest(
+                manifest.lang(),
+                manifest.sharedPackages(),
+                PROMOTION_POLICY.stripPromoted(manifest, selected));
+        List<Path> reducedLibs = filterNonPromoted(manifest, libs, selected);
+        ClassLoader libParent = promotedLoader != null
+                ? promotedLoader
+                : McLibLanguageLoader.class.getClassLoader();
+
+        ModClassLoader loader = COORDINATOR.register(
+                modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McLibProvider.registerMod(modId, loader);
 
         Class<?> entryClass = loadEntryClass(info, loader, modId);
         Object instance = construct(manifest.lang(), entryClass, info, modId);
 
         return new McLibModContainer(info, instance);
+    }
+
+    /**
+     * NeoForge calls {@link #loadMod} once per mod; StdlibPromotion needs the union of every
+     * mod's manifest before it can pick a winner. First-call scans the full {@link LoadingModList},
+     * reads each mclibprovider-loaded mod's manifest, runs {@link StdlibPromotion#selectPromotions},
+     * builds one shared {@link URLClassLoader} per promoted library, and caches both.
+     */
+    private static void ensurePromotionInitialized() {
+        if (promotionSelection != null) return;
+        synchronized (PROMOTION_LOCK) {
+            if (promotionSelection != null) return;
+            List<Manifest> allManifests = new ArrayList<>();
+            try {
+                for (IModInfo info : LoadingModList.get().getMods()) {
+                    if (!LANGUAGE_ID.equals(info.getLoader().name())) continue;
+                    Path modFile = info.getOwningFile().getFile().getFilePath();
+                    Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+                    try {
+                        allManifests.add(readManifest(modFile, resource, info.getModId()));
+                    } catch (IllegalStateException ignored) {
+                        // skip mods we can't parse; loadMod will fail loud when they come through
+                    }
+                }
+            } catch (Throwable t) {
+                // If LoadingModList isn't accessible yet or throws, fall back to no-promotion.
+                promotionSelection = Collections.emptyMap();
+                return;
+            }
+
+            Map<String, Manifest.Library> selected = PROMOTION_POLICY.selectPromotions(allManifests);
+            if (!selected.isEmpty()) {
+                List<Path> jars = new ArrayList<>(selected.size());
+                List<String> shas = new ArrayList<>(selected.size());
+                for (Manifest.Library lib : selected.values()) {
+                    try {
+                        jars.add(CONSUMER.resolve(lib));
+                    } catch (IOException e) {
+                        throw new IllegalStateException(
+                                "mc-lib-provider: failed to resolve promoted lib " + lib.coords(), e);
+                    }
+                    shas.add(lib.sha256());
+                }
+                promotedLoader = COORDINATOR.buildSharedLibraryLoader(jars, shas);
+            }
+            promotionSelection = selected;
+        }
+    }
+
+    private static List<Path> filterNonPromoted(Manifest m, List<Path> libs,
+                                                Map<String, Manifest.Library> selected) {
+        List<Path> out = new ArrayList<>(libs.size());
+        List<Manifest.Library> declared = m.libraries();
+        for (int i = 0; i < declared.size(); i++) {
+            String stem = StdlibPromotion.stemOf(declared.get(i).coords());
+            if (!selected.containsKey(stem)) out.add(libs.get(i));
+        }
+        return out;
     }
 
     private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
