@@ -25,9 +25,10 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // mc-lib-provider itself is a mod dependency at runtime. For now it's published into
-    // the composite build, so Loom picks it up via the includeBuild. In a published world
-    // this would be `modImplementation("io.github.mclibprovider:fabric:<ver>")`.
+    // The mc-lib-provider Fabric adapter — the actual mod with id "mclibprovider"
+    // that fabric_example depends on at runtime. Resolved via the composite build's
+    // settings-level includeBuild substitution.
+    modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
     // These are resolved through mc-lib-provider's manifest + per-mod classloader path,
@@ -55,6 +56,12 @@ mclibprovider {
     // Loom adds these compile-only helpers; they don't belong in the mod's runtime manifest.
     excludeGroup("org.ow2.asm")
     excludeGroup("org.spongepowered")
+
+    // Disabled: Loom's AbstractRunTask finalizes getClasspath() before doFirst actions can
+    // mutate it, so setClasspath throws IllegalStateException. Tracked separately —
+    // dev-mode parity on Fabric needs a different hook (likely a Configuration-level
+    // dependency-resolution substitution rather than a JavaExec doFirst).
+    patchRunTasks.set(emptyList<String>())
 }
 
 loom {
@@ -65,6 +72,13 @@ loom {
         }
     }
 }
+// NOTE (dev-mode blocker, documented in ADR-0012):
+// Fabric's ClasspathModCandidateFinder refuses to expose classes from sibling
+// composite-build jars (core, deps-lib) to the mclibprovider mod. Setting
+// -Dfabric.classPathGroups via Loom's runs { property } DSL did not take
+// effect in local testing (neither classes-dirs nor jar paths matched Fabric's
+// URL comparison). Production deploys ship a single shaded jar and avoid
+// this entirely; CI Tier-2 on Linux is the load-bearing validation. Deferred.
 
 tasks.processResources {
     inputs.property("version", project.version)

@@ -90,7 +90,7 @@ public final class McLibProviderPlugin implements Plugin<Project> {
             });
 
             // ADR-0007 dev-mode parity: strip manifest-listed jars from run task classpaths.
-            RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks().getOrElse(List.of()));
+            RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());
         });
     }
 }

@@ -4,6 +4,7 @@ import io.github.mclibprovider.deps.Manifest;
 import io.github.mclibprovider.deps.ManifestIo;
 import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -40,12 +41,14 @@ final class RunTaskClasspathPatch {
 
     static void apply(Project project,
                       TaskProvider<GenerateMcLibManifestTask> generate,
-                      List<String> runTaskNames) {
-        Set<String> targets = Set.copyOf(runTaskNames);
-        if (targets.isEmpty()) return;
-
+                      ListProperty<String> runTaskNames) {
         project.getTasks().withType(JavaExec.class).configureEach(exec -> {
-            if (!targets.contains(exec.getName())) return;
+            // Resolve the list lazily per-task, AFTER the user's mclibprovider { } block
+            // has run — critical because Loom / Scala plugins apply java plugin
+            // synchronously during their own apply(), so withPlugin("java") would fire
+            // before the user's DSL executes. getOrElse here runs at task-configure time.
+            Set<String> targets = Set.copyOf(runTaskNames.getOrElse(List.of()));
+            if (targets.isEmpty() || !targets.contains(exec.getName())) return;
 
             // Make sure the manifest exists before the patcher runs — the run task consumes it.
             exec.dependsOn(generate);

@@ -61,11 +61,20 @@ def main() -> int:
     )
 
     project = Path(args.cwd).resolve()
-    if not (project / "gradlew").exists() and not (project / "gradlew.bat").exists():
-        print(f"error: no gradlew in {project}", file=sys.stderr)
+    # Composite-built test-mods inherit the wrapper from the parent repo; walk up
+    # to the nearest ancestor that has one so both monorepo-rooted and subproject
+    # invocations work.
+    wrapper_name = "gradlew.bat" if os.name == "nt" else "gradlew"
+    wrapper_dir = project
+    while wrapper_dir != wrapper_dir.parent:
+        if (wrapper_dir / wrapper_name).exists():
+            break
+        wrapper_dir = wrapper_dir.parent
+    if not (wrapper_dir / wrapper_name).exists():
+        print(f"error: no {wrapper_name} at or above {project}", file=sys.stderr)
         return 1
 
-    gradlew = "gradlew.bat" if os.name == "nt" else "./gradlew"
+    gradlew = str(wrapper_dir / wrapper_name)
     cmd = [gradlew, args.task, "--no-daemon", "--stacktrace"]
     print(f"[mc-smoke] cwd={project}", flush=True)
     print(f"[mc-smoke] cmd={' '.join(cmd)}", flush=True)
