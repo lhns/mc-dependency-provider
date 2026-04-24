@@ -6,6 +6,7 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.bundling.Jar;
+import org.gradle.language.jvm.tasks.ProcessResources;
 
 import java.util.List;
 
@@ -82,12 +83,15 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                         t.getArtifactFiles().from(runtimeClasspath);
                     });
 
-            // Bake the generated manifest into the packaged jar's META-INF.
-            project.getTasks().withType(Jar.class).configureEach(jarTask -> {
-                jarTask.dependsOn(generate);
-                jarTask.from(generate.flatMap(g -> g.getOutputFile().map(f -> f.getAsFile().getParentFile().getParentFile())),
-                        copy -> copy.include("META-INF/mc-jvm-mod.toml"));
-            });
+            // Bake the generated manifest into processResources output so it's on the
+            // runtime classpath in both production (inside the jar) and dev mode (inside
+            // build/resources/main, which Loom/ModDevGradle use for runServer/runClient).
+            project.getTasks().named("processResources", ProcessResources.class,
+                    resources -> {
+                        resources.dependsOn(generate);
+                        resources.from(generate.flatMap(g -> g.getOutputFile().map(f -> f.getAsFile().getParentFile().getParentFile())),
+                                copy -> copy.include("META-INF/mc-jvm-mod.toml"));
+                    });
 
             // ADR-0007 dev-mode parity: strip manifest-listed jars from run task classpaths.
             RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());

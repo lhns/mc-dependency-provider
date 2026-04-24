@@ -4,6 +4,12 @@ plugins {
     id("io.github.mclibprovider")
 }
 
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven("https://maven.fabricmc.net/")
+}
+
 group = "com.example"
 version = "0.1.0"
 
@@ -39,10 +45,8 @@ dependencies {
     implementation("io.circe:circe-core_3:0.14.10")
     implementation("io.circe:circe-parser_3:0.14.10")
 
-    // Mixin bridge smoke (#23). The mixin class references @McLibMixin + McLibProvider
-    // at compile time; both are runtime-provided by the mc-lib-provider mod jar, so
-    // compileOnly is correct — excluded from the generated manifest too.
-    compileOnly("io.github.mclibprovider:core:0.1.0-SNAPSHOT")
+    // @McLibMixin + McLibProvider classes are shaded into the fabric shadow jar
+    // (ADR-0012), so modImplementation above provides them at both compile and runtime.
 }
 
 mclibprovider {

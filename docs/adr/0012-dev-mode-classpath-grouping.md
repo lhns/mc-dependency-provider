@@ -1,6 +1,6 @@
 # ADR-0012 — Dev-mode classpath grouping for composite-built multi-project mods
 
-**Status:** Accepted (with local dev workaround documented; CI Tier-2 on Linux is the load-bearing validation).
+**Status:** Accepted — resolved via the shadow-plugin upgrade path (option 2 below). The `:fabric` subproject now emits a single classifier-less jar containing `core` + `deps-lib` + `tomlj` classes; composite substitution resolves to that one jar, so Fabric's `ClasspathModCandidateFinder` no longer sees sibling classpath entries.
 
 ## Context
 
@@ -45,7 +45,15 @@ Concretely:
 ## Upgrade paths (future work)
 
 1. **Publish-to-local workflow for test-mods.** Update test-mods' `settings.gradle.kts` to fall back to `mavenLocal()` so a `./gradlew publishToMavenLocal` in the root resolves the provider as a single *published* shaded jar. This bypasses composite-build's multi-jar classpath issue.
-2. **Shadow plugin on `:fabric`.** Apply `com.github.johnrengelman.shadow` (or the modern successor) to `:fabric` so its default publication is a single shaded jar with `core`+`deps-lib` classes inside. Composite substitution then resolves to the shadow jar, and there's nothing separate on the classpath. More invasive (changes publication shape).
+2. **Shadow plugin on `:fabric`.** *Chosen.* Applied `com.gradleup.shadow` 8.3.5 to `:fabric`. The subproject's `jar` task is disabled and `shadowJar` produces a classifier-less jar that replaces the default artifact on both `apiElements` and `runtimeElements`, and on the `maven` publication. Composite substitution resolves to this one shadow jar.
 3. **Loom `mods { create { sourceSet(project) } }` DSL.** Investigate whether this DSL can be coerced to reach sibling projects via an IncludedBuild reference. If yes, it's the cleanest fix and removes the need for `classPathGroups` entirely.
 
 Any of these unblocks local dev. None is on the v0.1 critical path — CI Tier-2 covers the integration surface, and the plan explicitly notes (ADR-0011, earlier) that the real-user deliverable is a single shaded jar, not the in-repo dev loop.
+
+## Follow-up bugs surfaced while validating the shadow-plugin path
+
+Applying the chosen upgrade path surfaced three bugs in the plugin and adapter that had not been exercised before because the boot had never reached them:
+
+1. **`@Environment(EnvType.CLIENT)` on `McLibPreLaunch.onPreLaunch`.** Fabric strips client-only methods at runtime in server env, producing `AbstractMethodError`. Removed — `PreLaunchEntrypoint` runs in both environments.
+2. **Generated manifest not on the dev classpath.** `McLibProviderPlugin` wired the manifest into `Jar` tasks only. Loom/ModDevGradle dev-mode runs use `build/resources/main/` directly, not the jar, so the manifest was invisible at runtime. Fix: wire `processResources` to include it alongside the jar path.
+3. **`runtimeClasspath` over-captures in Loom projects.** Loom merges the entire MC runtime classpath (guava, gson, icu4j, oshi, mixinextras, Loom's own remapped `mclibprovider:fabric`) into `runtimeClasspath`. `GenerateMcLibManifestTask` faithfully writes all of them to the manifest, where `ManifestConsumer` then fails trying to download them from `libraries.minecraft.net` / the loom-cache's pseudo-repo URL. **Open.** The plugin needs to resolve against the mod author's *declared* configurations (`implementation`, `api`, `runtimeOnly`) and their transitive closure — not the full post-Loom classpath — or at minimum exclude by URL prefix (`libraries.minecraft.net`, `maven.fabricmc.net`, Loom's remapped cache). Tracked as a plugin fix; not strictly dev-only (affects production manifests too if the mod author declares a `modImplementation`).

@@ -1,8 +1,8 @@
 rootProject.name = "fabric-example"
 
 pluginManagement {
-    // Composite-build the whole mc-lib-provider repo so local changes apply without
-    // any publish step. The :gradle-plugin subproject supplies the mc-lib-provider plugin.
+    // Composite-build the whole mc-lib-provider repo so the mc-lib-provider Gradle
+    // plugin applies without a publish step.
     includeBuild("../..")
 
     repositories {
@@ -12,14 +12,18 @@ pluginManagement {
     }
 }
 
-// Second includeBuild at settings level so regular library artifacts (e.g.
-// io.github.mclibprovider:core for the mixin bridge's @McLibMixin annotation)
-// are substituted too, not only Gradle plugins.
-includeBuild("../..")
+// ADR-0012: runtime library artifacts (io.github.mclibprovider:fabric, :core)
+// resolve via mavenLocal rather than composite substitution. The :fabric subproject
+// publishes a shadow jar containing core+deps-lib+tomlj; composite substitution
+// would resolve to per-subproject source-set outputs instead of the shaded jar,
+// which Fabric's ClasspathModCandidateFinder rejects. Workflow:
+//   ../../gradlew :fabric:publishToMavenLocal
+// before any runServer/runClient on this test mod.
 
 dependencyResolutionManagement {
     repositories {
         maven("https://maven.fabricmc.net/") { name = "Fabric" }
+        mavenLocal()
         mavenCentral()
     }
 }

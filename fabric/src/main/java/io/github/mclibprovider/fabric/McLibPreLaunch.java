@@ -7,8 +7,6 @@ import io.github.mclibprovider.deps.LibraryCache;
 import io.github.mclibprovider.deps.Manifest;
 import io.github.mclibprovider.deps.ManifestConsumer;
 import io.github.mclibprovider.deps.ManifestIo;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
@@ -43,7 +41,6 @@ public final class McLibPreLaunch implements PreLaunchEntrypoint {
     private static final Map<String, String> LANG_BY_MOD = new HashMap<>();
 
     @Override
-    @Environment(EnvType.CLIENT) // tag; runs in server too — Fabric uses this for both
     public void onPreLaunch() {
         FabricLoader fabric = FabricLoader.getInstance();
         LibraryCache cache = LibraryCache.defaultCache();
