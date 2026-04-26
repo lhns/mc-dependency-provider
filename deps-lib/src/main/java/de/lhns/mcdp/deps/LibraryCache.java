@@ -33,12 +33,12 @@ public final class LibraryCache {
         Path root;
         if (os.contains("win")) {
             String local = System.getenv("LOCALAPPDATA");
-            root = (local != null ? Path.of(local) : Path.of(home, "AppData", "Local")).resolve("mc-lib-provider");
+            root = (local != null ? Path.of(local) : Path.of(home, "AppData", "Local")).resolve("mcdepprovider");
         } else if (os.contains("mac")) {
-            root = Path.of(home, "Library", "Caches", "mc-lib-provider");
+            root = Path.of(home, "Library", "Caches", "mcdepprovider");
         } else {
             String xdg = System.getenv("XDG_CACHE_HOME");
-            root = (xdg != null && !xdg.isBlank() ? Path.of(xdg) : Path.of(home, ".cache")).resolve("mc-lib-provider");
+            root = (xdg != null && !xdg.isBlank() ? Path.of(xdg) : Path.of(home, ".cache")).resolve("mcdepprovider");
         }
         return new LibraryCache(root);
     }

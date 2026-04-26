@@ -5,7 +5,7 @@ import io.circe.parser.*
 import net.fabricmc.api.ModInitializer
 
 /**
- * Entry point — instantiated by mc-lib-provider's Scala entrypoint adapter on Fabric.
+ * Entry point — instantiated by mcdepprovider's Scala entrypoint adapter on Fabric.
  *
  * Uses `cats.syntax.all.*` + `io.circe.parser.*` to exercise the per-mod classloader
  * path on cats-kernel (keyword package `cats.kernel.instances.byte`) and a transitive
@@ -16,7 +16,7 @@ object ExampleMod extends ModInitializer {
   override def onInitialize(): Unit = { onLoad(); () }
 
   def onLoad(): String = {
-    val parsed = parse("""{"name": "mc-lib-provider", "platform": "fabric"}""")
+    val parsed = parse("""{"name": "mcdepprovider", "platform": "fabric"}""")
     val name = parsed
       .map(_.hcursor.get[String]("name").toOption.combineAll)
       .getOrElse("<parse-failed>")
@@ -24,7 +24,7 @@ object ExampleMod extends ModInitializer {
     val catsLoaderId = System.identityHashCode(catsFunctorClass.getClassLoader)
     val catsClassId = System.identityHashCode(catsFunctorClass)
     println(
-      s"[mclib-smoke] mod=fabric_example name=$name " +
+      s"[mcdp-smoke] mod=fabric_example name=$name " +
         s"cats.Functor.class.id=$catsClassId cats.loader.id=$catsLoaderId"
     )
     name

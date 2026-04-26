@@ -18,7 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Populates the shared library cache ({@code ~/.cache/mc-lib-provider/libs/<sha>.jar}) from the
+ * Populates the shared library cache ({@code ~/.cache/mcdepprovider/libs/<sha>.jar}) from the
  * project's locally-resolved jars, hard-linking when the filesystem supports it. No network.
  * <p>
  * Runs before dev run-tasks so the provider's runtime loading path is exercised end-to-end in dev
@@ -62,13 +62,13 @@ public abstract class PrepareDevCacheTask extends DefaultTask {
             String filename = extractFilename(lib.url());
             Path source = localByName.get(filename);
             if (source == null) {
-                getLogger().warn("mc-lib-provider: no local artifact matching {} — first boot will download", filename);
+                getLogger().warn("mcdepprovider: no local artifact matching {} — first boot will download", filename);
                 continue;
             }
             cache.linkOrCopy(source, lib.sha256());
             linked++;
         }
-        getLogger().lifecycle("mc-lib-provider: dev cache pre-warm — linked {}, already-present {}", linked, skipped);
+        getLogger().lifecycle("mcdepprovider: dev cache pre-warm — linked {}, already-present {}", linked, skipped);
     }
 
     private static String extractFilename(String url) {

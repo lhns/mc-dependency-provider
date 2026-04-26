@@ -1,7 +1,7 @@
 rootProject.name = "fabric-example"
 
 pluginManagement {
-    // Composite-build the whole mc-lib-provider repo so the mc-lib-provider Gradle
+    // Composite-build the whole mcdepprovider repo so the mcdepprovider Gradle
     // plugin applies without a publish step.
     includeBuild("../..")
 

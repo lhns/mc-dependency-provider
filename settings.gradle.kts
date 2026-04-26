@@ -1,4 +1,4 @@
-rootProject.name = "mc-lib-provider"
+rootProject.name = "mcdepprovider"
 
 pluginManagement {
     repositories {

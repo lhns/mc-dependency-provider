@@ -37,7 +37,7 @@ neoForge {
 }
 
 dependencies {
-    // ADR-0012: the mclibprovider NeoForge adapter, consumed as a single shadow jar
+    // ADR-0012: the mcdepprovider NeoForge adapter, consumed as a single shadow jar
     // from mavenLocal. Lands on the sourceSet runtimeClasspath which MDG 2.0.78 feeds
     // to runServer/runClient; FML discovers it on java.class.path via its bundled
     // META-INF/neoforge.mods.toml and picks up the IModLanguageProvider via
@@ -45,7 +45,7 @@ dependencies {
     // non-mod libs that FML would otherwise mis-scan — not for actual mod jars.)
     implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
 
-    // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
+    // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcLibImplementation: opt-in bucket served through the per-mod ModClassLoader.
     // RunTaskClasspathPatch strips them from runServer/runClient so dev-mode parity
     // with production is maintained (ADR-0007).
@@ -55,7 +55,7 @@ dependencies {
     mcLibImplementation("io.circe:circe-parser_3:0.14.10")
 }
 
-mclibprovider {
+mcdepprovider {
     lang.set("scala")
     sharedPackages.add("com.example.api")
 }

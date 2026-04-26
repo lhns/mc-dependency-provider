@@ -41,7 +41,7 @@ dependencies {
     mcLibImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 }
 
-mclibprovider {
+mcdepprovider {
     lang.set("kotlin")
     sharedPackages.add("com.example.api")
 }

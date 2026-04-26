@@ -28,14 +28,14 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // The mc-lib-provider Fabric adapter — the actual mod with id "mclibprovider"
+    // The mcdepprovider Fabric adapter — the actual mod with id "mcdepprovider"
     // that fabric_example depends on at runtime. Resolved via the composite build's
     // settings-level includeBuild substitution.
     modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
-    // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
+    // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcLibImplementation is the opt-in bucket: deps placed here are emitted into
-    // META-INF/mclibprovider.toml, downloaded at runtime by the provider, and served
+    // META-INF/mcdepprovider.toml, downloaded at runtime by the provider, and served
     // through a per-mod URLClassLoader. RunTaskClasspathPatch strips them from
     // runServer/runClient so dev-mode parity with production is maintained (ADR-0007).
     mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
@@ -47,7 +47,7 @@ dependencies {
     // (ADR-0012), so modImplementation above provides them at both compile and runtime.
 }
 
-mclibprovider {
+mcdepprovider {
     lang.set("scala")
     sharedPackages.add("com.example.api")
 
@@ -68,7 +68,7 @@ loom {
 }
 // NOTE (dev-mode blocker, documented in ADR-0012):
 // Fabric's ClasspathModCandidateFinder refuses to expose classes from sibling
-// composite-build jars (core, deps-lib) to the mclibprovider mod. Setting
+// composite-build jars (core, deps-lib) to the mcdepprovider mod. Setting
 // -Dfabric.classPathGroups via Loom's runs { property } DSL did not take
 // effect in local testing (neither classes-dirs nor jar paths matched Fabric's
 // URL comparison). Production deploys ship a single shaded jar and avoid

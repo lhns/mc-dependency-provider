@@ -19,13 +19,13 @@ object ExampleMod {
     init {
         val greeting = runBlocking {
             delay(1)
-            "mc-lib-provider/kotlin-example loaded"
+            "mcdepprovider/kotlin-example loaded"
         }
         val coroutineClass = kotlinx.coroutines.CoroutineScope::class.java
         val coroutineLoaderId = System.identityHashCode(coroutineClass.classLoader)
         val coroutineClassId = System.identityHashCode(coroutineClass)
         println(
-            "[mclib-smoke] mod=kotlin_example lang=kotlin name=$greeting " +
+            "[mcdp-smoke] mod=kotlin_example lang=kotlin name=$greeting " +
                 "coroutines.CoroutineScope.class.id=$coroutineClassId " +
                 "coroutines.loader.id=$coroutineLoaderId"
         )
@@ -33,7 +33,7 @@ object ExampleMod {
 
     fun onLoad(): String = runBlocking {
         delay(1)
-        "mc-lib-provider/kotlin-example loaded"
+        "mcdepprovider/kotlin-example loaded"
     }
 
     @JvmStatic

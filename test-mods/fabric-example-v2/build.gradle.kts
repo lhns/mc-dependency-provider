@@ -36,8 +36,8 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // The mc-lib-provider Fabric adapter (consumed as a shadow jar from mavenLocal,
-    // same recipe as fabric-example). Provides the `mclibprovider` LanguageAdapter that
+    // The mcdepprovider Fabric adapter (consumed as a shadow jar from mavenLocal,
+    // same recipe as fabric-example). Provides the `mcdepprovider` LanguageAdapter that
     // this mod's fabric.mod.json references.
     modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
@@ -47,7 +47,7 @@ dependencies {
     mcLibImplementation("org.typelevel:cats-core_3:2.10.0")
 }
 
-mclibprovider {
+mcdepprovider {
     lang.set("scala")
     sharedPackages.add("com.example_v2.api")
 }

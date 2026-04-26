@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * <p>
  * We intentionally do not depend on ModDevGradle or Loom APIs. The hook is:
  * <ol>
- *   <li>Opt-in via {@code mclibprovider.patchRunTasks} (default: {@code runClient},
+ *   <li>Opt-in via {@code mcdepprovider.patchRunTasks} (default: {@code runClient},
  *       {@code runServer}, {@code runGameTestServer}, {@code runData}).</li>
  *   <li>For each matching {@link JavaExec} task, a {@code doFirst} action reads the generated
  *       manifest, hashes every file on the current classpath, and installs a filtered replacement.</li>
@@ -43,7 +43,7 @@ final class RunTaskClasspathPatch {
                       TaskProvider<GenerateMcdpManifestTask> generate,
                       ListProperty<String> runTaskNames) {
         project.getTasks().withType(JavaExec.class).configureEach(exec -> {
-            // Resolve the list lazily per-task, AFTER the user's mclibprovider { } block
+            // Resolve the list lazily per-task, AFTER the user's mcdepprovider { } block
             // has run — critical because Loom / Scala plugins apply java plugin
             // synchronously during their own apply(), so withPlugin("java") would fire
             // before the user's DSL executes. getOrElse here runs at task-configure time.
@@ -63,7 +63,7 @@ final class RunTaskClasspathPatch {
                             .collect(Collectors.toUnmodifiableSet());
                 } catch (IOException e) {
                     throw new IllegalStateException(
-                            "mc-lib-provider: failed to read manifest for run-task patching at "
+                            "mcdepprovider: failed to read manifest for run-task patching at "
                                     + manifestFile, e);
                 }
 
@@ -76,7 +76,7 @@ final class RunTaskClasspathPatch {
                     } catch (IOException ioe) {
                         // Can't hash → keep on classpath, safer than removing.
                         project.getLogger().warn(
-                                "mc-lib-provider: failed to hash {} for classpath filtering; keeping on run-task classpath",
+                                "mcdepprovider: failed to hash {} for classpath filtering; keeping on run-task classpath",
                                 f, ioe);
                         return true;
                     }
@@ -85,7 +85,7 @@ final class RunTaskClasspathPatch {
 
                 int removed = original.getFiles().size() - filtered.getFiles().size();
                 project.getLogger().lifecycle(
-                        "mc-lib-provider: stripped {} manifest-listed jars from {} classpath (ADR-0007 dev-mode parity)",
+                        "mcdepprovider: stripped {} manifest-listed jars from {} classpath (ADR-0007 dev-mode parity)",
                         removed, exec.getName());
 
                 exec.setClasspath(filtered);

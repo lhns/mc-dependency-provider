@@ -26,7 +26,7 @@ import java.util.Optional;
 /**
  * Fabric pre-launch bootstrap. Runs before any {@link McdpLanguageAdapter#create} invocation.
  * <p>
- * For every mod carrying {@code META-INF/mclibprovider.toml}, this:
+ * For every mod carrying {@code META-INF/mcdepprovider.toml}, this:
  * <ol>
  *   <li>parses the manifest;</li>
  *   <li>downloads + SHA-verifies every listed library into the shared cache;</li>
@@ -36,7 +36,7 @@ import java.util.Optional;
  */
 public final class McdpPreLaunch implements PreLaunchEntrypoint {
 
-    private static final String MANIFEST_PATH = "META-INF/mclibprovider.toml";
+    private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpPreLaunch.class.getClassLoader());
@@ -62,14 +62,14 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             try (InputStream in = Files.newInputStream(manifestPath.get())) {
                 manifest = ManifestIo.read(in);
             } catch (IOException e) {
-                throw new IllegalStateException("mc-lib-provider: failed to read manifest for " + modId, e);
+                throw new IllegalStateException("mcdepprovider: failed to read manifest for " + modId, e);
             }
 
             List<Path> libs;
             try {
                 libs = consumer.resolveAll(manifest);
             } catch (IOException e) {
-                throw new IllegalStateException("mc-lib-provider: failed to download libs for " + modId, e);
+                throw new IllegalStateException("mcdepprovider: failed to download libs for " + modId, e);
             }
 
             List<Path> modPaths = mod.getRootPaths().isEmpty()
@@ -92,7 +92,7 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                 try {
                     promotedJars.add(consumer.resolve(lib));
                 } catch (IOException e) {
-                    throw new IllegalStateException("mc-lib-provider: failed to resolve promoted lib " + lib.coords(), e);
+                    throw new IllegalStateException("mcdepprovider: failed to resolve promoted lib " + lib.coords(), e);
                 }
                 promotedShas.add(lib.sha256());
             }

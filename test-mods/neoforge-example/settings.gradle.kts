@@ -1,8 +1,8 @@
 rootProject.name = "neoforge-example"
 
 pluginManagement {
-    // Composite-build the whole mc-lib-provider repo so local changes apply without
-    // any publish step. The :gradle-plugin subproject supplies the mc-lib-provider plugin.
+    // Composite-build the whole mcdepprovider repo so local changes apply without
+    // any publish step. The :gradle-plugin subproject supplies the mcdepprovider plugin.
     includeBuild("../..")
 
     repositories {

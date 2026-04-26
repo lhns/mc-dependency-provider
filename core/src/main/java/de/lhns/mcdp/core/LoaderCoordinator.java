@@ -74,7 +74,7 @@ public final class LoaderCoordinator {
         String key = "promoted:" + String.join(",", sortedShas);
         final URL[] urlsFinal = urls;
         return libraryLoaders.computeIfAbsent(key, k ->
-                new LibraryClassLoader("mc-lib-provider-promoted:" + k.substring(10, Math.min(26, k.length())),
+                new LibraryClassLoader("mcdepprovider-promoted:" + k.substring(10, Math.min(26, k.length())),
                         urlsFinal, parent));
     }
 
@@ -118,7 +118,7 @@ public final class LoaderCoordinator {
         // but different promoted-stdlib parents don't collide into a single loader.
         String cacheKey = aggregateKey + "|" + System.identityHashCode(parentLibLoader);
         URLClassLoader libsLoader = libraryLoaders.computeIfAbsent(cacheKey, k ->
-                new LibraryClassLoader("mc-lib-provider-libs:" + aggregateKey.substring(0, Math.min(16, aggregateKey.length())),
+                new LibraryClassLoader("mcdepprovider-libs:" + aggregateKey.substring(0, Math.min(16, aggregateKey.length())),
                         libUrlsFinal, parentLibLoader));
 
         URL[] modUrls = new URL[modPaths.size()];

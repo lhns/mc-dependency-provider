@@ -14,7 +14,7 @@ import java.util.Comparator;
  * <ul>
  *   <li>{@code MyMod()} — no-arg, ignores everything in the bag.</li>
  *   <li>{@code MyMod(IEventBus bus)} — FML default {@code @Mod}-class signature.</li>
- *   <li>{@code MyMod(IModInfo info)} — original mc-lib-provider single-arg shape.</li>
+ *   <li>{@code MyMod(IModInfo info)} — original mcdepprovider single-arg shape.</li>
  *   <li>{@code MyMod(IModInfo info, IEventBus bus)} — both, in either order.</li>
  *   <li>{@code MyMod(IEventBus bus, Dist dist)} — typical FML extra.</li>
  * </ul>

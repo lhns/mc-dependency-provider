@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The parsed form of a mod's {@code META-INF/mclibprovider.toml}.
+ * The parsed form of a mod's {@code META-INF/mcdepprovider.toml}.
  * <p>
  * Flat, pre-resolved, SHA-pinned. See ADR-0003.
  */

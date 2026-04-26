@@ -35,7 +35,7 @@ import java.util.Set;
 /**
  * Walks the project's resolved {@code mcLibImplementation} closure, subtracts any artifact whose
  * {@code group:name} is also resolved through the rest of the project's classpath as a non-mclib
- * dep (i.e. genuinely platform-provided), and emits {@code META-INF/mclibprovider.toml}.
+ * dep (i.e. genuinely platform-provided), and emits {@code META-INF/mcdepprovider.toml}.
  * <p>
  * URL reconstruction: tries each Maven repository declared on the project in order and picks the
  * first one whose URL pattern is a plausible source. We never re-download — Gradle already has
@@ -150,7 +150,7 @@ public abstract class GenerateMcdpManifestTask extends DefaultTask {
             // None responded with 200 — emit against the first repo anyway. Mod authors can fix
             // up their repos list if the resulting URL 404s at runtime.
             String fallback = httpRepos.get(0);
-            log.accept("mc-lib-provider: HEAD probe failed for " + coordKey
+            log.accept("mcdepprovider: HEAD probe failed for " + coordKey
                     + " across " + httpRepos.size() + " repos; emitting against " + fallback);
             coordRepoCache.put(coordKey, fallback);
             return fallback + relative;

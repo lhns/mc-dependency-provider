@@ -55,7 +55,7 @@ public final class ModClassLoader extends URLClassLoader {
     private final String modId;
 
     public ModClassLoader(String modId, URL[] urls, ClassLoader parent, List<String> sharedPackages) {
-        super("mc-lib-provider:" + Objects.requireNonNull(modId, "modId"), urls, parent);
+        super("mcdepprovider:" + Objects.requireNonNull(modId, "modId"), urls, parent);
         this.modId = modId;
         this.sharedPackages = List.copyOf(sharedPackages);
     }

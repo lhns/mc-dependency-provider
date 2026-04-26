@@ -20,11 +20,11 @@ import java.util.zip.ZipFile;
  * Offline-prefetch CLI for modpack authors (task #33 / open-question #2).
  *
  * Given a set of mod-jar paths or directories, reads each mod's
- * {@code META-INF/mclibprovider.toml} and pre-populates the shared library cache so
+ * {@code META-INF/mcdepprovider.toml} and pre-populates the shared library cache so
  * the first in-game boot on an offline machine is a pure cache-hit.
  *
  * Usage:
- *   mc-lib-provider-prefetch [--cache DIR] [--dry-run] PATH [PATH...]
+ *   mcdepprovider-prefetch [--cache DIR] [--dry-run] PATH [PATH...]
  *
  * Each PATH is either:
  *   - a mod jar (processed directly), or
@@ -35,7 +35,7 @@ import java.util.zip.ZipFile;
  */
 public final class Prefetch {
 
-    private static final String MANIFEST_ENTRY = "META-INF/mclibprovider.toml";
+    private static final String MANIFEST_ENTRY = "META-INF/mcdepprovider.toml";
 
     public static void main(String[] args) {
         System.exit(run(args, System.out, System.err));
@@ -58,7 +58,7 @@ public final class Prefetch {
                 }
                 case "--dry-run" -> dryRun = true;
                 case "-h", "--help" -> {
-                    out.println("usage: mc-lib-provider-prefetch [--cache DIR] [--dry-run] PATH [PATH...]");
+                    out.println("usage: mcdepprovider-prefetch [--cache DIR] [--dry-run] PATH [PATH...]");
                     return 0;
                 }
                 default -> inputs.add(Path.of(a));

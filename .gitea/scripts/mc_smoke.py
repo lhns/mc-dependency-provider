@@ -31,14 +31,14 @@ DEFAULT_SERVER_MARKER = r'Done \([\d.]+s\)! For help, type "help"'
 # "Setting user:" when assets are already cached. Good enough for a boot smoke.
 DEFAULT_CLIENT_MARKER = r"Created: \d+x\d+x\d+ minecraft:textures/atlas"
 
-# Log lines that indicate mc-lib-provider is broken. Any match triggers exit 2
+# Log lines that indicate mcdepprovider is broken. Any match triggers exit 2
 # even if the first-tick marker eventually appears.
 FATAL_PATTERNS = [
     re.compile(r"Invalid package name"),
     re.compile(r"java\.lang\.module\.ResolutionException"),
     re.compile(r"java\.lang\.NoClassDefFoundError"),
     re.compile(r"java\.lang\.ClassCastException"),
-    re.compile(r"mc-lib-provider: .*failed to"),
+    re.compile(r"mcdepprovider: .*failed to"),
 ]
 
 

@@ -1,14 +1,14 @@
-modLoader = "mclibprovider"
+modLoader = "mcdepprovider"
 loaderVersion = "[1,)"
 license = "Apache-2.0"
-issueTrackerURL = "https://gitea.lhns.de/lhns/mc-lib-provider/issues"
+issueTrackerURL = "https://gitea.lhns.de/lhns/mcdepprovider/issues"
 
 [[mods]]
 modId = "kotlin_example"
 version = "${version}"
-displayName = "mc-lib-provider Kotlin example"
-description = "Smoke-test mod that exercises the mc-lib-provider Kotlin entrypoint + Maven dep resolution on NeoForge."
-authors = "mc-lib-provider contributors"
+displayName = "mcdepprovider Kotlin example"
+description = "Smoke-test mod that exercises the mcdepprovider Kotlin entrypoint + Maven dep resolution on NeoForge."
+authors = "mcdepprovider contributors"
 
 [[dependencies.kotlin_example]]
 modId = "neoforge"

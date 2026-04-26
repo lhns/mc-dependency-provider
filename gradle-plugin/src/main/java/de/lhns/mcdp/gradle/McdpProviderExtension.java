@@ -12,14 +12,14 @@ import org.gradle.api.provider.Property;
  *     // implementation, etc.) — they're platform-provided and never enter the manifest.
  *     modImplementation("net.fabricmc:fabric-loader:0.16.9")
  *
- *     // Deps the mod wants delivered through mc-lib-provider's per-mod classloader
+ *     // Deps the mod wants delivered through mcdepprovider's per-mod classloader
  *     // go on the dedicated bucket. They're transitively resolved and emitted into
- *     // META-INF/mclibprovider.toml.
+ *     // META-INF/mcdepprovider.toml.
  *     mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
  *     mcLibImplementation("io.circe:circe-parser_3:0.14.10")
  * }
  *
- * mclibprovider {
+ * mcdepprovider {
  *     lang.set("scala")
  *     sharedPackages.add("com.example.api")
  * }

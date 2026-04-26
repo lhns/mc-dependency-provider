@@ -44,13 +44,13 @@ import java.util.Map;
  * FML 4.0.x discovers language loaders on the PLUGIN module layer — the jar carrying this
  * class must declare {@code FMLModType: LIBRARY} in its manifest and must <em>not</em>
  * ship a {@code neoforge.mods.toml} (that would classify it as a MOD instead of a LIBRARY).
- * Mods opt in via their own mods.toml: {@code modLoader = "mclibprovider"}.
+ * Mods opt in via their own mods.toml: {@code modLoader = "mcdepprovider"}.
  */
 public final class McdpLanguageLoader implements IModLanguageLoader {
 
-    public static final String LANGUAGE_ID = "mclibprovider";
+    public static final String LANGUAGE_ID = "mcdepprovider";
     private static final String LANGUAGE_VERSION = "1";
-    private static final String MANIFEST_PATH = "META-INF/mclibprovider.toml";
+    private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpLanguageLoader.class.getClassLoader());
@@ -139,7 +139,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     /**
      * NeoForge calls {@link #loadMod} once per mod; StdlibPromotion needs the union of every
      * mod's manifest before it can pick a winner. First-call scans the full {@link LoadingModList},
-     * reads each mclibprovider-loaded mod's manifest, runs {@link StdlibPromotion#selectPromotions},
+     * reads each mcdepprovider-loaded mod's manifest, runs {@link StdlibPromotion#selectPromotions},
      * builds one shared {@link URLClassLoader} per promoted library, and caches both.
      */
     private static void ensurePromotionInitialized() {
@@ -173,7 +173,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                         jars.add(CONSUMER.resolve(lib));
                     } catch (IOException e) {
                         throw new IllegalStateException(
-                                "mc-lib-provider: failed to resolve promoted lib " + lib.coords(), e);
+                                "mcdepprovider: failed to resolve promoted lib " + lib.coords(), e);
                     }
                     shas.add(lib.sha256());
                 }
@@ -233,7 +233,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             // Dev runs: `modFile` is a source-set output dir; `manifestResource` points at
             // the unified resources view (covering `build/resources/main/...`). Production:
             // `modFile` is a jar and `manifestResource` is a ZIP-filesystem path pointing
-            // at META-INF/mclibprovider.toml inside the same jar. Either way — just read it.
+            // at META-INF/mcdepprovider.toml inside the same jar. Either way — just read it.
             if (manifestResource != null && Files.exists(manifestResource)) {
                 try (InputStream in = Files.newInputStream(manifestResource)) {
                     return ManifestIo.read(in);
@@ -250,7 +250,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                     + " at " + modFile);
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "mc-lib-provider: " + modId + " is missing or has a corrupt " + MANIFEST_PATH, e);
+                    "mcdepprovider: " + modId + " is missing or has a corrupt " + MANIFEST_PATH, e);
         }
     }
 
@@ -259,7 +259,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             return CONSUMER.resolveAll(manifest);
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "mc-lib-provider: failed to resolve libraries for " + modId, e);
+                    "mcdepprovider: failed to resolve libraries for " + modId, e);
         }
     }
 
@@ -267,7 +267,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
      * Discover the entry class via {@code @Mod("modid")} annotation in the mod's scan results —
      * the same mechanism FML's vanilla {@code javafmlmod} loader uses. Mods declare exactly as
      * they would on a regular NeoForge mod; the only difference vs vanilla is
-     * {@code modLoader = "mclibprovider"} in {@code neoforge.mods.toml}.
+     * {@code modLoader = "mcdepprovider"} in {@code neoforge.mods.toml}.
      */
     private static Class<?> loadEntryClass(ModFileScanData scanResults, ModClassLoader loader, String modId) {
         String fqn = scanResults.getAnnotatedBy(Mod.class, ElementType.TYPE)
@@ -275,13 +275,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 .map(a -> a.clazz().getClassName())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
-                        "mc-lib-provider: no @Mod(\"" + modId + "\")-annotated class found for "
+                        "mcdepprovider: no @Mod(\"" + modId + "\")-annotated class found for "
                                 + modId + ". Add @Mod(\"" + modId + "\") to your entry class."));
         try {
             return Class.forName(fqn, true, loader);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException(
-                    "mc-lib-provider: @Mod-annotated class not loadable for " + modId + ": " + fqn, e);
+                    "mcdepprovider: @Mod-annotated class not loadable for " + modId + ": " + fqn, e);
         }
     }
 
@@ -290,7 +290,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             return EntrypointAdapter.forLang(lang).construct(entryClass, contextBag);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(
-                    "mc-lib-provider: failed to instantiate entrypoint for " + modId, e);
+                    "mcdepprovider: failed to instantiate entrypoint for " + modId, e);
         }
     }
 }

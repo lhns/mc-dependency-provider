@@ -17,12 +17,12 @@ import java.util.stream.Collectors;
  *
  * Default behavior (when no whitelist is constructed): no enforcement. Adoption
  * is opt-in to avoid breaking existing installs; modpack authors and paranoid
- * deployments can set {@code MCLIB_PROVIDER_REPO_WHITELIST} to a
+ * deployments can set {@code MCDP_REPO_WHITELIST} to a
  * comma-separated list of prefixes ({@link #fromEnv()}).
  */
 public final class RepoWhitelist {
 
-    public static final String ENV_VAR = "MCLIB_PROVIDER_REPO_WHITELIST";
+    public static final String ENV_VAR = "MCDP_REPO_WHITELIST";
 
     /** Canonical Maven Central prefixes — the usual choice when enabling the whitelist. */
     public static final List<String> MAVEN_CENTRAL_PREFIXES = List.of(

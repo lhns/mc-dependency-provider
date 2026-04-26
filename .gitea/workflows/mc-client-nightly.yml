@@ -10,7 +10,7 @@ name: CI — Tier 3 (runClient nightly via xvfb)
 # avoid it before v0.1.
 #
 # Coverage goals at Tier 3:
-#   1. Title-screen reached via runClient on NeoForge + Fabric with mc-lib-provider.
+#   1. Title-screen reached via runClient on NeoForge + Fabric with mcdepprovider.
 #   2. Mixin bridge smoke (#23) once the test mixin lands — currently stubbed.
 
 on:
@@ -80,7 +80,7 @@ jobs:
           restore-keys: |
             mc-assets-Linux-${{ matrix.platform.name }}-
 
-      - name: Build mc-lib-provider
+      - name: Build mcdepprovider
         run: ./gradlew build --no-daemon --stacktrace
 
       - name: runClient smoke — wait for first rendered frame, then exit

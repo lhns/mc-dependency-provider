@@ -91,7 +91,7 @@ class ManifestErrorPathsTest {
     @Test
     void networkUnreachableSurfacesClearly(@TempDir Path tmp) {
         // RFC 2606 reserves the .invalid TLD for exactly this: guaranteed not to resolve.
-        String dead = "http://mc-lib-provider-test.invalid/absent.jar";
+        String dead = "http://mcdepprovider-test.invalid/absent.jar";
         Manifest manifest = new Manifest("java", List.of(), List.of(
                 new Manifest.Library("a:b:1", dead, VALID_SHA)));
         ManifestConsumer consumer = new ManifestConsumer(new LibraryCache(tmp));

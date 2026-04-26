@@ -60,10 +60,10 @@ tasks.named<ShadowJar>("shadowJar") {
     manifest {
         attributes(
             "FMLModType" to "LIBRARY",
-            "Automatic-Module-Name" to "mclibprovider"
+            "Automatic-Module-Name" to "mcdepprovider"
         )
     }
-    // NeoForge loads the mclibprovider jar as an automatic JPMS module on its
+    // NeoForge loads the mcdepprovider jar as an automatic JPMS module on its
     // game module layer. Transitive packages from tomlj (antlr, checker-qual)
     // split-package against NeoForge's own copies. Relocate everything we bundle
     // from third-parties into our private namespace. Annotation-only packages

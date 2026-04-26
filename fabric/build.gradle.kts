@@ -31,9 +31,9 @@ dependencies {
 
 // ADR-0012 resolution: produce a single shaded jar containing this subproject's
 // classes plus :core and :deps-lib (and tomlj). That's both the production
-// deliverable (one "mclibprovider" jar) and the unblocker for Fabric's dev-mode
+// deliverable (one "mcdepprovider" jar) and the unblocker for Fabric's dev-mode
 // ClasspathModCandidateFinder, which refuses to expose sibling composite-build
-// jars to the mclibprovider mod id.
+// jars to the mcdepprovider mod id.
 tasks.named<Jar>("jar") {
     enabled = false
 }

@@ -1,14 +1,14 @@
-modLoader = "mclibprovider"
+modLoader = "mcdepprovider"
 loaderVersion = "[1,)"
 license = "Apache-2.0"
-issueTrackerURL = "https://gitea.lhns.de/lhns/mc-lib-provider/issues"
+issueTrackerURL = "https://gitea.lhns.de/lhns/mcdepprovider/issues"
 
 [[mods]]
 modId = "neoforge_example"
 version = "${version}"
-displayName = "mc-lib-provider NeoForge example"
-description = "Smoke-test mod that exercises the mc-lib-provider Scala entrypoint + Maven dep resolution path on NeoForge."
-authors = "mc-lib-provider contributors"
+displayName = "mcdepprovider NeoForge example"
+description = "Smoke-test mod that exercises the mcdepprovider Scala entrypoint + Maven dep resolution path on NeoForge."
+authors = "mcdepprovider contributors"
 
 [[dependencies.neoforge_example]]
 modId = "neoforge"

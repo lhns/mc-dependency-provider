@@ -2,7 +2,7 @@ name: CI — Tier 1 (unit + TestKit + manifest)
 
 # Cache policy (ADR-0007 / task #31):
 #   - Gradle home (~/.gradle/caches, ~/.gradle/wrapper) is cached per-OS to cut daemon cold-start.
-#   - ~/.cache/mc-lib-provider is DELIBERATELY NOT cached. The tier-2 second-boot-offline test
+#   - ~/.cache/mcdepprovider is DELIBERATELY NOT cached. The tier-2 second-boot-offline test
 #     (added when #29 lands) depends on the first step of its job populating the cache via the
 #     real download path. Caching it across jobs would mask download regressions.
 #   - Mod jars produced by the composite test-mods are uploaded as artifacts on every run so
@@ -69,27 +69,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          M="test-mods/scala-example/build/mc-lib-provider/META-INF/mclibprovider.toml"
+          M="test-mods/scala-example/build/mcdepprovider/META-INF/mcdepprovider.toml"
           test -f "$M" || { echo "manifest not generated at $M"; exit 1; }
           grep -q 'cats-kernel_3' "$M" || { echo "cats-kernel_3 missing from manifest"; cat "$M"; exit 1; }
           grep -q 'scala3-library_3' "$M" || { echo "scala3-library_3 missing from manifest"; cat "$M"; exit 1; }
           grep -q 'circe-core_3' "$M" || { echo "circe-core_3 missing from manifest"; cat "$M"; exit 1; }
           grep -qE 'sha256 = "[0-9a-f]{64}"' "$M" || { echo "no valid sha256 lines"; cat "$M"; exit 1; }
           J=$(ls test-mods/scala-example/build/libs/*.jar | head -n1)
-          unzip -p "$J" META-INF/mclibprovider.toml | grep -q 'lang = "scala"' || { echo "scala manifest not in jar"; exit 1; }
+          unzip -p "$J" META-INF/mcdepprovider.toml | grep -q 'lang = "scala"' || { echo "scala manifest not in jar"; exit 1; }
           echo "scala-example OK"
 
       - name: Assert kotlin-example manifest
         shell: bash
         run: |
           set -euo pipefail
-          M="test-mods/kotlin-example/build/mc-lib-provider/META-INF/mclibprovider.toml"
+          M="test-mods/kotlin-example/build/mcdepprovider/META-INF/mcdepprovider.toml"
           test -f "$M" || { echo "manifest not generated at $M"; exit 1; }
           grep -q 'kotlin-stdlib' "$M" || { echo "kotlin-stdlib missing from manifest"; cat "$M"; exit 1; }
           grep -q 'kotlinx-coroutines-core' "$M" || { echo "kotlinx-coroutines-core missing"; cat "$M"; exit 1; }
           grep -q 'lang = "kotlin"' "$M" || { echo "lang != kotlin"; cat "$M"; exit 1; }
           J=$(ls test-mods/kotlin-example/build/libs/*.jar | head -n1)
-          unzip -p "$J" META-INF/mclibprovider.toml | grep -q 'lang = "kotlin"' || { echo "kotlin manifest not in jar"; exit 1; }
+          unzip -p "$J" META-INF/mcdepprovider.toml | grep -q 'lang = "kotlin"' || { echo "kotlin manifest not in jar"; exit 1; }
           echo "kotlin-example OK"
 
       - name: Upload JUnit reports on failure
@@ -108,7 +108,7 @@ jobs:
         with:
           name: manifests-${{ matrix.os }}
           path: |
-            test-mods/*/build/mc-lib-provider/META-INF/*.toml
+            test-mods/*/build/mcdepprovider/META-INF/*.toml
           if-no-files-found: ignore
 
       - name: Upload built mod jars (on success)

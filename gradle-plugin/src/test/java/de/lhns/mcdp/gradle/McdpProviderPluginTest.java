@@ -35,7 +35,7 @@ class McdpProviderPluginTest {
                     mcLibImplementation("org.tomlj:tomlj:1.1.1")
                 }
 
-                mclibprovider {
+                mcdepprovider {
                     lang.set("java")
                     sharedPackages.add("com.example.api")
                 }
@@ -51,7 +51,7 @@ class McdpProviderPluginTest {
 
         assertTrue(result.getOutput().contains("BUILD SUCCESSFUL"), result.getOutput());
 
-        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mclibprovider.toml");
+        Path manifestFile = tmp.resolve("build/mcdepprovider/META-INF/mcdepprovider.toml");
         assertTrue(Files.exists(manifestFile), "manifest not created at " + manifestFile);
 
         Manifest manifest = ManifestIo.read(manifestFile);
@@ -98,7 +98,7 @@ class McdpProviderPluginTest {
                     mcLibImplementation("org.tomlj:tomlj:1.1.1")
                 }
 
-                mclibprovider {
+                mcdepprovider {
                     lang.set("java")
                 }
 
@@ -129,7 +129,7 @@ class McdpProviderPluginTest {
         assertTrue(m.find(), "expected 'stripped N manifest-listed jars' in log");
         int stripped = Integer.parseInt(m.group(1));
 
-        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mclibprovider.toml");
+        Path manifestFile = tmp.resolve("build/mcdepprovider/META-INF/mcdepprovider.toml");
         assertTrue(Files.exists(manifestFile), "manifest should have been generated");
         Manifest manifest = ManifestIo.read(manifestFile);
         assertEquals(manifest.libraries().size(), stripped,

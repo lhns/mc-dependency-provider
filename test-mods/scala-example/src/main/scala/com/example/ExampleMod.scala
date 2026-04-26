@@ -7,7 +7,7 @@ import io.circe.parser.*
 object ExampleMod {
 
   def onLoad(): String = {
-    val parsed = parse("""{"name": "mc-lib-provider"}""")
+    val parsed = parse("""{"name": "mcdepprovider"}""")
     parsed.map(_.hcursor.get[String]("name").toOption.combineAll).getOrElse("<parse-failed>")
   }
 

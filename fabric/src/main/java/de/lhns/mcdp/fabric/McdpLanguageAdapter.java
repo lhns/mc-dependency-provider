@@ -11,7 +11,7 @@ import net.fabricmc.loader.api.ModContainer;
  * Fabric's {@link LanguageAdapter} that dispatches into {@link EntrypointAdapter}.
  * <p>
  * Fabric calls {@code create(container, value, type)} for each entrypoint declared with
- * {@code "adapter": "mclibprovider"}. By that time {@link McdpPreLaunch} has already populated
+ * {@code "adapter": "mcdepprovider"}. By that time {@link McdpPreLaunch} has already populated
  * the {@link ModClassLoader} for this mod, so we:
  * <ol>
  *   <li>look up the mod's loader via {@link McdpProvider#loaderFor(String)};</li>
@@ -27,7 +27,7 @@ public final class McdpLanguageAdapter implements LanguageAdapter {
         ModClassLoader loader = McdpProvider.loaderFor(modId);
         if (loader == null) {
             throw new LanguageAdapterException(
-                    "mc-lib-provider: ModClassLoader for '" + modId + "' not initialized."
+                    "mcdepprovider: ModClassLoader for '" + modId + "' not initialized."
                             + " Ensure McdpPreLaunch ran and the mod declares its manifest.");
         }
 
@@ -37,7 +37,7 @@ public final class McdpLanguageAdapter implements LanguageAdapter {
         try {
             entryClass = Class.forName(value, true, loader);
         } catch (ClassNotFoundException e) {
-            throw new LanguageAdapterException("mc-lib-provider: entrypoint class not found: " + value, e);
+            throw new LanguageAdapterException("mcdepprovider: entrypoint class not found: " + value, e);
         }
 
         // Fabric entrypoints are usually no-arg objects or classes with a no-arg ctor. Our
@@ -46,11 +46,11 @@ public final class McdpLanguageAdapter implements LanguageAdapter {
         try {
             instance = EntrypointAdapter.forLang(lang).construct(entryClass);
         } catch (ReflectiveOperationException e) {
-            throw new LanguageAdapterException("mc-lib-provider: failed to instantiate " + value, e);
+            throw new LanguageAdapterException("mcdepprovider: failed to instantiate " + value, e);
         }
 
         if (!type.isInstance(instance)) {
-            throw new LanguageAdapterException("mc-lib-provider: " + value
+            throw new LanguageAdapterException("mcdepprovider: " + value
                     + " (lang=" + lang + ") does not implement " + type.getName());
         }
         return type.cast(instance);
