@@ -6,7 +6,7 @@
   "description": "JVM-language mod provider with per-mod Maven dependency resolution for Fabric.",
   "authors": ["MC Dependency Provider contributors"],
   "contact": {
-    "sources": "https://gitea.lhns.de/lhns/mcdepprovider"
+    "sources": "https://gitea.lhns.de/lhns/mc-dependency-provider"
   },
   "license": "Apache-2.0",
 

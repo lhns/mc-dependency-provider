@@ -1,7 +1,7 @@
 modLoader = "mcdepprovider"
 loaderVersion = "[1,)"
 license = "Apache-2.0"
-issueTrackerURL = "https://gitea.lhns.de/lhns/mcdepprovider/issues"
+issueTrackerURL = "https://gitea.lhns.de/lhns/mc-dependency-provider/issues"
 
 [[mods]]
 modId = "kotlin_example"
