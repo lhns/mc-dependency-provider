@@ -35,3 +35,5 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0011](0011-defer-sbt-and-maven-plugins.md) | Defer sbt and Maven plugins to v0.2 | Accepted |
 | [0012](0012-dev-mode-classpath-grouping.md) | Dev-mode classpath grouping for composite-built multi-project mods | Accepted |
 | [0013](0013-neoforge-faithful-entry-init.md) | NeoForge-faithful entry init via `@Mod` + FML helpers | Accepted |
+| [0014](0014-opt-in-mcdep-implementation.md) | Opt-in `mcdepImplementation` Gradle bucket replaces `excludeGroup` | Accepted |
+| [0015](0015-in-tree-closed-schema-parsers.md) | In-tree closed-schema parsers (`MiniJson`, `MiniToml`) | Accepted |

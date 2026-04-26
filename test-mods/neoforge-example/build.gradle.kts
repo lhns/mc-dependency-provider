@@ -43,7 +43,7 @@ dependencies {
     // META-INF/neoforge.mods.toml and picks up the IModLanguageProvider via
     // META-INF/services. (The `additionalRuntimeClasspath` configuration is for
     // non-mod libs that FML would otherwise mis-scan — not for actual mod jars.)
-    implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-neoforge:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcdepImplementation: opt-in bucket served through the per-mod ModClassLoader.

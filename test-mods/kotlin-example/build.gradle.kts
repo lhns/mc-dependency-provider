@@ -35,7 +35,7 @@ neoForge {
 }
 
 dependencies {
-    implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-neoforge:0.1.0-SNAPSHOT")
 
     mcdepImplementation(kotlin("stdlib"))
     mcdepImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

@@ -49,6 +49,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
+    archiveBaseName.set("mcdp-neoforge")
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -83,6 +84,7 @@ configurations.apply {
 publishing {
     publications {
         create<MavenPublication>("maven") {
+            artifactId = "mcdp-neoforge"
             artifact(tasks.named("shadowJar"))
         }
     }

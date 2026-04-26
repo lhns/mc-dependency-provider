@@ -40,6 +40,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
+    archiveBaseName.set("mcdp-fabric")
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -63,6 +64,7 @@ configurations.apply {
 publishing {
     publications {
         create<MavenPublication>("maven") {
+            artifactId = "mcdp-fabric"
             artifact(tasks.named("shadowJar"))
         }
     }
