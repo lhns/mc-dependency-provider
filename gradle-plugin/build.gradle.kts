@@ -14,8 +14,8 @@ dependencies {
 gradlePlugin {
     plugins {
         create("mclibprovider") {
-            id = "io.github.mclibprovider"
-            implementationClass = "io.github.mclibprovider.gradle.McLibProviderPlugin"
+            id = "de.lhns.mcdp"
+            implementationClass = "de.lhns.mcdp.gradle.McdpProviderPlugin"
             displayName = "mc-lib-provider Gradle plugin"
             description = "Generates Maven dependency manifests and configures dev-mode runs for mc-lib-provider mods."
         }

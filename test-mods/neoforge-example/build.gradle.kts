@@ -1,7 +1,7 @@
 plugins {
     scala
     id("net.neoforged.moddev") version "2.0.78"
-    id("io.github.mclibprovider")
+    id("de.lhns.mcdp")
 }
 
 repositories {
@@ -43,7 +43,7 @@ dependencies {
     // META-INF/neoforge.mods.toml and picks up the IModLanguageProvider via
     // META-INF/services. (The `additionalRuntimeClasspath` configuration is for
     // non-mod libs that FML would otherwise mis-scan — not for actual mod jars.)
-    implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
     // mcLibImplementation: opt-in bucket served through the per-mod ModClassLoader.

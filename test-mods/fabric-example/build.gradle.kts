@@ -1,7 +1,7 @@
 plugins {
     scala
     id("fabric-loom") version "1.9-SNAPSHOT"
-    id("io.github.mclibprovider")
+    id("de.lhns.mcdp")
 }
 
 repositories {
@@ -31,7 +31,7 @@ dependencies {
     // The mc-lib-provider Fabric adapter — the actual mod with id "mclibprovider"
     // that fabric_example depends on at runtime. Resolved via the composite build's
     // settings-level includeBuild substitution.
-    modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
     // mcLibImplementation is the opt-in bucket: deps placed here are emitted into
@@ -43,7 +43,7 @@ dependencies {
     mcLibImplementation("io.circe:circe-core_3:0.14.10")
     mcLibImplementation("io.circe:circe-parser_3:0.14.10")
 
-    // @McLibMixin + McLibProvider classes are shaded into the fabric shadow jar
+    // @McdpMixin + McdpProvider classes are shaded into the fabric shadow jar
     // (ADR-0012), so modImplementation above provides them at both compile and runtime.
 }
 

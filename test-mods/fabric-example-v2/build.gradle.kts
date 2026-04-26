@@ -9,7 +9,7 @@
 plugins {
     scala
     id("fabric-loom") version "1.9-SNAPSHOT"
-    id("io.github.mclibprovider")
+    id("de.lhns.mcdp")
 }
 
 repositories {
@@ -39,7 +39,7 @@ dependencies {
     // The mc-lib-provider Fabric adapter (consumed as a shadow jar from mavenLocal,
     // same recipe as fabric-example). Provides the `mclibprovider` LanguageAdapter that
     // this mod's fabric.mod.json references.
-    modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
     mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
     // Deliberately different cats version from fabric-example so the two mods' cats

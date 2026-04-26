@@ -1,7 +1,7 @@
 plugins {
     kotlin("jvm") version "2.1.0"
     id("net.neoforged.moddev") version "2.0.78"
-    id("io.github.mclibprovider")
+    id("de.lhns.mcdp")
 }
 
 repositories {
@@ -35,7 +35,7 @@ neoForge {
 }
 
 dependencies {
-    implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
 
     mcLibImplementation(kotlin("stdlib"))
     mcLibImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

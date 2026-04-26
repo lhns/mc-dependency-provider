@@ -3,7 +3,7 @@ plugins {
 }
 
 allprojects {
-    group = "io.github.mclibprovider"
+    group = "de.lhns.mcdp"
     version = "0.1.0-SNAPSHOT"
 }
 

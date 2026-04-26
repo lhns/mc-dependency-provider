@@ -12,7 +12,7 @@ pluginManagement {
     }
 }
 
-// ADR-0012: runtime library artifacts (io.github.mclibprovider:fabric, :core)
+// ADR-0012: runtime library artifacts (de.lhns.mcdp:fabric, :core)
 // resolve via mavenLocal rather than composite substitution. The :fabric subproject
 // publishes a shadow jar containing core+deps-lib+tomlj; composite substitution
 // would resolve to per-subproject source-set outputs instead of the shaded jar,

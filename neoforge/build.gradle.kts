@@ -70,8 +70,8 @@ tasks.named<ShadowJar>("shadowJar") {
     // can just be excluded.
     exclude("org/checkerframework/**")
     exclude("META-INF/versions/**/org/checkerframework/**")
-    relocate("org.tomlj", "io.github.mclibprovider.shaded.tomlj")
-    relocate("org.antlr", "io.github.mclibprovider.shaded.antlr")
+    relocate("org.tomlj", "de.lhns.mcdp.shaded.tomlj")
+    relocate("org.antlr", "de.lhns.mcdp.shaded.antlr")
 }
 
 tasks.named("assemble") {

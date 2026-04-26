@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Scala implementation of the Mixin bridge contract (#23 / ADR-0008).
  *
- * Loaded through the mod's own `ModClassLoader` via `McLibProvider.loadMixinImpl`.
+ * Loaded through the mod's own `ModClassLoader` via `McdpProvider.loadMixinImpl`.
  * Exercising `cats.syntax.*` here proves the impl linked against the mod's per-mod
  * cats jar, not any accidental shared version — the whole point of the bridge.
  *

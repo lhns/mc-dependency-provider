@@ -1,7 +1,7 @@
 plugins {
     `java-library`
     scala
-    id("io.github.mclibprovider")
+    id("de.lhns.mcdp")
 }
 
 group = "com.example"

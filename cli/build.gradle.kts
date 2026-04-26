@@ -4,7 +4,7 @@ plugins {
 }
 
 application {
-    mainClass.set("io.github.mclibprovider.cli.Prefetch")
+    mainClass.set("de.lhns.mcdp.cli.Prefetch")
 }
 
 dependencies {
