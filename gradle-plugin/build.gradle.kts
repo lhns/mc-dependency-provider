@@ -13,11 +13,11 @@ dependencies {
 
 gradlePlugin {
     plugins {
-        create("mclibprovider") {
+        create("mcdp") {
             id = "de.lhns.mcdp"
             implementationClass = "de.lhns.mcdp.gradle.McdpProviderPlugin"
-            displayName = "mc-lib-provider Gradle plugin"
-            description = "Generates Maven dependency manifests and configures dev-mode runs for mc-lib-provider mods."
+            displayName = "MC Dependency Provider Gradle plugin"
+            description = "Generates Maven dependency manifests and configures dev-mode runs for mcdp mods."
         }
     }
 }
