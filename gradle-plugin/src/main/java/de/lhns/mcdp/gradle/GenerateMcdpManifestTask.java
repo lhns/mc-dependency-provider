@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Walks the project's resolved {@code mcLibImplementation} closure, subtracts any artifact whose
+ * Walks the project's resolved {@code mcdepImplementation} closure, subtracts any artifact whose
  * {@code group:name} is also resolved through the rest of the project's classpath as a non-mclib
  * dep (i.e. genuinely platform-provided), and emits {@code META-INF/mcdepprovider.toml}.
  * <p>
@@ -51,7 +51,7 @@ public abstract class GenerateMcdpManifestTask extends DefaultTask {
 
     /**
      * {@code group:name} keys for artifacts that the platform already provides. Anything in the
-     * mcLibImplementation closure with a key in this set is dropped from the manifest.
+     * mcdepImplementation closure with a key in this set is dropped from the manifest.
      */
     @Input
     public abstract ListProperty<String> getPlatformProvidedKeys();

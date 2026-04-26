@@ -17,13 +17,13 @@ import java.util.Set;
  * <p>
  * Wires three things per project:
  * <ul>
- *   <li>The {@code mcLibImplementation} dependency bucket — opt-in config for libs that should be
+ *   <li>The {@code mcdepImplementation} dependency bucket — opt-in config for libs that should be
  *       served through mcdepprovider's per-mod classloader at runtime. Anything declared here
  *       (plus its transitive closure) lands in the generated manifest. Anything declared on
  *       {@code implementation}, {@code modImplementation}, etc. stays platform-provided and is
  *       never written to the manifest. {@code implementation} extends from this bucket so deps
- *       declared as {@code mcLibImplementation} are still on the compile classpath.</li>
- *   <li>{@code generateMcdpManifest} — walks the resolved {@code mcLibImplementation} closure,
+ *       declared as {@code mcdepImplementation} are still on the compile classpath.</li>
+ *   <li>{@code generateMcdpManifest} — walks the resolved {@code mcdepImplementation} closure,
  *       subtracts any artifact whose {@code group:name} is also resolved through
  *       {@code runtimeClasspath} via a non-mclib path (i.e. genuinely platform-provided), and
  *       writes {@code META-INF/mcdepprovider.toml} into {@code processResources} output.</li>
@@ -49,35 +49,35 @@ public final class McdpProviderPlugin implements Plugin<Project> {
             JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
             SourceSet main = java.getSourceSets().getByName(SourceSet.MAIN_SOURCE_SET_NAME);
 
-            // mcLibImplementation: declarable dep bucket — opt-in. Users place deps they want
+            // mcdepImplementation: declarable dep bucket — opt-in. Users place deps they want
             // served by mcdepprovider here. Extends nothing; carries no transitive contributions
             // from `implementation`, so platform-provided deps (Loom's modImplementation, MDG's
             // NeoForge stack) never leak into the manifest.
-            Configuration mcLibImplementation = project.getConfigurations().maybeCreate("mcLibImplementation");
-            mcLibImplementation.setCanBeResolved(false);
-            mcLibImplementation.setCanBeConsumed(false);
-            mcLibImplementation.setVisible(false);
+            Configuration mcdepImplementation = project.getConfigurations().maybeCreate("mcdepImplementation");
+            mcdepImplementation.setCanBeResolved(false);
+            mcdepImplementation.setCanBeConsumed(false);
+            mcdepImplementation.setVisible(false);
 
-            // Make mcLibImplementation deps available on the compile + runtime classpath in dev so
+            // Make mcdepImplementation deps available on the compile + runtime classpath in dev so
             // sources compile against them and Loom/MDG see them as ordinary jars (RunTaskClasspath-
             // Patch then strips them at run-time, restoring prod parity per ADR-0007).
             Configuration implementation = project.getConfigurations().findByName("implementation");
-            if (implementation != null) implementation.extendsFrom(mcLibImplementation);
+            if (implementation != null) implementation.extendsFrom(mcdepImplementation);
 
-            // Resolvable view of mcLibImplementation. The manifest task and the dev-cache task
+            // Resolvable view of mcdepImplementation. The manifest task and the dev-cache task
             // both consume this — never runtimeClasspath, so platform jars are guaranteed absent.
-            Configuration mcLibManifest = project.getConfigurations().maybeCreate("mcLibManifest");
-            mcLibManifest.setCanBeResolved(true);
-            mcLibManifest.setCanBeConsumed(false);
-            mcLibManifest.setVisible(false);
-            mcLibManifest.extendsFrom(mcLibImplementation);
+            Configuration mcdepManifest = project.getConfigurations().maybeCreate("mcdepManifest");
+            mcdepManifest.setCanBeResolved(true);
+            mcdepManifest.setCanBeConsumed(false);
+            mcdepManifest.setVisible(false);
+            mcdepManifest.extendsFrom(mcdepImplementation);
 
             // Resolvable view of the compile/runtime classpath excluding the mclib bucket. Used by
             // the manifest task to detect "already provided by the platform" artifacts and skip
-            // them — handles the rare case where a mod declares `mcLibImplementation("X")` but X
+            // them — handles the rare case where a mod declares `mcdepImplementation("X")` but X
             // is also a transitive of some Loom-/MDG-provided platform jar. Same `group:name`
             // appearing on both sides means the platform already serves it; no need to redeclare.
-            Configuration platformView = project.getConfigurations().maybeCreate("mcLibPlatformView");
+            Configuration platformView = project.getConfigurations().maybeCreate("mcdepPlatformView");
             platformView.setCanBeResolved(true);
             platformView.setCanBeConsumed(false);
             platformView.setVisible(false);
@@ -89,22 +89,22 @@ public final class McdpProviderPlugin implements Plugin<Project> {
             var generate = project.getTasks().register(
                     "generateMcdpManifest", GenerateMcdpManifestTask.class, t -> {
                         t.setGroup("mcdepprovider");
-                        t.setDescription("Emits META-INF/mcdepprovider.toml from mcLibImplementation.");
+                        t.setDescription("Emits META-INF/mcdepprovider.toml from mcdepImplementation.");
                         t.getLang().set(ext.getLang());
                         t.getSharedPackages().set(ext.getSharedPackages());
                         t.getOutputFile().set(project.getLayout().getBuildDirectory()
                                 .file("mcdepprovider/META-INF/mcdepprovider.toml"));
 
-                        t.getResolvedArtifactFiles().from(mcLibManifest);
+                        t.getResolvedArtifactFiles().from(mcdepManifest);
                         t.getRepositoryUrls().set(project.provider(() ->
                                 GenerateMcdpManifestTask.collectRepositoryUrls(project.getRepositories())));
                         t.getArtifactCoords().set(project.provider(() ->
-                                GenerateMcdpManifestTask.collectArtifactCoords(mcLibManifest)));
+                                GenerateMcdpManifestTask.collectArtifactCoords(mcdepManifest)));
                         // Set-difference: anything in platformView that's NOT also in
-                        // mcLibImplementation's closure is platform-provided. Subtract those.
+                        // mcdepImplementation's closure is platform-provided. Subtract those.
                         t.getPlatformProvidedKeys().set(project.provider(() -> {
                             Set<String> mclibKeys = new HashSet<>();
-                            for (var coord : GenerateMcdpManifestTask.collectArtifactCoords(mcLibManifest)) {
+                            for (var coord : GenerateMcdpManifestTask.collectArtifactCoords(mcdepManifest)) {
                                 mclibKeys.add(coord.group() + ":" + coord.name());
                             }
                             Set<String> platformKeys = new HashSet<>();
@@ -128,7 +128,7 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         t.setDescription("Hard-links resolved jars into the shared mcdepprovider cache.");
                         t.dependsOn(generate);
                         t.getManifestFile().set(generate.flatMap(GenerateMcdpManifestTask::getOutputFile));
-                        t.getArtifactFiles().from(mcLibManifest);
+                        t.getArtifactFiles().from(mcdepManifest);
                     });
 
             project.afterEvaluate(p -> {

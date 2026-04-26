@@ -15,8 +15,8 @@ import org.gradle.api.provider.Property;
  *     // Deps the mod wants delivered through mcdepprovider's per-mod classloader
  *     // go on the dedicated bucket. They're transitively resolved and emitted into
  *     // META-INF/mcdepprovider.toml.
- *     mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
- *     mcLibImplementation("io.circe:circe-parser_3:0.14.10")
+ *     mcdepImplementation("org.typelevel:cats-core_3:2.13.0")
+ *     mcdepImplementation("io.circe:circe-parser_3:0.14.10")
  * }
  *
  * mcdepprovider {

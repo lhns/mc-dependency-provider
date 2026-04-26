@@ -59,11 +59,11 @@ jobs:
 
       - name: Composite build — generate manifest for scala-example
         working-directory: test-mods/scala-example
-        run: ../../gradlew generateMcLibManifest jar --no-daemon --stacktrace
+        run: ../../gradlew generateMcdpManifest jar --no-daemon --stacktrace
 
       - name: Composite build — generate manifest for kotlin-example
         working-directory: test-mods/kotlin-example
-        run: ../../gradlew generateMcLibManifest jar --no-daemon --stacktrace
+        run: ../../gradlew generateMcdpManifest jar --no-daemon --stacktrace
 
       - name: Assert scala-example manifest
         shell: bash

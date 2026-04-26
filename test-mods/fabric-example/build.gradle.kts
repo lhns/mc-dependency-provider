@@ -34,14 +34,14 @@ dependencies {
     modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
-    // mcLibImplementation is the opt-in bucket: deps placed here are emitted into
+    // mcdepImplementation is the opt-in bucket: deps placed here are emitted into
     // META-INF/mcdepprovider.toml, downloaded at runtime by the provider, and served
     // through a per-mod URLClassLoader. RunTaskClasspathPatch strips them from
     // runServer/runClient so dev-mode parity with production is maintained (ADR-0007).
-    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
-    mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
-    mcLibImplementation("io.circe:circe-core_3:0.14.10")
-    mcLibImplementation("io.circe:circe-parser_3:0.14.10")
+    mcdepImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcdepImplementation("org.typelevel:cats-core_3:2.13.0")
+    mcdepImplementation("io.circe:circe-core_3:0.14.10")
+    mcdepImplementation("io.circe:circe-parser_3:0.14.10")
 
     // @McdpMixin + McdpProvider classes are shaded into the fabric shadow jar
     // (ADR-0012), so modImplementation above provides them at both compile and runtime.

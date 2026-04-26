@@ -46,13 +46,13 @@ dependencies {
     implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
-    // mcLibImplementation: opt-in bucket served through the per-mod ModClassLoader.
+    // mcdepImplementation: opt-in bucket served through the per-mod ModClassLoader.
     // RunTaskClasspathPatch strips them from runServer/runClient so dev-mode parity
     // with production is maintained (ADR-0007).
-    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
-    mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
-    mcLibImplementation("io.circe:circe-core_3:0.14.10")
-    mcLibImplementation("io.circe:circe-parser_3:0.14.10")
+    mcdepImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcdepImplementation("org.typelevel:cats-core_3:2.13.0")
+    mcdepImplementation("io.circe:circe-core_3:0.14.10")
+    mcdepImplementation("io.circe:circe-parser_3:0.14.10")
 }
 
 mcdepprovider {

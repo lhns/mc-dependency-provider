@@ -41,10 +41,10 @@ dependencies {
     // this mod's fabric.mod.json references.
     modImplementation("de.lhns.mcdp:fabric:0.1.0-SNAPSHOT")
 
-    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcdepImplementation("org.scala-lang:scala3-library_3:3.5.2")
     // Deliberately different cats version from fabric-example so the two mods' cats
     // jars have distinct SHAs and resolve to distinct classloaders.
-    mcLibImplementation("org.typelevel:cats-core_3:2.10.0")
+    mcdepImplementation("org.typelevel:cats-core_3:2.10.0")
 }
 
 mcdepprovider {

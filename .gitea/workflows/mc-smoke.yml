@@ -88,7 +88,7 @@ jobs:
 
       - name: Generate manifest (${{ matrix.platform.name }})
         working-directory: ${{ matrix.platform.dir }}
-        run: ../../gradlew generateMcLibManifest --no-daemon --stacktrace
+        run: ../../gradlew generateMcdpManifest --no-daemon --stacktrace
 
       - name: Assert manifest has Scala + cats + circe with valid SHAs
         shell: bash
