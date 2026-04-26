@@ -92,4 +92,4 @@ Java 21 Temurin is assumed. The build works on Linux, macOS, and Windows (the li
 
 ## License
 
-Not chosen yet — will land before v0.1.
+Apache License 2.0 — see [LICENSE](LICENSE).
