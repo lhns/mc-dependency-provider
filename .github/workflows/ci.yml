@@ -1,0 +1,123 @@
+name: CI — Tier 1 (unit + TestKit + manifest)
+
+# Cache policy (ADR-0007 / task #31):
+#   - Gradle home (~/.gradle/caches, ~/.gradle/wrapper) is cached per-OS to cut daemon cold-start.
+#   - ~/.cache/mcdepprovider is DELIBERATELY NOT cached. The tier-2 second-boot-offline test
+#     (added when #29 lands) depends on the first step of its job populating the cache via the
+#     real download path. Caching it across jobs would mask download regressions.
+#   - Mod jars produced by the composite test-mods are uploaded as artifacts on every run so
+#     PR reviewers can pull a built mod without running Gradle locally.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Gradle build (all subprojects, all unit tests)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Gradle plugin TestKit
+        run: ./gradlew :gradle-plugin:test --no-daemon --stacktrace
+
+      - name: Javadoc (every subproject)
+        run: ./gradlew javadoc --no-daemon --stacktrace
+
+      - name: Composite build — generate manifest for scala-example
+        working-directory: test-mods/scala-example
+        run: ../../gradlew generateMcdpManifest jar --no-daemon --stacktrace
+
+      - name: Composite build — generate manifest for kotlin-example
+        working-directory: test-mods/kotlin-example
+        run: ../../gradlew generateMcdpManifest jar --no-daemon --stacktrace
+
+      - name: Assert scala-example manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="test-mods/scala-example/build/mcdepprovider/META-INF/mcdepprovider.toml"
+          test -f "$M" || { echo "manifest not generated at $M"; exit 1; }
+          grep -q 'cats-kernel_3' "$M" || { echo "cats-kernel_3 missing from manifest"; cat "$M"; exit 1; }
+          grep -q 'scala3-library_3' "$M" || { echo "scala3-library_3 missing from manifest"; cat "$M"; exit 1; }
+          grep -q 'circe-core_3' "$M" || { echo "circe-core_3 missing from manifest"; cat "$M"; exit 1; }
+          grep -qE 'sha256 = "[0-9a-f]{64}"' "$M" || { echo "no valid sha256 lines"; cat "$M"; exit 1; }
+          J=$(ls test-mods/scala-example/build/libs/*.jar | head -n1)
+          unzip -p "$J" META-INF/mcdepprovider.toml | grep -q 'lang = "scala"' || { echo "scala manifest not in jar"; exit 1; }
+          echo "scala-example OK"
+
+      - name: Assert kotlin-example manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="test-mods/kotlin-example/build/mcdepprovider/META-INF/mcdepprovider.toml"
+          test -f "$M" || { echo "manifest not generated at $M"; exit 1; }
+          grep -q 'kotlin-stdlib' "$M" || { echo "kotlin-stdlib missing from manifest"; cat "$M"; exit 1; }
+          grep -q 'kotlinx-coroutines-core' "$M" || { echo "kotlinx-coroutines-core missing"; cat "$M"; exit 1; }
+          grep -q 'lang = "kotlin"' "$M" || { echo "lang != kotlin"; cat "$M"; exit 1; }
+          J=$(ls test-mods/kotlin-example/build/libs/*.jar | head -n1)
+          unzip -p "$J" META-INF/mcdepprovider.toml | grep -q 'lang = "kotlin"' || { echo "kotlin manifest not in jar"; exit 1; }
+          echo "kotlin-example OK"
+
+      - name: Upload JUnit reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-reports-${{ matrix.os }}
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+
+      - name: Upload generated manifests on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifests-${{ matrix.os }}
+          path: |
+            test-mods/*/build/mcdepprovider/META-INF/*.toml
+          if-no-files-found: ignore
+
+      - name: Upload built mod jars (on success)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-jars-${{ matrix.os }}
+          path: |
+            test-mods/*/build/libs/*.jar
+            */build/libs/*.jar
+          if-no-files-found: ignore
+          retention-days: 7

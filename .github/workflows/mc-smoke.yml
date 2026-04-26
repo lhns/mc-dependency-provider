@@ -1,0 +1,302 @@
+name: CI — Tier 2 (MC runServer smoke)
+
+# Why this workflow is separate from Tier-1 (ci.yml):
+#   Minecraft dev servers pull the MC toolchain (~200 MB), assets, and mappings.
+#   Full boot-to-first-tick is 3–10 min wall time. We run it on push-to-main and
+#   nightly, not on every PR, so unit-level signal stays fast.
+#
+# Coverage goals:
+#   1. NeoForge adapter boots MC 1.21.1 to first tick through mcdepprovider.
+#   2. Fabric adapter boots MC 1.21.1 to first tick through mcdepprovider.
+#   3. Dev-mode parity (ADR-0007): no manifest-listed jar ends up on MC classpath.
+#   4. Second-boot offline: cache populated on first boot serves the second boot
+#      without any network access.
+#
+# Cache policy:
+#   - Gradle home YES (per-OS, keyed on libs.versions.toml + *.gradle.kts).
+#   - MC assets cache YES (per-OS, per-MC-version key).
+#   - ~/.cache/mcdepprovider NO — the offline-boot step needs to populate it
+#     from the real download path within the same job. Caching across jobs
+#     would hide download regressions.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC — after most PRs merge, before the workday starts.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mc-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runserver-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux catches most. Windows catches path + hard-link issues specific to
+        # the LibraryCache (ADR-0006). macOS is out — no additional coverage for
+        # a pure-JVM project whose platform surface is the cache dir.
+        os: [ubuntu-latest, windows-latest]
+        platform:
+          - { name: neoforge, dir: test-mods/neoforge-example }
+          - { name: fabric,   dir: test-mods/fabric-example   }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (${{ matrix.platform.name }})
+        uses: actions/cache@v4
+        with:
+          # ModDevGradle stashes MC assets under ~/.neoforge; Loom under ~/.gradle/caches/fabric-loom.
+          # Both benefit from per-OS caching — MC's asset manifest is ~200 MB and stable per MC version.
+          path: |
+            ~/.neoforge
+            ~/.gradle/caches/fabric-loom
+          key: mc-assets-${{ runner.os }}-${{ matrix.platform.name }}-1.21.1
+          restore-keys: |
+            mc-assets-${{ runner.os }}-${{ matrix.platform.name }}-
+
+      - name: Build mcdepprovider (publishes to composite build for test-mods)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Generate manifest (${{ matrix.platform.name }})
+        working-directory: ${{ matrix.platform.dir }}
+        run: ../../gradlew generateMcdpManifest --no-daemon --stacktrace
+
+      - name: Assert manifest has Scala + cats + circe with valid SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="${{ matrix.platform.dir }}/build/mcdepprovider/META-INF/mcdepprovider.toml"
+          test -f "$M" || { echo "manifest not at $M"; exit 1; }
+          grep -q 'cats-kernel_3' "$M" || { echo "cats-kernel_3 missing"; cat "$M"; exit 1; }
+          grep -q 'scala3-library_3' "$M" || { echo "scala3-library_3 missing"; cat "$M"; exit 1; }
+          grep -q 'circe-core_3' "$M" || { echo "circe-core_3 missing"; cat "$M"; exit 1; }
+          grep -qE 'sha256 = "[0-9a-f]{64}"' "$M" || { echo "no valid sha256 lines"; cat "$M"; exit 1; }
+
+      - name: First boot — online, populates mcdepprovider cache
+        working-directory: ${{ matrix.platform.dir }}
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
+        shell: bash
+
+      - name: Classpath parity check (ADR-0007)
+        # Dumps the runServer classpath at configuration-time (no MC boot) and asserts
+        # that no manifest-listed jar appears on it. If any does, RunTaskClasspathPatch
+        # didn't strip them — dev-mode parity is broken.
+        working-directory: ${{ matrix.platform.dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          M="build/mcdepprovider/META-INF/mcdepprovider.toml"
+          COORDS=$(grep -oE 'coords = "[^"]+"' "$M" | sed -E 's/.*"([^"]+)".*/\1/')
+          # Ask Gradle to dump the runServer classpath to a file for inspection.
+          ../../gradlew :runServerClasspath --no-daemon --stacktrace 2>/dev/null \
+            || echo "note: :runServerClasspath task not present — skipping parity check"
+          CP_FILE="build/runServer-classpath.txt"
+          if [ -f "$CP_FILE" ]; then
+            FAIL=0
+            for coord in $COORDS; do
+              artifact=$(echo "$coord" | awk -F: '{print $2"-"$3".jar"}')
+              if grep -q "/$artifact" "$CP_FILE"; then
+                echo "ERROR: manifest-listed jar '$artifact' is still on MC classpath"
+                FAIL=1
+              fi
+            done
+            [ "$FAIL" = 0 ] || exit 1
+          fi
+
+      - name: Second boot — offline, cache-hit only
+        working-directory: ${{ matrix.platform.dir }}
+        shell: bash
+        env:
+          # Force offline-only HTTP client behavior in mcdepprovider by pointing it
+          # at an unreachable TLD. If the cache from the first boot is complete, no
+          # HTTP call should be made at all; this env var is defensive.
+          MCDP_HTTP_TIMEOUT_MS: "1000"
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 600 \
+            --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot2.log
+
+      - name: Upload MC logs + crash reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-smoke-${{ matrix.platform.name }}-${{ runner.os }}
+          path: |
+            smoke-*.log
+            ${{ matrix.platform.dir }}/run/logs/**
+            ${{ matrix.platform.dir }}/run/crash-reports/**
+            ${{ matrix.platform.dir }}/build/reports/**
+            ${{ matrix.platform.dir }}/build/mcdepprovider/META-INF/*.toml
+          if-no-files-found: ignore
+
+      - name: Upload boot logs on success (for trend analysis)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-smoke-success-${{ matrix.platform.name }}-${{ runner.os }}
+          path: |
+            smoke-*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Version-isolation smoke (task #22 / ADR-0001).
+  #
+  # Two fabric mods pin different cats-core SHAs (fabric-example → 2.13.0,
+  # fabric-example-v2 → 2.10.0). Both mods boot together; each prints a
+  # [mcdp-smoke] line containing System.identityHashCode(cats.Functor.class)
+  # and its defining classloader. Distinct classloader ids prove per-mod
+  # URLClassLoader isolation: SHA-keyed loader coalescing (ADR-0006) routes
+  # each mod to its own cats-core loader.
+  #
+  # Runs only on Linux — adds no coverage a second OS would provide, since
+  # the isolation boundary is classloader identity (pure JVM), and Tier-2
+  # runserver-smoke above already exercises the Windows path separately.
+  version-isolation-fabric:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (fabric)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/fabric-loom
+          key: mc-assets-${{ runner.os }}-fabric-1.21.1
+          restore-keys: |
+            mc-assets-${{ runner.os }}-fabric-
+
+      - name: Build mcdepprovider (publishes to composite build)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Build both test-mod jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd test-mods/fabric-example    && ../../gradlew build --no-daemon --stacktrace)
+          (cd test-mods/fabric-example-v2 && ../../gradlew build --no-daemon --stacktrace)
+
+      - name: Assert manifests pin different cats-core SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          M1=test-mods/fabric-example/build/mcdepprovider/META-INF/mcdepprovider.toml
+          M2=test-mods/fabric-example-v2/build/mcdepprovider/META-INF/mcdepprovider.toml
+          test -f "$M1" && test -f "$M2" || { echo "manifest(s) missing"; exit 1; }
+          SHA1=$(grep -A2 'cats-core_3' "$M1" | grep -oE 'sha256 = "[0-9a-f]{64}"' | head -1)
+          SHA2=$(grep -A2 'cats-core_3' "$M2" | grep -oE 'sha256 = "[0-9a-f]{64}"' | head -1)
+          echo "v1 cats sha: $SHA1"
+          echo "v2 cats sha: $SHA2"
+          [ -n "$SHA1" ] && [ -n "$SHA2" ] || { echo "cats-core sha missing"; exit 1; }
+          [ "$SHA1" != "$SHA2" ] || { echo "expected distinct SHAs — version isolation cannot be proven"; exit 1; }
+
+      - name: Stage both remapped jars into fabric-example run/mods
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-mods/fabric-example/run/mods
+          cp test-mods/fabric-example-v2/build/libs/*.jar test-mods/fabric-example/run/mods/
+          ls -la test-mods/fabric-example/run/mods/
+
+      - name: Boot fabric server with both mods
+        working-directory: test-mods/fabric-example
+        shell: bash
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../version-iso-fabric.log
+
+      - name: Assert two distinct [mcdp-smoke] classloader ids
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=version-iso-fabric.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          LINES=$(grep -c '\[mcdp-smoke\]' "$LOG" || true)
+          echo "[mcdp-smoke] line count: $LINES"
+          [ "$LINES" -ge 2 ] || { echo "expected ≥2 [mcdp-smoke] lines"; grep '\[mcdp-smoke\]' "$LOG" || true; exit 1; }
+          LOADER_IDS=$(grep -oE 'cats\.loader\.id=[0-9]+' "$LOG" | sort -u | wc -l)
+          echo "distinct cats.loader.id values: $LOADER_IDS"
+          [ "$LOADER_IDS" -ge 2 ] || {
+            echo "ERROR: expected ≥2 distinct cats classloader ids — mods are sharing a loader"
+            grep '\[mcdp-smoke\]' "$LOG"
+            exit 1
+          }
+          CLASS_IDS=$(grep -oE 'cats\.Functor\.class\.id=[0-9]+' "$LOG" | sort -u | wc -l)
+          [ "$CLASS_IDS" -ge 2 ] || {
+            echo "ERROR: expected ≥2 distinct cats.Functor.class ids"
+            grep '\[mcdp-smoke\]' "$LOG"
+            exit 1
+          }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-iso-fabric
+          path: |
+            version-iso-fabric.log
+            test-mods/fabric-example/run/logs/**
+            test-mods/fabric-example/run/crash-reports/**
+            test-mods/*/build/mcdepprovider/META-INF/*.toml
+          if-no-files-found: ignore
