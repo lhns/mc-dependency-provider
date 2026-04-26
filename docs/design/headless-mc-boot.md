@@ -7,11 +7,11 @@ with this design in mind and needs no structural change to execute it.
 
 ## Goal
 
-Prove mc-lib-provider boots Minecraft 1.21.1 to first tick on each platform
+Prove mcdepprovider boots Minecraft 1.21.1 to first tick on each platform
 without a GUI, via the same `runServer` path that CI uses. "Green" = two
 successful runs per platform:
 
-1. Cold cache: wipe `~/.cache/mc-lib-provider/` and the platform's MC asset
+1. Cold cache: wipe `~/.cache/mcdepprovider/` and the platform's MC asset
    cache, boot to the first-tick log marker, shut down cleanly.
 2. Warm cache: re-run with network disconnected (or firewall-blocked); identical
    result. This pins the ADR-0007 dev-mode parity claim — no hidden network
@@ -48,7 +48,7 @@ Fatal patterns (already wired):
 - `java.lang.module.ResolutionException` — a dep leaked into a named module layer.
 - `java.lang.NoClassDefFoundError` — a lib classloader chain is wrong.
 - `java.lang.ClassCastException` — shared-package identity is not preserved.
-- `mc-lib-provider: .*failed to` — our own diagnostics.
+- `mcdepprovider: .*failed to` — our own diagnostics.
 
 ## Per-platform mechanics
 
@@ -61,8 +61,8 @@ Fatal patterns (already wired):
    doesn't abort on the EULA prompt.
 2. Loom's Knot classloader boots, loads `fabric-loader`, which scans
    `mods/` + the Gradle dev-mode mods (ours) for `fabric.mod.json`.
-3. The `mclibprovider` `languageAdapters` entry picks up `McLibLanguageAdapter`;
-   `McLibPreLaunch` runs `ManifestConsumer` across all mods before
+3. The `mcdepprovider` `languageAdapters` entry picks up `McdpLanguageAdapter`;
+   `McdpPreLaunch` runs `ManifestConsumer` across all mods before
    `adapter.create` fires for any mod.
 4. `ExampleMod.onLoad()` prints `[mclib-smoke] …` — the marker our Tier-2
    assertions look for. Then the normal `MinecraftServer` boot continues to
@@ -88,9 +88,9 @@ Fatal patterns (already wired):
    our mod jar. `RunTaskClasspathPatch` (ADR-0007) strips manifest-listed deps
    from that classpath so the `runServer` classpath matches production.
 2. NeoForge's bootstrap finds `IModLanguageLoader` via `ServiceLoader`; our
-   `McLibLanguageLoader` registers for `modLoader = "mclibprovider"`.
+   `McdpLanguageLoader` registers for `modLoader = "mcdepprovider"`.
 3. For each mod declaring that loader in `neoforge.mods.toml`, `loadMod`
-   reads the mod's `mclibprovider.toml`, invokes `ManifestConsumer`, then
+   reads the mod's `mcdepprovider.toml`, invokes `ManifestConsumer`, then
    `LoaderCoordinator.register`. Returns a `FMLModContainer`-equivalent.
 4. NeoForge drives event-bus construction, registry binding, server tick loop.
 
@@ -137,7 +137,7 @@ For each platform, run through:
 ./gradlew build --no-daemon
 
 # 1. Clean state — force cold cache.
-rm -rf ~/.cache/mc-lib-provider
+rm -rf ~/.cache/mcdepprovider
 rm -rf test-mods/fabric-example/run/world test-mods/neoforge-example/run/world
 
 # 2. First boot (cold).
@@ -156,7 +156,7 @@ python3 .gitea/scripts/mc_smoke.py \
 # 4. Second boot (warm).
 #    On Linux: sudo ip link set <iface> down (requires sudo).
 #    On Windows: Disable-NetAdapter -Name Ethernet (PowerShell admin).
-#    On dev: `MCLIB_PROVIDER_HTTP_TIMEOUT_MS=1000` makes the consumer fail
+#    On dev: `MCDP_HTTP_TIMEOUT_MS=1000` makes the consumer fail
 #    fast if it tries to download anything. Our runtime respects it.
 python3 .gitea/scripts/mc_smoke.py \
     --cwd test-mods/fabric-example \
@@ -168,7 +168,7 @@ python3 .gitea/scripts/mc_smoke.py \
 Repeat for `test-mods/neoforge-example`. On success, the two logs should:
 
 - Contain `Done (…s)!` once each.
-- Contain `[mclib-smoke] mod=fabric_example name=mc-lib-provider cats.Functor.class.id=… cats.loader.id=…` once in each.
+- Contain `[mclib-smoke] mod=fabric_example name=mcdepprovider cats.Functor.class.id=… cats.loader.id=…` once in each.
 - Contain no `Invalid package name`, no `ResolutionException`, no
   `NoClassDefFoundError`, no `ClassCastException`.
 - The cold log additionally shows `ManifestConsumer` fetching from a remote
@@ -182,10 +182,10 @@ When a run fails, the diagnosis is:
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
-| `SHA-256 mismatch for <coord>` | Manifest SHA stale vs Maven jar — mod rebuilt without regenerating manifest | `mclibprovider.toml` under `build/mc-lib-provider/META-INF/` |
+| `SHA-256 mismatch for <coord>` | Manifest SHA stale vs Maven jar — mod rebuilt without regenerating manifest | `mcdepprovider.toml` under `build/mcdepprovider/META-INF/` |
 | `Invalid package name: 'byte'` | Dep jar ended up in a NeoForge module layer instead of our URLClassLoader | ADR-0001 / ADR-0002; check `RunTaskClasspathPatch` fired |
-| `ClassCastException: cats.Foo … cannot be cast to cats.Foo` | Shared-package prefix mis-set; both the mod loader and MC loader created a copy | `McLibProviderExtension.sharedPackages` |
-| `NoClassDefFoundError: <provider internal>` | `McLibLanguageLoader` / `McLibLanguageAdapter` not packaged into the provider's own mod jar | check `neoforge/build/libs/` or `fabric/build/libs/` contents |
+| `ClassCastException: cats.Foo … cannot be cast to cats.Foo` | Shared-package prefix mis-set; both the mod loader and MC loader created a copy | `McdpProviderExtension.sharedPackages` |
+| `NoClassDefFoundError: <provider internal>` | `McdpLanguageLoader` / `McdpLanguageAdapter` not packaged into the provider's own mod jar | check `neoforge/build/libs/` or `fabric/build/libs/` contents |
 | Silent hang, no markers | Gradle is resolving mappings; check for `Task :downloadMappings` or similar in stdout | network reachability to the mappings repo |
 | `HTTP 403` on a cats/circe URL | First declared Maven repo doesn't host that artifact; manifest points to the wrong repo | ADR on multi-repo URL resolution (#25 / `05dbb71`) — already fixed |
 

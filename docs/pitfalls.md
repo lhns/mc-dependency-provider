@@ -1,6 +1,6 @@
 # Pitfalls and gotchas
 
-Each entry is a real failure mode seen during mc-lib-provider development, the
+Each entry is a real failure mode seen during mcdepprovider development, the
 symptom, the root cause, and the fix. Kept chronologically within each section
 so newer entries appear last.
 
@@ -40,7 +40,7 @@ not on the ModContainer. Our ModClassLoader had only the resources dir on
 its URL list, so `findClass(com.example.ExampleMod)` failed and the loader
 fell through to Knot, which had the class on its classpath.
 
-**Fix.** `McLibPreLaunch.expandDevRoots` walks from each root's
+**Fix.** `McdpPreLaunch.expandDevRoots` walks from each root's
 `build/` parent to `classes/*/main` siblings and adds the ones that exist to
 the ModClassLoader's URL list. `LoaderCoordinator.register` gained a
 `List<Path> modPaths` overload.
@@ -59,13 +59,13 @@ so v1's entry class still resolved through Knot.
 
 ### Mixin bridge fails with two mods; works with one
 
-**Symptom.** Single-mod boot applies the `@McLibMixin` bridge fine. Drop a
+**Symptom.** Single-mod boot applies the `@McdpMixin` bridge fine. Drop a
 second mod in and boot crashes with
 `IllegalStateException: loadMixinImpl: no ModClassLoader registered for mixin
 net.minecraft.server.MinecraftServer (modId='')`.
 
-**Root cause.** `McLibProvider.loadMixinImpl` uses `StackWalker` to find the
-calling class, which it expects to be the `@McLibMixin`-annotated mixin
+**Root cause.** `McdpProvider.loadMixinImpl` uses `StackWalker` to find the
+calling class, which it expects to be the `@McdpMixin`-annotated mixin
 class. Mixin typically merges the annotated method body into the target
 class — so the runtime stack frame under the static-field initializer is
 `MinecraftServer.<clinit>`, not the original mixin class. The single-mod
@@ -73,7 +73,7 @@ fallback `if (MOD_LOADERS_BY_ID.size() == 1) return the only one` was
 masking the issue.
 
 **Fix (pending).** Either pass `modId` explicitly at the call site, or have
-`McLibPreLaunch` parse each mod's Mixin configs and call `registerMixinOwner`
+`McdpPreLaunch` parse each mod's Mixin configs and call `registerMixinOwner`
 ahead of time. Documented as follow-up; not v0.1-blocking.
 
 ## Caching
@@ -98,9 +98,9 @@ adapter.
 
 **Symptom.** The gradle-plugin defined a set of mandatory Maven group
 exclusions via `convention(...)` (Minecraft, NeoForge, Fabric, Mojang,
-mclibprovider). If a mod author called `excludeGroup("org.ow2.asm")` in
+mcdepprovider). If a mod author called `excludeGroup("org.ow2.asm")` in
 their own buildscript, all the mandatory exclusions vanished and the
-generated manifest self-referenced `io.github.mclibprovider:*`.
+generated manifest self-referenced `de.lhns.mcdp:*`.
 
 **Root cause.** Gradle's lazy `ListProperty.convention(...)` is the value
 used *only when the property has no other source*. Calling `.add()` on it
@@ -112,18 +112,18 @@ the convention is gone.
 so they're always in the final value regardless of user additions.
 
 (Both the `excludeGroup` DSL and the merge logic were later retired entirely
-in favor of an opt-in `mcLibImplementation` configuration — the mod author
+in favor of an opt-in `mcdepImplementation` configuration — the mod author
 declares which deps go in the manifest instead of declaring which to leave
 out. The `ListProperty.convention` gotcha still applies wherever the pattern
 shows up.)
 
-### `prepareMcLibDevCache` wasn't a dependency of run tasks
+### `prepareMcdpDevCache` wasn't a dependency of run tasks
 
 **Symptom.** `runServer` on a fresh machine hit
-`mc-lib-provider: failed to resolve libraries for <mod>` on first boot
+`mcdepprovider: failed to resolve libraries for <mod>` on first boot
 because the SLP cache was empty.
 
-**Root cause.** The gradle-plugin registered `prepareMcLibDevCache` but
+**Root cause.** The gradle-plugin registered `prepareMcdpDevCache` but
 never wired it as a dependency of the actual run tasks.
 
 **Fix.** In an `afterEvaluate` hook, iterate `ext.getPatchRunTasks()` and
@@ -182,14 +182,14 @@ empty map.
 through `IModInfo.getModProperties()`. Inline keys on `[[mods]]` are
 discarded.
 
-**Fix.** Put any mc-lib-provider-specific keys under
+**Fix.** Put any mcdepprovider-specific keys under
 `[modproperties.<modId>]`.
 
 (The original use case for this — declaring the entry class via
 `[modproperties.<modId>] entrypoint = "..."` — was retired in favor of the
 vanilla `@Mod` annotation discovered via `ModFileScanData.getAnnotatedBy`.
 The `[modproperties.<modId>]` advice still applies for any future
-mclibprovider-specific keys.)
+mcdepprovider-specific keys.)
 
 ### `java.nio.file.FileSystems.newFileSystem(dir)` throws on dev-mode dirs
 
@@ -217,8 +217,8 @@ NeoForge game module layer also has copies on its classpath as named
 modules. JPMS refuses the split.
 
 **Fix.** In `shadowJar`: `exclude("org/checkerframework/**")` and relocate
-`org.tomlj` → `io.github.mclibprovider.shaded.tomlj`,
-`org.antlr` → `io.github.mclibprovider.shaded.antlr`.
+`org.tomlj` → `de.lhns.mcdp.shaded.tomlj`,
+`org.antlr` → `de.lhns.mcdp.shaded.antlr`.
 
 ### NeoForge per-mod `loadMod` doesn't see all mods
 
@@ -241,13 +241,13 @@ crashing.
 **Symptom.** `Unresolved reference: dependency` in the test-mod's
 `build.gradle.kts`.
 
-**Fix.** Use `implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")`.
+**Fix.** Use `implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")`.
 FML auto-discovers the adapter on the runtime classpath via its bundled
 `neoforge.mods.toml` + `META-INF/services/` entry.
 
 ### `localRuntime` config doesn't use project repositories
 
-**Symptom.** `Could not find io.github.mclibprovider:neoforge`.
+**Symptom.** `Could not find de.lhns.mcdp:neoforge`.
 
 **Fix.** Add project-level
 `repositories { mavenLocal(); mavenCentral(); maven("https://maven.neoforged.net/releases") }`

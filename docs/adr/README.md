@@ -1,6 +1,8 @@
 # Architecture Decision Records
 
-This directory records the significant architectural decisions made for mc-lib-provider. Each ADR uses the MADR short form:
+> **Note on naming.** The project was originally called `mc-lib-provider` and was renamed to **MC Dependency Provider** (`mcdp`) shortly before v0.1.0. ADRs 0001–0013 retain their original wording — they're records of decisions made at the time, and editing them in-place would obscure the historical context. Where an ADR mentions `mc-lib-provider`, `mclibprovider`, or class names like `McLibProvider`, mentally substitute the current names: `mcdp` / `mcdepprovider` / `McdpProvider`. Code paths and identifier strings have been updated everywhere except inside these ADR narratives.
+
+This directory records the significant architectural decisions made for the project. Each ADR uses the MADR short form:
 
 - **Context** — the problem and the constraints at the time of the decision
 - **Decision** — what was decided
