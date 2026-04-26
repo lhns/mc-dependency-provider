@@ -32,7 +32,6 @@ configurations {
 }
 
 dependencies {
-    implementation(libs.tomlj)
     compileOnly(libs.jetbrains.annotations)
 
     "fullImplementation"(libs.maven.resolver.supplier)

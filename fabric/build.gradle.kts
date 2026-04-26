@@ -43,15 +43,6 @@ tasks.named<ShadowJar>("shadowJar") {
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    // Same shading the neoforge subproject does. Fabric's Knot doesn't use JPMS
-    // module layers, so unshaded tomlj would functionally work — but a Fabric
-    // mod author who also ships tomlj would split-package collide with us, and
-    // checker-qual annotations have no business in a runtime artifact. Match
-    // neoforge for consistency.
-    exclude("org/checkerframework/**")
-    exclude("META-INF/versions/**/org/checkerframework/**")
-    relocate("org.tomlj", "de.lhns.mcdp.shaded.tomlj")
-    relocate("org.antlr", "de.lhns.mcdp.shaded.antlr")
 }
 
 tasks.named("assemble") {

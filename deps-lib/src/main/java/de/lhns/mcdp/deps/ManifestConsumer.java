@@ -15,7 +15,8 @@ import java.util.List;
  * by SHA. Missing libraries are downloaded from their URL and verified. Hash mismatches abort.
  * <p>
  * Runtime-only dependency graph: {@code java.net.http} + {@code java.security.MessageDigest}. No
- * Aether, no Coursier, no external deps besides tomlj (via {@link ManifestIo}).
+ * Aether, no Coursier, no external runtime deps. {@link ManifestIo} reads via the in-tree
+ * {@link MiniToml}.
  */
 public final class ManifestConsumer {
 

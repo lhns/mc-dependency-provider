@@ -1,10 +1,5 @@
 package de.lhns.mcdp.deps;
 
-import org.tomlj.Toml;
-import org.tomlj.TomlArray;
-import org.tomlj.TomlParseResult;
-import org.tomlj.TomlTable;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -14,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * TOML serialization for {@link Manifest}. The schema:
@@ -38,31 +34,33 @@ public final class ManifestIo {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public static Manifest read(InputStream in) throws IOException {
-        TomlParseResult toml = Toml.parse(in);
-        if (toml.hasErrors()) {
-            throw new IOException("Invalid manifest TOML: " + toml.errors().get(0).toString());
+        String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        Map<String, Object> root;
+        try {
+            root = MiniToml.parse(text);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid manifest TOML: " + e.getMessage(), e);
         }
 
-        String lang = requireString(toml, "lang");
+        String lang = requireScalar(root, "lang");
 
         List<String> sharedPackages = new ArrayList<>();
-        TomlArray spArray = toml.getArray("shared_packages");
-        if (spArray != null) {
-            for (int i = 0; i < spArray.size(); i++) {
-                sharedPackages.add(spArray.getString(i));
-            }
+        Object sp = root.get("shared_packages");
+        if (sp instanceof List<?> list) {
+            for (Object o : list) sharedPackages.add((String) o);
         }
 
         List<Manifest.Library> libraries = new ArrayList<>();
-        TomlArray libArray = toml.getArray("libraries");
-        if (libArray != null) {
-            for (int i = 0; i < libArray.size(); i++) {
-                TomlTable lib = libArray.getTable(i);
+        Object libs = root.get("libraries");
+        if (libs instanceof List<?> list) {
+            for (Object o : list) {
+                Map<String, String> lib = (Map<String, String>) o;
                 libraries.add(new Manifest.Library(
-                        requireString(lib, "coords"),
-                        requireString(lib, "url"),
-                        requireString(lib, "sha256")));
+                        requireKey(lib, "coords"),
+                        requireKey(lib, "url"),
+                        requireKey(lib, "sha256")));
             }
         }
 
@@ -109,8 +107,16 @@ public final class ManifestIo {
         return sw.toString();
     }
 
-    private static String requireString(TomlTable table, String key) throws IOException {
-        String v = table.getString(key);
+    private static String requireScalar(Map<String, Object> table, String key) throws IOException {
+        Object v = table.get(key);
+        if (!(v instanceof String s)) {
+            throw new IOException("Missing required key: " + key);
+        }
+        return s;
+    }
+
+    private static String requireKey(Map<String, String> table, String key) throws IOException {
+        String v = table.get(key);
         if (v == null) {
             throw new IOException("Missing required key: " + key);
         }

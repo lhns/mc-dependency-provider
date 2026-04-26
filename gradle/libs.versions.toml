@@ -1,5 +1,4 @@
 [versions]
-tomlj = "1.1.1"
 maven-resolver = "1.9.22"
 maven-resolver-provider = "3.9.9"
 junit = "5.11.3"
@@ -11,8 +10,6 @@ neoforge-fml-loader = "4.0.42"
 neoforge-bus = "8.0.5"
 
 [libraries]
-tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
-
 maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "maven-resolver" }
 maven-resolver-provider = { module = "org.apache.maven:maven-resolver-provider", version.ref = "maven-resolver-provider" }
 

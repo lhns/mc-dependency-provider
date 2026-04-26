@@ -63,15 +63,6 @@ tasks.named<ShadowJar>("shadowJar") {
             "Automatic-Module-Name" to "mcdepprovider"
         )
     }
-    // NeoForge loads the mcdepprovider jar as an automatic JPMS module on its
-    // game module layer. Transitive packages from tomlj (antlr, checker-qual)
-    // split-package against NeoForge's own copies. Relocate everything we bundle
-    // from third-parties into our private namespace. Annotation-only packages
-    // can just be excluded.
-    exclude("org/checkerframework/**")
-    exclude("META-INF/versions/**/org/checkerframework/**")
-    relocate("org.tomlj", "de.lhns.mcdp.shaded.tomlj")
-    relocate("org.antlr", "de.lhns.mcdp.shaded.antlr")
 }
 
 tasks.named("assemble") {

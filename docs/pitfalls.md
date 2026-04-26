@@ -220,6 +220,14 @@ modules. JPMS refuses the split.
 `org.tomlj` → `de.lhns.mcdp.shaded.tomlj`,
 `org.antlr` → `de.lhns.mcdp.shaded.antlr`.
 
+(Both relocations were retired entirely once `tomlj` was replaced with the
+in-tree `MiniToml` parser. The `Manifest` schema is closed and we own both
+sides of read/write, so a ~100-LOC purpose-built parser handles every shape
+the producer emits without antlr's runtime overhead. Net result: fabric jar
+748K → 52K, neoforge 556K → 52K. The fix-pattern above is still the right
+answer whenever you have to bundle a JPMS-noisy library into a shaded mod
+jar — kept here for that reuse.)
+
 ### NeoForge per-mod `loadMod` doesn't see all mods
 
 **Symptom.** Applying StdlibPromotion naively on NeoForge required the full
