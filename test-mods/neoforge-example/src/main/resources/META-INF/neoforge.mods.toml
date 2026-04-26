@@ -6,9 +6,9 @@ issueTrackerURL = "https://gitea.lhns.de/lhns/mcdepprovider/issues"
 [[mods]]
 modId = "neoforge_example"
 version = "${version}"
-displayName = "mcdepprovider NeoForge example"
-description = "Smoke-test mod that exercises the mcdepprovider Scala entrypoint + Maven dep resolution path on NeoForge."
-authors = "mcdepprovider contributors"
+displayName = "MC Dependency Provider NeoForge example"
+description = "Smoke-test mod that exercises the MC Dependency Provider Scala entrypoint + Maven dep resolution path on NeoForge."
+authors = "MC Dependency Provider contributors"
 
 [[dependencies.neoforge_example]]
 modId = "neoforge"

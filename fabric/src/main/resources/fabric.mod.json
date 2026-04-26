@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "mcdepprovider",
   "version": "${version}",
-  "name": "mcdepprovider",
+  "name": "MC Dependency Provider",
   "description": "JVM-language mod provider with per-mod Maven dependency resolution for Fabric.",
-  "authors": ["mcdepprovider contributors"],
+  "authors": ["MC Dependency Provider contributors"],
   "contact": {
     "sources": "https://gitea.lhns.de/lhns/mcdepprovider"
   },
@@ -13,12 +13,12 @@
   "environment": "*",
 
   "languageAdapters": {
-    "mcdepprovider": "io.github.mcdepprovider.fabric.McLibLanguageAdapter"
+    "mcdepprovider": "de.lhns.mcdp.fabric.McdpLanguageAdapter"
   },
 
   "entrypoints": {
     "preLaunch": [
-      "io.github.mcdepprovider.fabric.McLibPreLaunch"
+      "de.lhns.mcdp.fabric.McdpPreLaunch"
     ]
   },
 

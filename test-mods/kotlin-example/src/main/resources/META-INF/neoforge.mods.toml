@@ -6,9 +6,9 @@ issueTrackerURL = "https://gitea.lhns.de/lhns/mcdepprovider/issues"
 [[mods]]
 modId = "kotlin_example"
 version = "${version}"
-displayName = "mcdepprovider Kotlin example"
-description = "Smoke-test mod that exercises the mcdepprovider Kotlin entrypoint + Maven dep resolution on NeoForge."
-authors = "mcdepprovider contributors"
+displayName = "MC Dependency Provider Kotlin example"
+description = "Smoke-test mod that exercises the MC Dependency Provider Kotlin entrypoint + Maven dep resolution on NeoForge."
+authors = "MC Dependency Provider contributors"
 
 [[dependencies.kotlin_example]]
 modId = "neoforge"
