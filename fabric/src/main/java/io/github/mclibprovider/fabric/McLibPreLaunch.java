@@ -26,7 +26,7 @@ import java.util.Optional;
 /**
  * Fabric pre-launch bootstrap. Runs before any {@link McLibLanguageAdapter#create} invocation.
  * <p>
- * For every mod carrying {@code META-INF/mc-jvm-mod.toml}, this:
+ * For every mod carrying {@code META-INF/mclibprovider.toml}, this:
  * <ol>
  *   <li>parses the manifest;</li>
  *   <li>downloads + SHA-verifies every listed library into the shared cache;</li>
@@ -36,7 +36,7 @@ import java.util.Optional;
  */
 public final class McLibPreLaunch implements PreLaunchEntrypoint {
 
-    private static final String MANIFEST_PATH = "META-INF/mc-jvm-mod.toml";
+    private static final String MANIFEST_PATH = "META-INF/mclibprovider.toml";
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McLibPreLaunch.class.getClassLoader());

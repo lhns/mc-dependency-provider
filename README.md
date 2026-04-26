@@ -50,7 +50,7 @@ mclibprovider {
 At build time, the plugin:
 
 - Runs Apache Maven Resolver (Aether) over your `runtimeClasspath`.
-- Writes `META-INF/mc-jvm-mod.toml` into your mod jar with every transitive dep's coords, URL, and SHA-256.
+- Writes `META-INF/mclibprovider.toml` into your mod jar with every transitive dep's coords, URL, and SHA-256.
 - Hard-links resolved jars into `~/.cache/mc-lib-provider/libs/<sha>.jar` so dev-mode `runClient` / `runServer` hits the cache instead of re-downloading (ADR-0007).
 
 At runtime, the Fabric / NeoForge adapter reads the manifest, downloads anything not yet cached, verifies SHAs, and builds a per-mod `URLClassLoader`. Your mod's entry point is instantiated through that loader.

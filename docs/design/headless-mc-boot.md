@@ -90,7 +90,7 @@ Fatal patterns (already wired):
 2. NeoForge's bootstrap finds `IModLanguageLoader` via `ServiceLoader`; our
    `McLibLanguageLoader` registers for `modLoader = "mclibprovider"`.
 3. For each mod declaring that loader in `neoforge.mods.toml`, `loadMod`
-   reads the mod's `mc-jvm-mod.toml`, invokes `ManifestConsumer`, then
+   reads the mod's `mclibprovider.toml`, invokes `ManifestConsumer`, then
    `LoaderCoordinator.register`. Returns a `FMLModContainer`-equivalent.
 4. NeoForge drives event-bus construction, registry binding, server tick loop.
 
@@ -182,7 +182,7 @@ When a run fails, the diagnosis is:
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
-| `SHA-256 mismatch for <coord>` | Manifest SHA stale vs Maven jar — mod rebuilt without regenerating manifest | `mc-jvm-mod.toml` under `build/mc-lib-provider/META-INF/` |
+| `SHA-256 mismatch for <coord>` | Manifest SHA stale vs Maven jar — mod rebuilt without regenerating manifest | `mclibprovider.toml` under `build/mc-lib-provider/META-INF/` |
 | `Invalid package name: 'byte'` | Dep jar ended up in a NeoForge module layer instead of our URLClassLoader | ADR-0001 / ADR-0002; check `RunTaskClasspathPatch` fired |
 | `ClassCastException: cats.Foo … cannot be cast to cats.Foo` | Shared-package prefix mis-set; both the mod loader and MC loader created a copy | `McLibProviderExtension.sharedPackages` |
 | `NoClassDefFoundError: <provider internal>` | `McLibLanguageLoader` / `McLibLanguageAdapter` not packaged into the provider's own mod jar | check `neoforge/build/libs/` or `fabric/build/libs/` contents |

@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  * Walks the project's resolved {@code runtimeClasspath}, filters out platform-provided deps
  * (Minecraft, NeoForge, Fabric, the provider itself — configured via
  * {@link McLibProviderExtension#getExclusions()}), and emits
- * {@code META-INF/mc-jvm-mod.toml}.
+ * {@code META-INF/mclibprovider.toml}.
  * <p>
  * URL reconstruction: tries each Maven repository declared on the project in order and picks the
  * first one whose URL pattern is a plausible source. We never re-download — Gradle already has

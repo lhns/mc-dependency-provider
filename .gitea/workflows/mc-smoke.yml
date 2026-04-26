@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          M="${{ matrix.platform.dir }}/build/mc-lib-provider/META-INF/mc-jvm-mod.toml"
+          M="${{ matrix.platform.dir }}/build/mc-lib-provider/META-INF/mclibprovider.toml"
           test -f "$M" || { echo "manifest not at $M"; exit 1; }
           grep -q 'cats-kernel_3' "$M" || { echo "cats-kernel_3 missing"; cat "$M"; exit 1; }
           grep -q 'scala3-library_3' "$M" || { echo "scala3-library_3 missing"; cat "$M"; exit 1; }
@@ -119,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          M="build/mc-lib-provider/META-INF/mc-jvm-mod.toml"
+          M="build/mc-lib-provider/META-INF/mclibprovider.toml"
           COORDS=$(grep -oE 'coords = "[^"]+"' "$M" | sed -E 's/.*"([^"]+)".*/\1/')
           # Ask Gradle to dump the runServer classpath to a file for inspection.
           ../../gradlew :runServerClasspath --no-daemon --stacktrace 2>/dev/null \
@@ -238,8 +238,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          M1=test-mods/fabric-example/build/mc-lib-provider/META-INF/mc-jvm-mod.toml
-          M2=test-mods/fabric-example-v2/build/mc-lib-provider/META-INF/mc-jvm-mod.toml
+          M1=test-mods/fabric-example/build/mc-lib-provider/META-INF/mclibprovider.toml
+          M2=test-mods/fabric-example-v2/build/mc-lib-provider/META-INF/mclibprovider.toml
           test -f "$M1" && test -f "$M2" || { echo "manifest(s) missing"; exit 1; }
           SHA1=$(grep -A2 'cats-core_3' "$M1" | grep -oE 'sha256 = "[0-9a-f]{64}"' | head -1)
           SHA2=$(grep -A2 'cats-core_3' "$M2" | grep -oE 'sha256 = "[0-9a-f]{64}"' | head -1)

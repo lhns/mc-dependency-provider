@@ -13,7 +13,7 @@ Minecraft itself uses the Z-X pattern: `version.json` carries a pre-resolved fla
 
 ## Decision
 
-Build-time resolution. The mod's manifest (`META-INF/mc-jvm-mod.toml`) lists every library including transitives, each entry carrying `coords`, `url`, and `sha256`. The runtime's `ManifestConsumer` only downloads listed URLs and verifies hashes. There is no Maven resolver code in the runtime.
+Build-time resolution. The mod's manifest (`META-INF/mclibprovider.toml`) lists every library including transitives, each entry carrying `coords`, `url`, and `sha256`. The runtime's `ManifestConsumer` only downloads listed URLs and verifies hashes. There is no Maven resolver code in the runtime.
 
 Resolution is delegated to the mod author's build tool via the shared `deps-lib` library (see ADR-0004). The Gradle plugin walks `configurations.runtimeClasspath` and hands coords + repos to `deps-lib`'s `ManifestProducer`, which uses Apache Maven Resolver (Aether) to compute the closure. The plugin writes the resulting manifest into the mod jar.
 

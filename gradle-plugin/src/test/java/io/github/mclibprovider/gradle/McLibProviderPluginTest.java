@@ -51,7 +51,7 @@ class McLibProviderPluginTest {
 
         assertTrue(result.getOutput().contains("BUILD SUCCESSFUL"), result.getOutput());
 
-        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mc-jvm-mod.toml");
+        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mclibprovider.toml");
         assertTrue(Files.exists(manifestFile), "manifest not created at " + manifestFile);
 
         Manifest manifest = ManifestIo.read(manifestFile);
@@ -129,7 +129,7 @@ class McLibProviderPluginTest {
         assertTrue(m.find(), "expected 'stripped N manifest-listed jars' in log");
         int stripped = Integer.parseInt(m.group(1));
 
-        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mc-jvm-mod.toml");
+        Path manifestFile = tmp.resolve("build/mc-lib-provider/META-INF/mclibprovider.toml");
         assertTrue(Files.exists(manifestFile), "manifest should have been generated");
         Manifest manifest = ManifestIo.read(manifestFile);
         assertEquals(manifest.libraries().size(), stripped,

@@ -15,7 +15,7 @@ These are two halves of the same concern: **the manifest format and the logic th
 
 A single `deps-lib/` module, build-tool-agnostic and loader-agnostic, written in plain Java. It contains:
 
-- `Manifest` — POJO schema for `META-INF/mc-jvm-mod.toml`.
+- `Manifest` — POJO schema for `META-INF/mclibprovider.toml`.
 - `ManifestIo` — TOML parse/write via `tomlj`.
 - `ManifestConsumer` — downloads listed URLs, verifies SHA256s, caches to `~/.cache/mc-lib-provider/libs/<sha256>.jar`. No resolver logic.
 - `ManifestProducer` — given `(coords, repos)`, runs Apache Maven Resolver (Aether) to compute the transitive closure, extracts URLs and SHAs, emits a `Manifest`.

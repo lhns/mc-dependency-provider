@@ -41,7 +41,7 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
 
     public static final String LANGUAGE_ID = "mclibprovider";
     private static final String LANGUAGE_VERSION = "1";
-    private static final String MANIFEST_PATH = "META-INF/mc-jvm-mod.toml";
+    private static final String MANIFEST_PATH = "META-INF/mclibprovider.toml";
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McLibLanguageLoader.class.getClassLoader());
@@ -194,7 +194,7 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
             // Dev runs: `modFile` is a source-set output dir; `manifestResource` points at
             // the unified resources view (covering `build/resources/main/...`). Production:
             // `modFile` is a jar and `manifestResource` is a ZIP-filesystem path pointing
-            // at META-INF/mc-jvm-mod.toml inside the same jar. Either way — just read it.
+            // at META-INF/mclibprovider.toml inside the same jar. Either way — just read it.
             if (manifestResource != null && Files.exists(manifestResource)) {
                 try (InputStream in = Files.newInputStream(manifestResource)) {
                     return ManifestIo.read(in);

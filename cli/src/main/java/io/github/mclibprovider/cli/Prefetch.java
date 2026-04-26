@@ -20,7 +20,7 @@ import java.util.zip.ZipFile;
  * Offline-prefetch CLI for modpack authors (task #33 / open-question #2).
  *
  * Given a set of mod-jar paths or directories, reads each mod's
- * {@code META-INF/mc-jvm-mod.toml} and pre-populates the shared library cache so
+ * {@code META-INF/mclibprovider.toml} and pre-populates the shared library cache so
  * the first in-game boot on an offline machine is a pure cache-hit.
  *
  * Usage:
@@ -35,7 +35,7 @@ import java.util.zip.ZipFile;
  */
 public final class Prefetch {
 
-    private static final String MANIFEST_ENTRY = "META-INF/mc-jvm-mod.toml";
+    private static final String MANIFEST_ENTRY = "META-INF/mclibprovider.toml";
 
     public static void main(String[] args) {
         System.exit(run(args, System.out, System.err));

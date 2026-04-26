@@ -114,7 +114,7 @@ class PrefetchTest {
 
     private static Path buildModJar(Path target, String manifestToml) throws IOException {
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(target))) {
-            zos.putNextEntry(new ZipEntry("META-INF/mc-jvm-mod.toml"));
+            zos.putNextEntry(new ZipEntry("META-INF/mclibprovider.toml"));
             zos.write(manifestToml.getBytes());
             zos.closeEntry();
         }

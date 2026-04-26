@@ -27,7 +27,7 @@ import java.util.Set;
 /**
  * Build-time resolver: takes a list of Maven coordinates + repositories, returns a flat {@link Manifest}
  * with transitive closure, URLs, and SHA-256s. Used by the Gradle plugin (and future sbt/Maven/CLI
- * siblings) to emit {@code META-INF/mc-jvm-mod.toml} at build time.
+ * siblings) to emit {@code META-INF/mclibprovider.toml} at build time.
  * <p>
  * Not on the runtime classpath. See ADR-0004.
  */

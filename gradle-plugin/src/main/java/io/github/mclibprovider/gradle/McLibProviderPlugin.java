@@ -16,7 +16,7 @@ import java.util.List;
  * Wires two tasks per project:
  * <ul>
  *   <li>{@code generateMcLibManifest} — reads the project's {@code runtimeClasspath} and writes
- *       {@code META-INF/mc-jvm-mod.toml} into {@code processResources} output, which is then
+ *       {@code META-INF/mclibprovider.toml} into {@code processResources} output, which is then
  *       packaged into the mod jar.</li>
  *   <li>{@code prepareMcLibDevCache} — hard-links the project's locally-resolved jars into the
  *       shared library cache so dev run-tasks exercise the provider's production dep-loading path
@@ -73,7 +73,7 @@ public final class McLibProviderPlugin implements Plugin<Project> {
             var generate = project.getTasks().register(
                     "generateMcLibManifest", GenerateMcLibManifestTask.class, t -> {
                         t.setGroup("mc-lib-provider");
-                        t.setDescription("Emits META-INF/mc-jvm-mod.toml from runtimeClasspath.");
+                        t.setDescription("Emits META-INF/mclibprovider.toml from runtimeClasspath.");
                         t.getLang().set(ext.getLang());
                         t.getSharedPackages().set(ext.getSharedPackages());
                         // Gradle ListProperty `convention()` is discarded once the user calls
@@ -92,7 +92,7 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                             return merged;
                         }));
                         t.getOutputFile().set(project.getLayout().getBuildDirectory()
-                                .file("mc-lib-provider/META-INF/mc-jvm-mod.toml"));
+                                .file("mc-lib-provider/META-INF/mclibprovider.toml"));
 
                         // Resolve lazily — only when the task actually runs.
                         t.getResolvedArtifactFiles().from(runtimeClasspath);
@@ -130,7 +130,7 @@ public final class McLibProviderPlugin implements Plugin<Project> {
                     resources -> {
                         resources.dependsOn(generate);
                         resources.from(generate.flatMap(g -> g.getOutputFile().map(f -> f.getAsFile().getParentFile().getParentFile())),
-                                copy -> copy.include("META-INF/mc-jvm-mod.toml"));
+                                copy -> copy.include("META-INF/mclibprovider.toml"));
                     });
 
             // ADR-0007 dev-mode parity: strip manifest-listed jars from run task classpaths.
