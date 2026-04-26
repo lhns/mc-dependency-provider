@@ -4,6 +4,7 @@ plugins {
 }
 
 application {
+    applicationName = "mcdepprovider-prefetch"
     mainClass.set("de.lhns.mcdp.cli.Prefetch")
 }
 
