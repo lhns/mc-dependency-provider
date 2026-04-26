@@ -1,26 +1,68 @@
 package io.github.mclibprovider.core;
 
 import java.lang.reflect.Constructor;
+import java.util.Arrays;
+import java.util.Comparator;
 
 /**
- * Constructor-arity dispatch. Tries {@code (args[0..N])} for N = args.length down to 0, returning
- * the first match.
+ * Constructor dispatch by <em>bag of context arguments</em>. The platform adapter passes a bag of
+ * context objects ({@code IModInfo}, {@code IEventBus}, {@code Dist}, …); for each declared
+ * constructor on the entry class, the adapter tries to fill its parameters by type from the bag,
+ * using each bag entry at most once. The most-specific (highest-arity) match wins.
+ * <p>
+ * This means a mod author can write any of:
+ * <ul>
+ *   <li>{@code MyMod()} — no-arg, ignores everything in the bag.</li>
+ *   <li>{@code MyMod(IEventBus bus)} — FML default {@code @Mod}-class signature.</li>
+ *   <li>{@code MyMod(IModInfo info)} — original mc-lib-provider single-arg shape.</li>
+ *   <li>{@code MyMod(IModInfo info, IEventBus bus)} — both, in either order.</li>
+ *   <li>{@code MyMod(IEventBus bus, Dist dist)} — typical FML extra.</li>
+ * </ul>
+ * No declared parameter ordering — parameters are matched on type identity, not position. Two
+ * constructor parameters with the same type are unsupported (the bag would not know which arg
+ * goes where); in practice the context bag never has duplicate types.
  */
 public final class JavaEntrypointAdapter implements EntrypointAdapter {
 
     @Override
     public Object construct(Class<?> entryClass, Object... args) throws ReflectiveOperationException {
-        for (int arity = args.length; arity >= 0; arity--) {
-            Object[] slice = new Object[arity];
-            System.arraycopy(args, 0, slice, 0, arity);
-            Constructor<?> ctor = findMatchingCtor(entryClass, slice);
-            if (ctor != null) {
+        Constructor<?>[] ctors = entryClass.getDeclaredConstructors();
+        // Sort by parameter count descending so the most-specific ctor that can be filled wins.
+        Arrays.sort(ctors, Comparator.comparingInt((Constructor<?> c) -> c.getParameterCount()).reversed());
+
+        for (Constructor<?> ctor : ctors) {
+            Object[] resolved = fillFromBag(ctor.getParameterTypes(), args);
+            if (resolved != null) {
                 ctor.setAccessible(true);
-                return ctor.newInstance(slice);
+                return ctor.newInstance(resolved);
             }
         }
         throw new NoSuchMethodException("No matching constructor on " + entryClass.getName()
-                + " for arities " + args.length + " down to 0");
+                + " for context-bag types " + describeTypes(args));
+    }
+
+    /**
+     * For each parameter, pick a bag entry whose runtime type is assignable to the parameter type.
+     * Each bag entry can be used at most once. Returns the filled argument array, or {@code null}
+     * if any parameter cannot be filled.
+     */
+    static Object[] fillFromBag(Class<?>[] paramTypes, Object[] bag) {
+        Object[] resolved = new Object[paramTypes.length];
+        boolean[] used = new boolean[bag.length];
+        for (int i = 0; i < paramTypes.length; i++) {
+            int pick = -1;
+            for (int j = 0; j < bag.length; j++) {
+                if (used[j] || bag[j] == null) continue;
+                if (paramTypes[i].isAssignableFrom(bag[j].getClass())) {
+                    pick = j;
+                    break;
+                }
+            }
+            if (pick < 0) return null;
+            resolved[i] = bag[pick];
+            used[pick] = true;
+        }
+        return resolved;
     }
 
     static Constructor<?> findMatchingCtor(Class<?> cls, Object[] args) {
@@ -38,5 +80,14 @@ public final class JavaEntrypointAdapter implements EntrypointAdapter {
             return ctor;
         }
         return null;
+    }
+
+    private static String describeTypes(Object[] args) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < args.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(args[i] == null ? "null" : args[i].getClass().getSimpleName());
+        }
+        return sb.append("]").toString();
     }
 }

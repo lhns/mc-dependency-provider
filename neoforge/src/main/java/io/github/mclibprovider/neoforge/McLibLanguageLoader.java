@@ -10,7 +10,12 @@ import io.github.mclibprovider.deps.LibraryCache;
 import io.github.mclibprovider.deps.Manifest;
 import io.github.mclibprovider.deps.ManifestConsumer;
 import io.github.mclibprovider.deps.ManifestIo;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.BusBuilder;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.event.IModBusEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.LoadingModList;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModInfo;
@@ -91,10 +96,28 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         McLibProvider.registerMod(modId, loader);
         registerMixinOwnersForNeoForgeMod(info, modId);
 
-        Class<?> entryClass = loadEntryClass(info, loader, modId);
-        Object instance = construct(manifest.lang(), entryClass, info, modId);
+        // Build the per-mod IEventBus before construct() so entries that take it as a ctor arg
+        // (the FML-default `@Mod` class shape) can subscribe to RegisterEvent / FMLClientSetupEvent
+        // / friends from inside the constructor — those are gated to the per-mod bus and fire
+        // before any global event the mod could otherwise hook into.
+        IEventBus eventBus = newPerModEventBus();
+        Dist dist = FMLEnvironment.dist;
 
-        return new McLibModContainer(info, instance);
+        Class<?> entryClass = loadEntryClass(info, loader, modId);
+        Object instance = construct(manifest.lang(), entryClass, modId, info, eventBus, dist);
+
+        return new McLibModContainer(info, instance, eventBus);
+    }
+
+    private static IEventBus newPerModEventBus() {
+        return BusBuilder.builder()
+                .setExceptionHandler((bus, event, listeners, index, throwable) -> {
+                    // Match FMLModContainer's default — failures propagate to the dispatcher.
+                    throw new RuntimeException(throwable);
+                })
+                .markerType(IModBusEvent.class)
+                .allowPerPhasePost()
+                .build();
     }
 
     /**
@@ -238,9 +261,9 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         }
     }
 
-    private static Object construct(String lang, Class<?> entryClass, IModInfo info, String modId) {
+    private static Object construct(String lang, Class<?> entryClass, String modId, Object... contextBag) {
         try {
-            return EntrypointAdapter.forLang(lang).construct(entryClass, info);
+            return EntrypointAdapter.forLang(lang).construct(entryClass, contextBag);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(
                     "mc-lib-provider: failed to instantiate entrypoint for " + modId, e);

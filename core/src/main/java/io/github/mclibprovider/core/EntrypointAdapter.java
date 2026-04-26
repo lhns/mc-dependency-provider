@@ -4,16 +4,18 @@ package io.github.mclibprovider.core;
  * Language-specific "given a Class, produce an instance" adapter. The provider picks an
  * implementation based on the manifest's {@code lang} field. See ADR-0005.
  * <p>
- * All implementations accept up to three Object arguments to allow per-platform ctor-arity
- * dispatch (e.g. NeoForge: {@code (IEventBus, ModContainer, Dist)}; Fabric: arity-0). Unused
- * arguments should be passed as {@code null} and ignored by the adapter if its target ctor
- * doesn't accept them.
+ * Platform adapters pass a <em>bag of context objects</em> — typically
+ * {@code (IModInfo, IEventBus, Dist)} on NeoForge, empty on Fabric. The adapter scans the entry
+ * class's declared constructors and picks the most-specific one whose parameter types can all be
+ * filled from the bag (matched by type, in any order). Unused bag entries are simply ignored, so
+ * existing arity-0 / single-arg entry classes keep working alongside FML's standard
+ * {@code @Mod}-class shape.
  */
 public interface EntrypointAdapter {
 
     /**
-     * Construct (or return a singleton of) {@code entryClass}, trying the provided constructor
-     * arguments in decreasing arity. Returns the mod-instance object.
+     * Construct (or return a singleton of) {@code entryClass}. {@code args} is the context bag —
+     * order is not significant; matching is by type. Returns the mod-instance object.
      */
     Object construct(Class<?> entryClass, Object... args) throws ReflectiveOperationException;
 

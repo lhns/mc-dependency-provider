@@ -1,7 +1,9 @@
 package io.github.mclibprovider.neoforge;
 
+import net.neoforged.bus.api.BusBuilder;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.event.IModBusEvent;
 import net.neoforged.neoforgespi.language.IModInfo;
 import org.junit.jupiter.api.Test;
 
@@ -29,20 +31,21 @@ class McLibModContainerTest {
     void wrapperExposesInstanceAndEventBus() {
         IModInfo info = stubInfo("my_mod", "my_mod");
         Object instance = new Object();
+        IEventBus prebuilt = newBus();
 
-        McLibModContainer container = new McLibModContainer(info, instance);
+        McLibModContainer container = new McLibModContainer(info, instance, prebuilt);
 
         assertInstanceOf(ModContainer.class, container, "must be a ModContainer for NeoForge's cast");
         assertSame(instance, container.getModInstance());
         assertEquals("my_mod", container.getModId());
-        IEventBus bus = container.getEventBus();
-        assertNotNull(bus, "event bus must be provided for NeoForge's mod event dispatch");
+        assertSame(prebuilt, container.getEventBus(),
+                "container must publish the bus the language loader pre-built and passed to the mod ctor");
     }
 
     @Test
     void constructModIsNoOp() {
         IModInfo info = stubInfo("m", "m");
-        McLibModContainer container = new McLibModContainer(info, new Object());
+        McLibModContainer container = new McLibModContainer(info, new Object(), newBus());
         // Invoked via reflection because constructMod() is protected.
         try {
             Method m = ModContainer.class.getDeclaredMethod("constructMod");
@@ -51,6 +54,13 @@ class McLibModContainerTest {
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("constructMod should be invokable and not throw", e);
         }
+    }
+
+    private static IEventBus newBus() {
+        return BusBuilder.builder()
+                .markerType(IModBusEvent.class)
+                .allowPerPhasePost()
+                .build();
     }
 
     private static IModInfo stubInfo(String modId, String namespace) {
