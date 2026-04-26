@@ -29,3 +29,7 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0007](0007-dev-mode-parity.md) | Dev-mode runs through the production dep-loading path | Accepted |
 | [0008](0008-mixin-via-bridge-pattern.md) | Mixin supported via a bridge pattern | Accepted |
 | [0009](0009-reject-alternatives.md) | Rejected alternatives record | Accepted |
+| [0010](0010-stdlib-version-promotion.md) | Opt-in stdlib version promotion | Accepted |
+| [0011](0011-defer-sbt-and-maven-plugins.md) | Defer sbt and Maven plugins to v0.2 | Accepted |
+| [0012](0012-dev-mode-classpath-grouping.md) | Dev-mode classpath grouping for composite-built multi-project mods | Accepted |
+| [0013](0013-neoforge-faithful-entry-init.md) | NeoForge-faithful entry init via `@Mod` + FML helpers | Accepted |
