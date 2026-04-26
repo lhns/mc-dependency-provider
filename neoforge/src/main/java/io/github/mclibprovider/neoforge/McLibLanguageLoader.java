@@ -14,13 +14,17 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.BusBuilder;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.IModBusEvent;
+import net.neoforged.fml.javafmlmod.AutomaticEventSubscriber;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.LoadingModList;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
 import net.neoforged.neoforgespi.language.ModFileScanData;
+
+import java.lang.annotation.ElementType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -103,10 +107,22 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         IEventBus eventBus = newPerModEventBus();
         Dist dist = FMLEnvironment.dist;
 
-        Class<?> entryClass = loadEntryClass(info, loader, modId);
-        Object instance = construct(manifest.lang(), entryClass, modId, info, eventBus, dist);
+        Class<?> entryClass = loadEntryClass(scanResults, loader, modId);
+        Object instance = construct(manifest.lang(), entryClass, modId, eventBus, dist);
 
-        return new McLibModContainer(info, instance, eventBus);
+        McLibModContainer container = new McLibModContainer(info, instance, eventBus);
+
+        // Reuse FML's @EventBusSubscriber scanner directly. It walks scanResults for any
+        // @EventBusSubscriber-annotated class belonging to this modId, filters by Dist, and
+        // registers each against the right bus (mod-bus or NeoForge.EVENT_BUS). Same machinery
+        // FMLModContainer uses for vanilla javafml mods.
+        try {
+            AutomaticEventSubscriber.inject(container, scanResults, entryClass.getModule());
+        } catch (RuntimeException ignored) {
+            // Best-effort: a malformed @EventBusSubscriber shouldn't fatally fail mod load.
+        }
+
+        return container;
     }
 
     private static IEventBus newPerModEventBus() {
@@ -247,17 +263,25 @@ public final class McLibLanguageLoader implements IModLanguageLoader {
         }
     }
 
-    private static Class<?> loadEntryClass(IModInfo info, ModClassLoader loader, String modId) {
-        Object entryProp = info.getModProperties().get("entrypoint");
-        if (!(entryProp instanceof String entry) || entry.isBlank()) {
-            throw new IllegalStateException("mc-lib-provider: mod " + modId
-                    + " must declare `entrypoint = \"fully.qualified.ClassName\"` under its [[mods]] block");
-        }
+    /**
+     * Discover the entry class via {@code @Mod("modid")} annotation in the mod's scan results —
+     * the same mechanism FML's vanilla {@code javafmlmod} loader uses. Mods declare exactly as
+     * they would on a regular NeoForge mod; the only difference vs vanilla is
+     * {@code modLoader = "mclibprovider"} in {@code neoforge.mods.toml}.
+     */
+    private static Class<?> loadEntryClass(ModFileScanData scanResults, ModClassLoader loader, String modId) {
+        String fqn = scanResults.getAnnotatedBy(Mod.class, ElementType.TYPE)
+                .filter(a -> modId.equals(a.annotationData().get("value")))
+                .map(a -> a.clazz().getClassName())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "mc-lib-provider: no @Mod(\"" + modId + "\")-annotated class found for "
+                                + modId + ". Add @Mod(\"" + modId + "\") to your entry class."));
         try {
-            return Class.forName(entry, true, loader);
+            return Class.forName(fqn, true, loader);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException(
-                    "mc-lib-provider: entrypoint class not found for " + modId + ": " + entry, e);
+                    "mc-lib-provider: @Mod-annotated class not loadable for " + modId + ": " + fqn, e);
         }
     }
 

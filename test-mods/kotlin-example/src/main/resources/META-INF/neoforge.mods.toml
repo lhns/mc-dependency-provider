@@ -10,9 +10,6 @@ displayName = "mc-lib-provider Kotlin example"
 description = "Smoke-test mod that exercises the mc-lib-provider Kotlin entrypoint + Maven dep resolution on NeoForge."
 authors = "mc-lib-provider contributors"
 
-[modproperties.kotlin_example]
-entrypoint = "com.example.ExampleMod"
-
 [[dependencies.kotlin_example]]
 modId = "neoforge"
 type = "required"

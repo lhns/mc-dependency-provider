@@ -185,6 +185,12 @@ discarded.
 **Fix.** Put any mc-lib-provider-specific keys under
 `[modproperties.<modId>]`.
 
+(The original use case for this — declaring the entry class via
+`[modproperties.<modId>] entrypoint = "..."` — was retired in favor of the
+vanilla `@Mod` annotation discovered via `ModFileScanData.getAnnotatedBy`.
+The `[modproperties.<modId>]` advice still applies for any future
+mclibprovider-specific keys.)
+
 ### `java.nio.file.FileSystems.newFileSystem(dir)` throws on dev-mode dirs
 
 **Symptom.** `ProviderNotFoundException: Provider not found` when the

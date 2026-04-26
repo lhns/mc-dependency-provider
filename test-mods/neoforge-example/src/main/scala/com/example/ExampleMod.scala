@@ -2,14 +2,19 @@ package com.example
 
 import cats.syntax.all.*
 import io.circe.parser.*
+import net.neoforged.fml.common.Mod
 
 /**
- * Entry point — instantiated by mc-lib-provider's Scala entrypoint adapter on NeoForge.
+ * Entry point — discovered by FML's standard `@Mod` annotation scan and instantiated by
+ * mc-lib-provider's Scala entrypoint adapter on NeoForge. The only mclibprovider-specific
+ * piece is `modLoader = "mclibprovider"` in `neoforge.mods.toml`; the entry shape itself
+ * matches every NeoForge tutorial.
  *
  * Uses `cats.syntax.all.*` + `io.circe.parser.*` to exercise the per-mod classloader
  * path on cats-kernel (keyword package `cats.kernel.instances.byte`) and a transitive
  * graph that would break under JPMS in a shared classpath.
  */
+@Mod("neoforge_example")
 object ExampleMod {
 
   // Runs on object-class init — which is when mc-lib-provider's ScalaEntrypointAdapter

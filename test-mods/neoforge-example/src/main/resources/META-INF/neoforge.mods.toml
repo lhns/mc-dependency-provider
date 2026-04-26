@@ -10,13 +10,6 @@ displayName = "mc-lib-provider NeoForge example"
 description = "Smoke-test mod that exercises the mc-lib-provider Scala entrypoint + Maven dep resolution path on NeoForge."
 authors = "mc-lib-provider contributors"
 
-# mc-lib-provider-specific property read by McLibLanguageLoader.loadEntryClass.
-# Must be fully qualified — the class is resolved through the mod's per-mod ModClassLoader.
-# FML exposes only `[modproperties.<modId>]` via IModInfo#getModProperties; inline keys on
-# [[mods]] are discarded.
-[modproperties.neoforge_example]
-entrypoint = "com.example.ExampleMod"
-
 [[dependencies.neoforge_example]]
 modId = "neoforge"
 type = "required"

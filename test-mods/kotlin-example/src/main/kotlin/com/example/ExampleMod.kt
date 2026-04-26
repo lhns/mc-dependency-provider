@@ -2,15 +2,18 @@ package com.example
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
+import net.neoforged.fml.common.Mod
 
 /**
- * Entry point — instantiated by the provider's Kotlin entrypoint adapter, which picks up
- * [INSTANCE] (Kotlin `object` singleton field).
+ * Entry point — discovered via FML's standard `@Mod` annotation scan and instantiated by
+ * the provider's Kotlin entrypoint adapter (which picks up [INSTANCE], the Kotlin `object`
+ * singleton field).
  *
  * The `init` block fires when the provider resolves `INSTANCE` on the mod's per-mod
  * ModClassLoader, so CI Tier-2 grep asserts the per-mod classloader was actually used
  * (kotlinx.coroutines is served from the provider's manifest, not NeoForge's classpath).
  */
+@Mod("kotlin_example")
 object ExampleMod {
 
     init {

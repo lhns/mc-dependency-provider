@@ -56,11 +56,12 @@ At runtime, the Fabric / NeoForge adapter reads the manifest, downloads anything
 
 ### Mod entry point
 
-- **Java** — a class with a public constructor (optionally taking platform objects like `IEventBus`, `ModContainer`).
-- **Scala** — an `object` (its `MODULE$` is used) or a class with a constructor.
-- **Kotlin** — an `object` (its `INSTANCE` is used) or a class with a constructor.
+Declared the normal platform way:
 
-Declare it the normal platform way (Fabric `fabric.mod.json` `entrypoints`, NeoForge `neoforge.mods.toml`) — the provider dispatches on `lang` to pick the right adapter.
+- **NeoForge** — annotate your entry class with `@Mod("modid")` exactly as on a vanilla NeoForge mod. The provider discovers it via `ModFileScanData`. Constructors accepting `IEventBus`, `Dist`, `ModContainer` (or any subset) are matched via FML's standard signature shapes. `@EventBusSubscriber`-annotated classes are scanned via NeoForge's own `AutomaticEventSubscriber.inject(...)` — no special-case code needed. The only mclibprovider-specific line in `neoforge.mods.toml` is `modLoader = "mclibprovider"`.
+- **Fabric** — declare the entry on `fabric.mod.json` `entrypoints` with `"adapter": "mclibprovider"` per entrypoint object. Otherwise vanilla: implement `ModInitializer` (or any other Fabric entrypoint interface), no-arg ctor.
+
+Per-language details: **Scala** `object` resolves via `MODULE$`. **Kotlin** `object` resolves via `INSTANCE`. Class-form entries on either go through ctor dispatch.
 
 ## Mixin on non-Java mods
 
