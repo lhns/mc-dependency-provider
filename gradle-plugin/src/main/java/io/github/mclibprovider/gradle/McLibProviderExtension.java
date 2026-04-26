@@ -7,11 +7,21 @@ import org.gradle.api.provider.Property;
  * Project-level DSL extension for the {@code io.github.mclibprovider} plugin.
  *
  * <pre>{@code
+ * dependencies {
+ *     // Loom / ModDevGradle deps stay where they live (modImplementation,
+ *     // implementation, etc.) — they're platform-provided and never enter the manifest.
+ *     modImplementation("net.fabricmc:fabric-loader:0.16.9")
+ *
+ *     // Deps the mod wants delivered through mc-lib-provider's per-mod classloader
+ *     // go on the dedicated bucket. They're transitively resolved and emitted into
+ *     // META-INF/mclibprovider.toml.
+ *     mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
+ *     mcLibImplementation("io.circe:circe-parser_3:0.14.10")
+ * }
+ *
  * mclibprovider {
  *     lang.set("scala")
  *     sharedPackages.add("com.example.api")
- *     excludeGroup("net.neoforged")
- *     excludeGroup("com.mojang")
  * }
  * }</pre>
  */
@@ -20,11 +30,12 @@ public abstract class McLibProviderExtension {
     /** One of {@code java}, {@code scala}, {@code kotlin}. */
     public abstract Property<String> getLang();
 
-    /** Package prefixes to include in {@code shared_packages} in the generated manifest. */
+    /**
+     * Package prefixes the per-mod {@code ModClassLoader} delegates parent-first instead of
+     * child-first. Required for any class that must be the same {@code Class} object on both
+     * sides of the loader boundary — almost exclusively bridge interfaces for Mixin (ADR-0008).
+     */
     public abstract ListProperty<String> getSharedPackages();
-
-    /** {@code groupId:artifactId} patterns to drop from the manifest (platform-provided libs). */
-    public abstract ListProperty<String> getExclusions();
 
     /**
      * Names of run tasks (ModDevGradle's {@code runClient} / {@code runServer} etc., or Fabric
@@ -37,14 +48,4 @@ public abstract class McLibProviderExtension {
      * task names should override this explicitly.
      */
     public abstract ListProperty<String> getPatchRunTasks();
-
-    /** Shortcut: exclude every artifact with the given {@code groupId}. Emits {@code group:*}. */
-    public void excludeGroup(String group) {
-        getExclusions().add(group + ":*");
-    }
-
-    /** Shortcut: exclude a specific {@code groupId:artifactId}. */
-    public void exclude(String groupAndArtifact) {
-        getExclusions().add(groupAndArtifact);
-    }
 }

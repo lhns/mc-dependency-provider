@@ -46,23 +46,18 @@ dependencies {
     implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
-    // These are served through mc-lib-provider's manifest + per-mod classloader,
-    // NOT the normal NeoForge classpath. RunTaskClasspathPatch strips them from
-    // runServer/runClient so dev-mode parity with production is maintained (ADR-0007).
-    implementation("org.scala-lang:scala3-library_3:3.5.2")
-    implementation("org.typelevel:cats-core_3:2.13.0")
-    implementation("io.circe:circe-core_3:0.14.10")
-    implementation("io.circe:circe-parser_3:0.14.10")
+    // mcLibImplementation: opt-in bucket served through the per-mod ModClassLoader.
+    // RunTaskClasspathPatch strips them from runServer/runClient so dev-mode parity
+    // with production is maintained (ADR-0007).
+    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
+    mcLibImplementation("io.circe:circe-core_3:0.14.10")
+    mcLibImplementation("io.circe:circe-parser_3:0.14.10")
 }
 
 mclibprovider {
     lang.set("scala")
     sharedPackages.add("com.example.api")
-    // Platforms provide these at runtime — never bundle them.
-    excludeGroup("net.minecraft")
-    excludeGroup("net.neoforged")
-    excludeGroup("net.fabricmc")
-    excludeGroup("com.mojang")
 }
 
 tasks.processResources {

@@ -41,21 +41,15 @@ dependencies {
     // this mod's fabric.mod.json references.
     modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
 
-    implementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
     // Deliberately different cats version from fabric-example so the two mods' cats
     // jars have distinct SHAs and resolve to distinct classloaders.
-    implementation("org.typelevel:cats-core_3:2.10.0")
+    mcLibImplementation("org.typelevel:cats-core_3:2.10.0")
 }
 
 mclibprovider {
     lang.set("scala")
     sharedPackages.add("com.example_v2.api")
-    excludeGroup("net.minecraft")
-    excludeGroup("net.neoforged")
-    excludeGroup("net.fabricmc")
-    excludeGroup("com.mojang")
-    excludeGroup("org.ow2.asm")
-    excludeGroup("org.spongepowered")
 }
 
 loom {

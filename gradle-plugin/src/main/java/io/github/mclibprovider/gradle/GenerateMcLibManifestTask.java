@@ -27,15 +27,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.Set;
 
 /**
- * Walks the project's resolved {@code runtimeClasspath}, filters out platform-provided deps
- * (Minecraft, NeoForge, Fabric, the provider itself — configured via
- * {@link McLibProviderExtension#getExclusions()}), and emits
- * {@code META-INF/mclibprovider.toml}.
+ * Walks the project's resolved {@code mcLibImplementation} closure, subtracts any artifact whose
+ * {@code group:name} is also resolved through the rest of the project's classpath as a non-mclib
+ * dep (i.e. genuinely platform-provided), and emits {@code META-INF/mclibprovider.toml}.
  * <p>
  * URL reconstruction: tries each Maven repository declared on the project in order and picks the
  * first one whose URL pattern is a plausible source. We never re-download — Gradle already has
@@ -49,8 +49,12 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getSharedPackages();
 
+    /**
+     * {@code group:name} keys for artifacts that the platform already provides. Anything in the
+     * mcLibImplementation closure with a key in this set is dropped from the manifest.
+     */
     @Input
-    public abstract ListProperty<String> getExclusions();
+    public abstract ListProperty<String> getPlatformProvidedKeys();
 
     @Input
     public abstract ListProperty<String> getRepositoryUrls();
@@ -67,8 +71,7 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
 
     @TaskAction
     public void generate() throws IOException {
-        List<Pattern> excludePatterns = new ArrayList<>();
-        for (String ex : getExclusions().get()) excludePatterns.add(toPattern(ex));
+        Set<String> platformKeys = new HashSet<>(getPlatformProvidedKeys().get());
 
         List<String> repoUrls = getRepositoryUrls().get();
         List<ArtifactCoord> coords = getArtifactCoords().get();
@@ -77,7 +80,7 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
 
         List<Manifest.Library> libs = new ArrayList<>();
         for (ArtifactCoord c : coords) {
-            if (matchesAny(excludePatterns, c.group(), c.name())) continue;
+            if (platformKeys.contains(c.group() + ":" + c.name())) continue;
 
             byte[] bytes = Files.readAllBytes(Path.of(c.filePath()));
             String sha = Sha256.hex(bytes);
@@ -184,27 +187,6 @@ public abstract class GenerateMcLibManifestTask extends DefaultTask {
                     + "." + (c.extension() == null || c.extension().isEmpty() ? "jar" : c.extension());
             return groupPath + "/" + c.name() + "/" + c.version() + "/" + filename;
         }
-    }
-
-    private static boolean matchesAny(List<Pattern> patterns, String group, String name) {
-        String ga = group + ":" + name;
-        for (Pattern p : patterns) {
-            if (p.matcher(ga).matches()) return true;
-        }
-        return false;
-    }
-
-    private static Pattern toPattern(String exclusion) {
-        StringBuilder sb = new StringBuilder("^");
-        for (int i = 0; i < exclusion.length(); i++) {
-            char c = exclusion.charAt(i);
-            if (c == '*') sb.append(".*");
-            else if (c == '.') sb.append("\\.");
-            else if (Character.isLetterOrDigit(c) || c == ':' || c == '-' || c == '_') sb.append(c);
-            else sb.append(Pattern.quote(String.valueOf(c)));
-        }
-        sb.append('$');
-        return Pattern.compile(sb.toString());
     }
 
     /**

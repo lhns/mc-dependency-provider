@@ -111,6 +111,12 @@ the convention is gone.
 `ext.getExclusions().map(userList -> { list with mandatory always first })`
 so they're always in the final value regardless of user additions.
 
+(Both the `excludeGroup` DSL and the merge logic were later retired entirely
+in favor of an opt-in `mcLibImplementation` configuration — the mod author
+declares which deps go in the manifest instead of declaring which to leave
+out. The `ListProperty.convention` gotcha still applies wherever the pattern
+shows up.)
+
 ### `prepareMcLibDevCache` wasn't a dependency of run tasks
 
 **Symptom.** `runServer` on a fresh machine hit

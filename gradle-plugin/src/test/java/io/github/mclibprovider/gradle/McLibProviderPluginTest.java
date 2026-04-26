@@ -32,7 +32,7 @@ class McLibProviderPluginTest {
                 }
 
                 dependencies {
-                    implementation("org.tomlj:tomlj:1.1.1")
+                    mcLibImplementation("org.tomlj:tomlj:1.1.1")
                 }
 
                 mclibprovider {
@@ -95,7 +95,7 @@ class McLibProviderPluginTest {
                 }
 
                 dependencies {
-                    implementation("org.tomlj:tomlj:1.1.1")
+                    mcLibImplementation("org.tomlj:tomlj:1.1.1")
                 }
 
                 mclibprovider {

@@ -37,17 +37,13 @@ neoForge {
 dependencies {
     implementation("io.github.mclibprovider:neoforge:0.1.0-SNAPSHOT")
 
-    implementation(kotlin("stdlib"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    mcLibImplementation(kotlin("stdlib"))
+    mcLibImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 }
 
 mclibprovider {
     lang.set("kotlin")
     sharedPackages.add("com.example.api")
-    excludeGroup("net.minecraft")
-    excludeGroup("net.neoforged")
-    excludeGroup("net.fabricmc")
-    excludeGroup("com.mojang")
 }
 
 tasks.processResources {

@@ -30,27 +30,26 @@ plugins {
 }
 
 dependencies {
-    implementation("org.scala-lang:scala3-library_3:3.5.2")
-    implementation("org.typelevel:cats-core_3:2.13.0")
-    implementation("io.circe:circe-parser_3:0.14.10")
+    // Opt-in bucket: anything declared here (plus its transitive closure) is emitted
+    // into META-INF/mclibprovider.toml and served at runtime by mc-lib-provider's
+    // per-mod URLClassLoader. Platform deps stay on their normal configurations
+    // (modImplementation on Loom, implementation under MDG) — they're not in the manifest.
+    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
+    mcLibImplementation("io.circe:circe-parser_3:0.14.10")
 }
 
 mclibprovider {
-    lang.set("scala")                  // "java" | "scala" | "kotlin"
-    sharedPackages.add("com.example.api")  // parent-first packages (mod-to-mod API, mixin targets)
-
-    // Don't bundle platform-supplied stuff.
-    excludeGroup("net.minecraft")
-    excludeGroup("net.neoforged")
-    excludeGroup("net.fabricmc")
-    excludeGroup("com.mojang")
+    lang.set("scala")                      // "java" | "scala" | "kotlin"
+    sharedPackages.add("com.example.api")  // parent-first packages (Mixin bridge interfaces)
 }
 ```
 
 At build time, the plugin:
 
-- Runs Apache Maven Resolver (Aether) over your `runtimeClasspath`.
-- Writes `META-INF/mclibprovider.toml` into your mod jar with every transitive dep's coords, URL, and SHA-256.
+- Walks the resolved `mcLibImplementation` closure (transitive).
+- Subtracts anything already provided by the platform (i.e. resolved through `runtimeClasspath` outside the mclib bucket).
+- Writes `META-INF/mclibprovider.toml` into your mod jar with every remaining transitive dep's coords, URL, and SHA-256.
 - Hard-links resolved jars into `~/.cache/mc-lib-provider/libs/<sha>.jar` so dev-mode `runClient` / `runServer` hits the cache instead of re-downloading (ADR-0007).
 
 At runtime, the Fabric / NeoForge adapter reads the manifest, downloads anything not yet cached, verifies SHAs, and builds a per-mod `URLClassLoader`. Your mod's entry point is instantiated through that loader.

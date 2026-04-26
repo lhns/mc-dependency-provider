@@ -19,9 +19,6 @@ java {
     }
 }
 
-// Pin platform versions — MC 1.21.1, Fabric Loader 0.16.x, official Mojang mappings.
-// These are provided by the platform at runtime, so mc-lib-provider's manifest task
-// excludes them (see `excludeGroup` lines below).
 val minecraftVersion = "1.21.1"
 val yarnMappings = "1.21.1+build.3"
 val loaderVersion = "0.16.9"
@@ -37,13 +34,14 @@ dependencies {
     modImplementation("io.github.mclibprovider:fabric:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mc-lib-provider.
-    // These are resolved through mc-lib-provider's manifest + per-mod classloader path,
-    // NOT the normal Minecraft classpath. The RunTaskClasspathPatch strips them from
+    // mcLibImplementation is the opt-in bucket: deps placed here are emitted into
+    // META-INF/mclibprovider.toml, downloaded at runtime by the provider, and served
+    // through a per-mod URLClassLoader. RunTaskClasspathPatch strips them from
     // runServer/runClient so dev-mode parity with production is maintained (ADR-0007).
-    implementation("org.scala-lang:scala3-library_3:3.5.2")
-    implementation("org.typelevel:cats-core_3:2.13.0")
-    implementation("io.circe:circe-core_3:0.14.10")
-    implementation("io.circe:circe-parser_3:0.14.10")
+    mcLibImplementation("org.scala-lang:scala3-library_3:3.5.2")
+    mcLibImplementation("org.typelevel:cats-core_3:2.13.0")
+    mcLibImplementation("io.circe:circe-core_3:0.14.10")
+    mcLibImplementation("io.circe:circe-parser_3:0.14.10")
 
     // @McLibMixin + McLibProvider classes are shaded into the fabric shadow jar
     // (ADR-0012), so modImplementation above provides them at both compile and runtime.
@@ -52,14 +50,6 @@ dependencies {
 mclibprovider {
     lang.set("scala")
     sharedPackages.add("com.example.api")
-    // Platforms provide these at runtime — never bundle them.
-    excludeGroup("net.minecraft")
-    excludeGroup("net.neoforged")
-    excludeGroup("net.fabricmc")
-    excludeGroup("com.mojang")
-    // Loom adds these compile-only helpers; they don't belong in the mod's runtime manifest.
-    excludeGroup("org.ow2.asm")
-    excludeGroup("org.spongepowered")
 
     // Disabled: Loom's AbstractRunTask finalizes getClasspath() before doFirst actions can
     // mutate it, so setClasspath throws IllegalStateException. Tracked separately —
