@@ -99,6 +99,10 @@ The fix mirrors the hand-written `@McdpMixin` pattern (ADR-0008), which already 
 
 Manifest format is unchanged. Both the auto-codegen path and the hand-written `@McdpMixin` path now defer impl resolution to the same JVM event.
 
+### Errata: input-dir resolution (post-v0.1.0)
+
+Codegen scans every `SourceSet` output dir (`main.output.classesDirs` — java + scala + kotlin), not just `compileJava`'s. Required for Scala/Kotlin joint compilation: when a `.java` mixin source lives under `src/main/scala/` (or `src/main/kotlin/`), the polyglot compiler writes the bytecode to its own output dir while `compileJava`'s stays empty. The scanner uses first-match in the FileCollection's iteration order, which is insertion order from Gradle's source-set wiring (java, scala, kotlin).
+
 ## Out of scope (revisit conditions)
 
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.

@@ -2,15 +2,14 @@ package de.lhns.mcdp.gradle.mixinbridges;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
-import org.gradle.api.tasks.InputDirectory;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Input;
-import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
@@ -41,10 +40,17 @@ import java.util.stream.Stream;
  */
 public abstract class BridgeCodegenTask extends DefaultTask {
 
-    @InputDirectory
+    /**
+     * All class-output directories produced by the project's compile tasks (java, scala, kotlin).
+     * The scanner searches every directory for each declared mixin FQN and uses the first match
+     * in iteration order. Multi-language SourceSets (e.g. Scala or Kotlin joint compilation of
+     * {@code .java} mixins co-located with {@code .scala}/{@code .kt} sources) need every output
+     * dir scanned because the canonical bytecode for a given mixin lives wherever the polyglot
+     * compiler wrote it.
+     */
+    @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
-    @Optional
-    public abstract DirectoryProperty getCompiledClassesDir();
+    public abstract ConfigurableFileCollection getCompiledClassesDirs();
 
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -68,7 +74,10 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @TaskAction
     public void run() throws IOException {
         Logger log = getLogger();
-        Path inDir = getCompiledClassesDir().get().getAsFile().toPath();
+        List<Path> inDirs = new ArrayList<>();
+        for (var f : getCompiledClassesDirs().getFiles()) {
+            if (f.isDirectory()) inDirs.add(f.toPath());
+        }
         Path outClassesDir = getOutputClassesDir().get().getAsFile().toPath();
         Path manifestDir = getManifestOutputDir().get().getAsFile().toPath();
         Path manifestRoot = manifestDir.resolve("META-INF").resolve("mcdp-mixin-bridges");
@@ -104,10 +113,16 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         List<String> warnings = new ArrayList<>();
 
         for (String fqn : mixinFqns) {
-            Path classFile = inDir.resolve(BridgePolicy.toInternal(fqn) + ".class");
-            if (!Files.isRegularFile(classFile)) {
+            String relPath = BridgePolicy.toInternal(fqn) + ".class";
+            Path classFile = null;
+            for (Path inDir : inDirs) {
+                Path candidate = inDir.resolve(relPath);
+                if (Files.isRegularFile(candidate)) { classFile = candidate; break; }
+            }
+            if (classFile == null) {
                 warnings.add("mcdp-mixin-bridges: declared mixin class " + fqn
-                        + " not found at " + classFile + " — skipping. (Was the build clean?)");
+                        + " not found in any compiled-classes dir " + inDirs
+                        + " — skipping. (Was the build clean?)");
                 continue;
             }
             byte[] bytes = Files.readAllBytes(classFile);

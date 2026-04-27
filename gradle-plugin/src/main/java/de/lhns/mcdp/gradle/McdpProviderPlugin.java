@@ -202,15 +202,21 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         if (!Boolean.TRUE.equals(ext.getMixinBridges().getEnabled().getOrElse(true))) {
                             return false;
                         }
-                        // Skip when there are no compiled classes — a project applying the plugin
-                        // for manifest generation alone (no Java/Scala/Kotlin source) shouldn't
-                        // be forced through codegen.
-                        File classes = main.getJava().getDestinationDirectory().getAsFile().get();
-                        return classes.isDirectory();
+                        // Skip when no compile task produced any classes — a project applying
+                        // the plugin for manifest generation alone (no Java/Scala/Kotlin source)
+                        // shouldn't be forced through codegen. Walks every output dir in the
+                        // SourceSet so multi-language projects (Scala/Kotlin joint compilation
+                        // that wipes the empty compileJava output) are still detected.
+                        for (File f : main.getOutput().getClassesDirs().getFiles()) {
+                            if (f.isDirectory()) return true;
+                        }
+                        return false;
                     });
-                    t.getCompiledClassesDir().fileProvider(
-                            project.provider(() -> main.getJava().getDestinationDirectory()
-                                    .getAsFile().get()));
+                    // Feed every compile-task output dir into the scanner. .java mixins
+                    // joint-compiled by scalac live under the scala output dir; pure-Java mixins
+                    // under java; Kotlin joint output under kotlin. The scanner picks the first
+                    // dir containing the declared mixin class.
+                    t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
                     t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
                     t.getMixinConfigFiles().from(project.provider(() -> {

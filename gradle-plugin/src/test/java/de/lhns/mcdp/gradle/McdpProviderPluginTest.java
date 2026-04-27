@@ -135,4 +135,98 @@ class McdpProviderPluginTest {
         assertEquals(manifest.libraries().size(), stripped,
                 "strip count should equal manifest library count; manifest=" + manifest.libraries());
     }
+
+    /**
+     * Mixin codegen must find {@code .java} mixins joint-compiled by scalac. When the {@code scala}
+     * plugin is applied and a {@code .java} mixin source lives under {@code src/main/scala/}, scalac
+     * compiles it into {@code build/classes/scala/main/} and {@code compileJava}'s output dir stays
+     * empty. The bridge codegen task's input is wired to {@code main.output.classesDirs} (covering
+     * scala + kotlin + java), so the rewrite still finds the class.
+     *
+     * <p>End-to-end proof of the wiring change. Pulls scala3-library from Maven Central — same
+     * network assumption as the manifest test above.</p>
+     */
+    @Test
+    void rewritesJavaMixinJointCompiledByScala(@TempDir Path tmp) throws IOException {
+        Files.writeString(tmp.resolve("settings.gradle.kts"), "rootProject.name = \"scala_mixin\"\n");
+        Files.writeString(tmp.resolve("build.gradle.kts"), """
+                plugins {
+                    `java-library`
+                    scala
+                    id("de.lhns.mcdp")
+                }
+
+                // group makes the plugin compute a proper default bridgePackage
+                // (com.example.scala_mixin.mcdp_mixin_bridges); without it the package is empty
+                // and the emitted bridge file path resolves to drive-root on Windows.
+                group = "com.example"
+
+                repositories {
+                    mavenCentral()
+                }
+
+                dependencies {
+                    // scalac needs scala-library on the compile classpath to do joint compilation.
+                    implementation("org.scala-lang:scala3-library_3:3.3.4")
+                }
+
+                mcdepprovider {
+                    lang.set("scala")
+                    sharedPackages.add("com.example.api")
+                }
+                """);
+
+        // Mixin under src/main/scala/ — joint-compiled by scalac into build/classes/scala/main/.
+        // The class calls into a mod-private static helper; scanner classifies as REWRITABLE.
+        Path mixinSrc = tmp.resolve("src/main/scala/com/example/mixin/MyMixin.java");
+        Files.createDirectories(mixinSrc.getParent());
+        Files.writeString(mixinSrc, """
+                package com.example.mixin;
+                public class MyMixin {
+                    public static int handler(int x) { return com.example.modcode.Helper.doubleIt(x) + 1; }
+                }
+                """);
+        // Helper also under src/main/scala/ — same joint-compilation path.
+        Path helperSrc = tmp.resolve("src/main/scala/com/example/modcode/Helper.java");
+        Files.createDirectories(helperSrc.getParent());
+        Files.writeString(helperSrc, """
+                package com.example.modcode;
+                public class Helper {
+                    public static int doubleIt(int x) { return x * 2; }
+                }
+                """);
+
+        // Mixin config declaring the mixin.
+        Path resources = tmp.resolve("src/main/resources");
+        Files.createDirectories(resources);
+        Files.writeString(resources.resolve("test.mixins.json"),
+                "{\"package\":\"com.example.mixin\",\"mixins\":[\"MyMixin\"]}");
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpMixinBridges", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+
+        String out = result.getOutput();
+        assertTrue(out.contains("BUILD SUCCESSFUL"), out);
+
+        // Sanity: scalac wrote the bytecode to the scala output dir, not java.
+        Path scalaOut = tmp.resolve("build/classes/scala/main/com/example/mixin/MyMixin.class");
+        assertTrue(Files.isRegularFile(scalaOut),
+                "scalac should have produced " + scalaOut + " — joint-compilation premise broken");
+
+        // Codegen report lists the rewritten mixin (proving the task found it under scala output).
+        Path report = tmp.resolve("build/mcdp-mixin-bridges/report.txt");
+        assertTrue(Files.exists(report), "codegen report missing at " + report);
+        String reportText = Files.readString(report);
+        assertTrue(reportText.contains("rewritten mixins (1)"),
+                "expected 1 rewritten mixin in report:\n" + reportText);
+        assertTrue(reportText.contains("com.example.mixin.MyMixin"),
+                "expected MyMixin in report:\n" + reportText);
+
+        // Rewritten class file in the codegen output.
+        Path rewritten = tmp.resolve("build/mcdp-mixin-bridges/classes/com/example/mixin/MyMixin.class");
+        assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin missing at " + rewritten);
+    }
 }
