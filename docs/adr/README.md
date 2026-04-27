@@ -40,3 +40,5 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0016](0016-unified-mcdp-jar.md) | Unified `mcdp` jar bundling Fabric and NeoForge adapters | Accepted |
 | [0017](0017-modcontainer-as-ctor-arg.md) | NeoForge mod construction inside `ModContainer.constructMod()` (enables `ModContainer` in entry ctor) | Accepted; supersedes part of 0013 |
 | [0018](0018-automatic-mixin-bridge-codegen.md) | Automatic Mixin → mod-private bridge codegen via bytecode rewriting | Accepted; refines 0008 |
+| [0019](0019-bridge-manifest-format-and-registration.md) | Bridge manifest format (TOML) and runtime registration | Accepted; supersedes 0018's runtime-wiring/manifest-discovery errata |
+| [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted |

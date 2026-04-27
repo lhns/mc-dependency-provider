@@ -1,13 +1,11 @@
 package de.lhns.mcdp.api;
 
 import de.lhns.mcdp.core.ModClassLoader;
+import de.lhns.mcdp.deps.MiniToml;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,139 +36,59 @@ public final class McdpProvider {
 
     /**
      * Register a mod's {@link ModClassLoader} so {@link #loadMixinImpl(Class)} can find it at
-     * runtime. Called by platform adapters once per mod during boot.
+     * runtime. Called by platform adapters once per mod during boot. Auto-bridge entries live in
+     * a separate per-mod TOML manifest; adapters call {@link #registerAutoBridgeManifestToml}
+     * after this method.
      */
     public static void registerMod(String modId, ModClassLoader loader) {
         MOD_LOADERS_BY_ID.put(Objects.requireNonNull(modId), Objects.requireNonNull(loader));
-        wireAutoMixinBridges(modId, loader);
     }
 
     /**
-     * Register auto-bridge manifests by walking a per-mod index file. Each line of {@code
-     * indexFile} is a mixin FQN; for each entry, the {@code manifestPathResolver} is asked to
-     * produce a {@link java.nio.file.Path} pointing at that mixin's individual manifest
-     * ({@code <fqn>.txt}). Platform adapters supply a resolver that uses their native
-     * single-file lookup ({@code IModFile.findResource} on NeoForge, {@code
-     * ModContainer.findPath} on Fabric) — both APIs are reliable for exact-file lookups, unlike
-     * directory-style lookups which behave inconsistently on NeoForge {@code UnionPath}.
+     * Register auto-bridge entries from a per-mod {@code META-INF/mcdp-mixin-bridges.toml}
+     * manifest emitted by the {@code mcdp-mixin-bridges} Gradle plugin. The format is documented
+     * in ADR-0019: one {@code [[bridge]]} array-of-tables entry per {@code (mixin, field)} pair,
+     * with keys {@code mixin}, {@code field}, {@code interface} (informational), {@code impl}.
      *
-     * <p>Lines whose resolver returns {@code null} or a non-existent path are skipped silently
-     * (the count returned reflects only successful registrations). Re-registration of the same
-     * {@code (mixin, field)} key overwrites with the new entry.</p>
+     * <p>Re-registration of the same {@code (mixin, field)} key overwrites the previous entry
+     * (the registry is a {@link ConcurrentHashMap}). Returns the number of {@code [[bridge]]}
+     * entries successfully registered. Missing or empty file → 0; malformed TOML → throws.</p>
      *
-     * @param modLoader            per-mod loader the bridge impls belong to
-     * @param indexFile            path to {@code META-INF/mcdp-mixin-bridges-index.txt}
-     * @param manifestPathResolver maps a mixin FQN to the path of its {@code <fqn>.txt} manifest
-     *                             (return {@code null} if the platform can't locate the file)
-     * @return number of {@code (mixin, field)} entries registered
+     * @param modLoader per-mod loader the bridge impls belong to
+     * @param tomlFile  path to the manifest; safe to pass {@code null} or a non-existent path
+     * @return number of bridge entries registered
      */
-    public static int registerAutoBridgeManifestsFromIndex(
-            ModClassLoader modLoader,
-            java.nio.file.Path indexFile,
-            java.util.function.Function<String, java.nio.file.Path> manifestPathResolver) {
+    public static int registerAutoBridgeManifestToml(ModClassLoader modLoader, Path tomlFile) {
         Objects.requireNonNull(modLoader, "modLoader");
-        Objects.requireNonNull(indexFile, "indexFile");
-        Objects.requireNonNull(manifestPathResolver, "manifestPathResolver");
-        if (!java.nio.file.Files.isRegularFile(indexFile)) return 0;
-        int registered = 0;
+        if (tomlFile == null || !Files.isRegularFile(tomlFile)) return 0;
+        Map<String, Object> root;
         try {
-            for (String line : java.nio.file.Files.readAllLines(indexFile, StandardCharsets.UTF_8)) {
-                String fqn = line.trim();
-                if (fqn.isEmpty()) continue;
-                java.nio.file.Path manifestPath;
-                try {
-                    manifestPath = manifestPathResolver.apply(fqn);
-                } catch (RuntimeException re) {
-                    continue; // resolver might throw for absent entries on some platforms
-                }
-                if (manifestPath == null || !java.nio.file.Files.isRegularFile(manifestPath)) continue;
-                int before = AUTO_BRIDGE_REGISTRY.size();
-                registerOneManifest(
-                        new ManifestData(fqn, java.nio.file.Files.readAllBytes(manifestPath)),
-                        modLoader);
-                registered += AUTO_BRIDGE_REGISTRY.size() - before;
-            }
+            root = MiniToml.parse(Files.readString(tomlFile, StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "mcdepprovider: failed to read auto-bridge index " + indexFile, e);
+                    "mcdepprovider: failed to read auto-bridge manifest " + tomlFile, e);
         }
-        return registered;
-    }
-
-    /**
-     * Register auto-bridge manifests scanned from an explicit content root. Platform adapters use
-     * this when {@code modLoader.getURLs()} doesn't span every content root of the mod (NeoForge
-     * dev: only one path lands on the per-mod loader; the resources dir holding manifests can be
-     * a sibling). The adapter has access to the unified mod-content view via the platform's own
-     * resource API ({@code IModFile.findResource} on NeoForge, {@code ModContainer.findPath} on
-     * Fabric) and feeds the resolved {@code META-INF/mcdp-mixin-bridges/} dir here.
-     *
-     * <p>Idempotent: re-registering the same {@code (mixinFqn, fieldName)} key overwrites with
-     * the new entry.</p>
-     *
-     * @deprecated Prefer {@link #registerAutoBridgeManifestsFromIndex} — directory-style
-     *             {@code findResource} on NeoForge {@code UnionPath} returns speculative or null
-     *             paths in dev mode, leading to silent zero-registration. The index-file API
-     *             relies only on exact-file lookups, which both platforms support reliably.
-     *
-     * @param modLoader   the per-mod {@link ModClassLoader} that the bridge impls belong to
-     * @param manifestDir a directory containing {@code <mixinFqn>.txt} manifest files; safe to
-     *                    pass a non-existent path (no-op)
-     * @return number of {@code (mixin, field)} entries registered (0 if the dir is empty/missing)
-     */
-    @Deprecated
-    public static int registerAutoBridgeManifests(ModClassLoader modLoader, java.nio.file.Path manifestDir) {
-        Objects.requireNonNull(modLoader, "modLoader");
-        Objects.requireNonNull(manifestDir, "manifestDir");
-        if (!java.nio.file.Files.isDirectory(manifestDir)) return 0;
+        Object bridges = root.get("bridge");
+        if (!(bridges instanceof List<?> list)) return 0;
         int registered = 0;
-        try (var stream = java.nio.file.Files.list(manifestDir)) {
-            for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) stream::iterator) {
-                String name = p.getFileName().toString();
-                if (!name.endsWith(".txt")) continue;
-                String fqn = name.substring(0, name.length() - ".txt".length());
-                byte[] content = java.nio.file.Files.readAllBytes(p);
-                int before = AUTO_BRIDGE_REGISTRY.size();
-                registerOneManifest(new ManifestData(fqn, content), modLoader);
-                registered += AUTO_BRIDGE_REGISTRY.size() - before;
+        for (Object entry : list) {
+            if (!(entry instanceof Map<?, ?> table)) continue;
+            String mixinFqn = asStr(table.get("mixin"));
+            String field = asStr(table.get("field"));
+            String impl = asStr(table.get("impl"));
+            if (mixinFqn == null || field == null || impl == null) {
+                throw new IllegalStateException(
+                        "mcdepprovider: incomplete [[bridge]] entry in " + tomlFile + ": " + table);
             }
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "mcdepprovider: failed to scan auto-bridge manifests at " + manifestDir, e);
+            AUTO_BRIDGE_REGISTRY.put(mixinFqn + "#" + field, new BridgeEntry(impl, modLoader));
+            registered++;
         }
         return registered;
     }
 
-    /**
-     * Read every {@code META-INF/mcdp-mixin-bridges/<mixinFqn>.txt} resource on the per-mod
-     * classloader and populate {@link #AUTO_BRIDGE_REGISTRY}. The actual impl class is loaded
-     * lazily via {@link #resolveAutoBridgeImpl(String, String)} from the rewritten mixin's
-     * {@code <clinit>} — Sponge Mixin forbids direct {@code Class.forName} on classes declared
-     * in {@code mixins.json}, so we never touch the mixin class here.
-     *
-     * <p>Manifest schema (one block per bridge target, blank lines ignored):
-     * <pre>
-     * bridge=com.example.mod.mcdp_mixin_bridges.FooBridge
-     * impl=com.example.mod.mcdp_mixin_bridges.FooBridgeImpl
-     * field=LOGIC_Foo
-     * </pre>
-     */
-    private static void wireAutoMixinBridges(String modId, ModClassLoader modLoader) {
-        List<ManifestData> manifests = new ArrayList<>();
-        for (URL root : modLoader.getURLs()) {
-            manifests.addAll(readBridgeManifests(root));
-        }
-        for (ManifestData md : manifests) {
-            try {
-                registerOneManifest(md, modLoader);
-            } catch (Throwable t) {
-                throw new IllegalStateException("mcdepprovider: failed to register mixin bridge "
-                        + md.mixinFqn() + " for mod '" + modId + "': " + t.getMessage(), t);
-            }
-        }
+    private static String asStr(Object o) {
+        return o instanceof String s ? s : null;
     }
-
-    private record ManifestData(String mixinFqn, byte[] content) {}
 
     /**
      * Resolve and instantiate the bridge impl for an auto-codegen mixin's {@code LOGIC_*}
@@ -202,69 +120,6 @@ public final class McdpProvider {
         } catch (ReflectiveOperationException ex) {
             throw new IllegalStateException("mcdepprovider: failed to instantiate auto-bridge impl "
                     + e.implFqn() + " for " + mixinFqn + "." + fieldName, ex);
-        }
-    }
-
-    private static List<ManifestData> readBridgeManifests(URL jarOrDir) {
-        List<ManifestData> out = new ArrayList<>();
-        try {
-            String s = jarOrDir.toString();
-            if (s.endsWith(".jar") || s.endsWith(".zip")) {
-                // Read entries inline — never hand out a jar: URL, since URL.openStream()
-                // routes through JarFileFactory's permanent cache and pins the file handle
-                // on Windows (breaking @TempDir cleanup and any other file deletion).
-                try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(jarOrDir.openStream())) {
-                    java.util.zip.ZipEntry e;
-                    while ((e = zis.getNextEntry()) != null) {
-                        String n = e.getName();
-                        if (n.startsWith("META-INF/mcdp-mixin-bridges/") && n.endsWith(".txt")) {
-                            String fqn = n.substring("META-INF/mcdp-mixin-bridges/".length(),
-                                    n.length() - ".txt".length());
-                            out.add(new ManifestData(fqn, zis.readAllBytes()));
-                        }
-                    }
-                }
-            } else {
-                java.io.File dir = new java.io.File(jarOrDir.toURI());
-                java.io.File bridgeDir = new java.io.File(dir, "META-INF/mcdp-mixin-bridges");
-                if (bridgeDir.isDirectory()) {
-                    java.io.File[] children = bridgeDir.listFiles((d, name) -> name.endsWith(".txt"));
-                    if (children != null) {
-                        for (java.io.File f : children) {
-                            String name = f.getName();
-                            String fqn = name.substring(0, name.length() - ".txt".length());
-                            out.add(new ManifestData(fqn, java.nio.file.Files.readAllBytes(f.toPath())));
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignore) {
-            // best effort; missing directories are normal
-        }
-        return out;
-    }
-
-    private static void registerOneManifest(ManifestData md, ModClassLoader modLoader) throws Exception {
-        try (InputStream in = new java.io.ByteArrayInputStream(md.content());
-             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-            String line;
-            String bridge = null, impl = null, field = null;
-            while ((line = r.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-                int eq = line.indexOf('=');
-                if (eq < 0) continue;
-                String k = line.substring(0, eq), v = line.substring(eq + 1);
-                switch (k) {
-                    case "bridge" -> bridge = v;
-                    case "impl" -> impl = v;
-                    case "field" -> field = v;
-                }
-                if (bridge != null && impl != null && field != null) {
-                    AUTO_BRIDGE_REGISTRY.put(md.mixinFqn() + "#" + field, new BridgeEntry(impl, modLoader));
-                    bridge = null; impl = null; field = null;
-                }
-            }
         }
     }
 

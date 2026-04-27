@@ -113,21 +113,13 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             ModClassLoader loader = COORDINATOR.register(
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
             McdpProvider.registerMod(e.modId, loader);
-            // Bridge-manifest discovery via per-mod index file. Fabric's unified mod-content
-            // view (ModContainer.findPath) is reliable for exact-file lookups; we read the index
-            // and resolve each <fqn>.txt one by one rather than asking for a directory.
-            ModContainer mc = fabric.getModContainer(e.modId).orElse(null);
-            int registered = 0;
-            if (mc != null) {
-                Path indexFile = mc.findPath("META-INF/mcdp-mixin-bridges-index.txt").orElse(null);
-                if (indexFile != null) {
-                    final ModContainer mcFinal = mc;
-                    registered = McdpProvider.registerAutoBridgeManifestsFromIndex(loader, indexFile,
-                            fqn -> mcFinal.findPath("META-INF/mcdp-mixin-bridges/" + fqn + ".txt")
-                                    .orElse(null));
-                }
-            }
-            LOG.info("mcdepprovider: registered {} auto-bridge manifest(s) for {}", registered, e.modId);
+            // Bridge-manifest discovery: single TOML file per mod (ADR-0019). Single-file
+            // findPath lookup is reliable across Fabric dev/prod.
+            Path manifestToml = fabric.getModContainer(e.modId)
+                    .flatMap(mc -> mc.findPath("META-INF/mcdp-mixin-bridges.toml"))
+                    .orElse(null);
+            int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
+            LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, e.modId);
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
             registerMixinOwnersForFabricMod(e);
         }

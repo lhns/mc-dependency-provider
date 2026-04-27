@@ -94,19 +94,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
-        // Bridge-manifest discovery via per-mod index file. Directory-style findResource is
-        // unreliable on NeoForge UnionPath (returns null or speculative path in dev), so we
-        // walk an explicit index emitted by the codegen plugin. Each line is a mixin FQN; we
-        // resolve <fqn>.txt via single-file findResource which IS reliable on both dev and prod.
-        Path indexFile = info.getOwningFile().getFile()
-                .findResource("META-INF/mcdp-mixin-bridges-index.txt");
-        int registered = 0;
-        if (indexFile != null && Files.isRegularFile(indexFile)) {
-            registered = McdpProvider.registerAutoBridgeManifestsFromIndex(loader, indexFile,
-                    fqn -> info.getOwningFile().getFile()
-                            .findResource("META-INF/mcdp-mixin-bridges/" + fqn + ".txt"));
-        }
-        LOG.info("mcdepprovider: registered {} auto-bridge manifest(s) for {}", registered, modId);
+        // Bridge-manifest discovery: single TOML file per mod (ADR-0019). Single-file
+        // findResource is reliable on Fabric and NeoForge across dev/prod modes — directory-
+        // style lookups on NeoForge UnionPath were not.
+        Path manifestToml = info.getOwningFile().getFile()
+                .findResource("META-INF/mcdp-mixin-bridges.toml");
+        int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
+        LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, modId);
         registerMixinOwnersForNeoForgeMod(info, modId);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives

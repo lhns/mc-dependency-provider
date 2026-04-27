@@ -18,14 +18,14 @@ import java.util.Map;
  * </ul>
  *
  * Out of scope (not used by {@link ManifestIo#write}): nested tables, inline tables, dotted keys,
- * literal strings, multi-line strings, numbers, booleans, datetimes, mixed-type arrays. The Mixin-
- * config scanner has its own JSON via {@link de.lhns.mcdp.core.MiniJson}; same reasoning, different
- * format.
+ * literal strings, multi-line strings, numbers, booleans, datetimes, mixed-type arrays. The
+ * mixin-config scanner has its own JSON reader (de.lhns.mcdp.core.MiniJson) for the same reason
+ * — closed schema, no third-party dep.
  *
  * Errors throw {@link IllegalArgumentException} with {@code @line N} positional context so
  * {@link ManifestIo#read} can wrap them in {@code IOException("Invalid manifest TOML: …")}.
  */
-final class MiniToml {
+public final class MiniToml {
 
     static final String LIBRARIES_KEY = "libraries";
 
@@ -41,7 +41,7 @@ final class MiniToml {
      * </ul>
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    static Map<String, Object> parse(String source) {
+    public static Map<String, Object> parse(String source) {
         Map<String, Object> root = new LinkedHashMap<>();
         Map<String, String> currentTable = null;          // non-null while inside [[libraries]]
         String currentArrayKey = null;
