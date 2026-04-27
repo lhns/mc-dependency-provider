@@ -63,9 +63,11 @@ Declared the normal platform way:
 
 Per-language details: **Scala** `object` resolves via `MODULE$`. **Kotlin** `object` resolves via `INSTANCE`. Class-form entries on either go through ctor dispatch.
 
-## Mixin on non-Java mods
+## Mods with Mixins
 
-Mixin's `TransformingClassLoader` is bypassed for mod classes loaded through a `ModClassLoader`, so Mixin doesn't directly transform Scala/Kotlin mod code. The workaround is a **bridge pattern**: put a thin Java `@Mixin` class in the mod that calls into a Scala/Kotlin implementation via `McdpProvider.loadMixinImpl(...)`. See [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md) for the full shape.
+Sponge Mixin is hosted by the game-layer classloader, but mod-private Scala/Kotlin classes live behind a per-mod `ModClassLoader` — so a mixin holding `import com.example.MyMod` throws `NoClassDefFoundError` at runtime. mcdp closes the gap automatically: the Gradle plugin scans your compiled mixin bytecode, emits a bridge interface plus a per-mod impl, rewrites the mixin's method bodies to dispatch through the bridge, and wires the impl in at mod load. You write a plain Sponge-Common-style mixin with direct calls to your mod code — no annotations, no manual `sharedPackages` entries for ordinary call sites. Codegen is on by default; there is nothing to add to your build.
+
+For users who want explicit control there is an opt-out (`mixinBridges { enabled.set(false) }`) and a hand-written `@McdpMixin` pattern. See [`docs/mixin-bridge.md`](docs/mixin-bridge.md) and [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md) for both paths and for the cases the codegen still defers to manual `sharedPackages` (interface injection, mod-private mixin superclasses, reflection on mod-private classes).
 
 ## Repository layout
 

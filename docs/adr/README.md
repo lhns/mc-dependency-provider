@@ -39,3 +39,4 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0015](0015-in-tree-closed-schema-parsers.md) | In-tree closed-schema parsers (`MiniJson`, `MiniToml`) | Accepted |
 | [0016](0016-unified-mcdp-jar.md) | Unified `mcdp` jar bundling Fabric and NeoForge adapters | Accepted |
 | [0017](0017-modcontainer-as-ctor-arg.md) | NeoForge mod construction inside `ModContainer.constructMod()` (enables `ModContainer` in entry ctor) | Accepted; supersedes part of 0013 |
+| [0018](0018-automatic-mixin-bridge-codegen.md) | Automatic Mixin → mod-private bridge codegen via bytecode rewriting | Accepted; refines 0008 |

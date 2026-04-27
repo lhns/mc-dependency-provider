@@ -1,6 +1,6 @@
 # ADR-0008 — Mixin supported via a bridge pattern
 
-**Status:** Accepted
+**Status:** Accepted — refined by [ADR-0018](0018-automatic-mixin-bridge-codegen.md). The bridge-pattern runtime architecture in this ADR is unchanged; ADR-0018 layers a Gradle-side bytecode-rewriter on top so the mod author writes a normal Sponge-Common-style mixin and the bridge plumbing is generated for them.
 **Supersedes:** the earlier draft "ADR-0008 — Mixin unsupported for Scala mod classes"
 
 ## Context

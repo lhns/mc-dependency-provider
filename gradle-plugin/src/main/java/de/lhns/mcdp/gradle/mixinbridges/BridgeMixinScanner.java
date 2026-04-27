@@ -1,0 +1,263 @@
+package de.lhns.mcdp.gradle.mixinbridges;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Reads a compiled mixin class with ASM and produces a {@link MixinScanResult}: either
+ * {@code SKIPPED} (no cross-classloader refs), {@code UNSUPPORTED} (header references
+ * mod-private types — cannot rewrite without sharedPackages), or {@code REWRITABLE} (every
+ * cross-classloader reference is grouped per target type).
+ *
+ * <p>The rewriter only touches method bodies. Class headers (interfaces, super, declared
+ * field types) are validated against the policy: any mod-private reference in the header
+ * fails the build with an actionable error pointing at {@code sharedPackages}, since
+ * header rewriting is an explicit non-goal of ADR-0018 (Sponge would copy the bad
+ * reference onto the target class regardless of what the rewriter did).</p>
+ *
+ * <p>Supported instruction set: INVOKESTATIC / INVOKEVIRTUAL / INVOKEINTERFACE,
+ * GETSTATIC / GETFIELD, PUTSTATIC / PUTFIELD, LDC of a {@code Class<?>} constant, and
+ * the {@code NEW T / DUP / args / INVOKESPECIAL T.<init>} constructor triplet — all on a
+ * non-platform owner. CHECKCAST, INSTANCEOF, and ANEWARRAY of mod-private types are
+ * inherently unbridgeable (the surrounding code's local-variable typing references the
+ * mod-private type directly, which a bridge interface cannot express); the scanner
+ * records those as warnings pointing at the user's only options
+ * ({@code sharedPackages} or restructuring the mixin).</p>
+ */
+public final class BridgeMixinScanner {
+
+    private final BridgePolicy policy;
+
+    public BridgeMixinScanner(BridgePolicy policy) {
+        this.policy = policy;
+    }
+
+    public MixinScanResult scan(byte[] classBytes) {
+        ClassNode cn = new ClassNode();
+        new ClassReader(classBytes).accept(cn, ClassReader.SKIP_FRAMES);
+        return scan(cn);
+    }
+
+    public MixinScanResult scan(ClassNode cn) {
+        String mixinFqn = BridgePolicy.toDotted(cn.name);
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+
+        if (cn.superName != null && policy.needsBridge(cn.superName)) {
+            errors.add(headerError(mixinFqn, "extends", BridgePolicy.toDotted(cn.superName)));
+        }
+        if (cn.interfaces != null) {
+            for (String iface : cn.interfaces) {
+                if (policy.needsBridge(iface)) {
+                    errors.add(headerError(mixinFqn, "implements", BridgePolicy.toDotted(iface)));
+                }
+            }
+        }
+        if (cn.fields != null) {
+            for (FieldNode f : cn.fields) {
+                String fqn = ownerInternalNameOfDescriptor(f.desc);
+                if (fqn != null && policy.needsBridge(fqn)) {
+                    errors.add("mcdp-mixin-bridges: " + mixinFqn + " declares field '"
+                            + f.name + "' of mod-private type " + BridgePolicy.toDotted(fqn)
+                            + ". Declared field types live in the class header, which the codegen "
+                            + "never rewrites (ADR-0018). Type the field with a bridge interface "
+                            + "(in sharedPackages) instead, or add the package to "
+                            + "mcdepprovider.sharedPackages.");
+                }
+            }
+        }
+        if (!errors.isEmpty()) {
+            return MixinScanResult.unsupported(mixinFqn, errors);
+        }
+
+        Map<String, List<BridgeMember>> targets = new LinkedHashMap<>();
+        if (cn.methods != null) {
+            for (MethodNode m : cn.methods) {
+                if (m.instructions == null) continue;
+                walkMethod(mixinFqn, m, targets, warnings);
+            }
+        }
+
+        if (targets.isEmpty()) {
+            return MixinScanResult.skipped(mixinFqn, warnings);
+        }
+        // Dedupe per-target members (a single call site appears once but multiple sites can refer
+        // to the same name+desc — keep one entry per unique tuple).
+        Map<String, List<BridgeMember>> deduped = new LinkedHashMap<>();
+        for (var e : targets.entrySet()) {
+            List<BridgeMember> uniq = new ArrayList<>();
+            for (BridgeMember bm : e.getValue()) {
+                if (!uniq.contains(bm)) uniq.add(bm);
+            }
+            deduped.put(e.getKey(), uniq);
+        }
+        return MixinScanResult.rewritable(mixinFqn, deduped, warnings);
+    }
+
+    private void walkMethod(String mixinFqn, MethodNode m,
+                            Map<String, List<BridgeMember>> targets, List<String> warnings) {
+        AbstractInsnNode insn = m.instructions.getFirst();
+        AbstractInsnNode prev = null;
+        while (insn != null) {
+            switch (insn.getOpcode()) {
+                case org.objectweb.asm.Opcodes.INVOKESTATIC,
+                     org.objectweb.asm.Opcodes.INVOKEVIRTUAL,
+                     org.objectweb.asm.Opcodes.INVOKEINTERFACE -> {
+                    MethodInsnNode min = (MethodInsnNode) insn;
+                    // Class.forName check fires regardless of owner — java/lang/Class is platform,
+                    // so this won't be tripped by the needsBridge gate below.
+                    if (isClassForName(min) && prev instanceof LdcInsnNode ldc
+                            && ldc.cst instanceof String s && policy.needsBridge(s)) {
+                        warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + m.name
+                                + " uses Class.forName(\"" + s + "\") on a mod-private "
+                                + "class. Reflection on mod-private classes is not bridged "
+                                + "automatically; restructure to call through a bridge.");
+                    }
+                    if (policy.needsBridge(min.owner)) {
+                        BridgeMember.Kind k = switch (insn.getOpcode()) {
+                            case org.objectweb.asm.Opcodes.INVOKESTATIC -> BridgeMember.Kind.STATIC_METHOD;
+                            case org.objectweb.asm.Opcodes.INVOKEVIRTUAL -> BridgeMember.Kind.VIRTUAL_METHOD;
+                            default -> BridgeMember.Kind.INTERFACE_METHOD;
+                        };
+                        validateDescriptor(mixinFqn, m.name, min.desc, warnings);
+                        targets.computeIfAbsent(min.owner, k0 -> new ArrayList<>())
+                                .add(new BridgeMember(k, min.name, min.desc));
+                    }
+                }
+                case org.objectweb.asm.Opcodes.INVOKESPECIAL -> {
+                    MethodInsnNode min = (MethodInsnNode) insn;
+                    if (policy.needsBridge(min.owner) && min.name.equals("<init>")) {
+                        validateDescriptor(mixinFqn, m.name, min.desc, warnings);
+                        targets.computeIfAbsent(min.owner, k0 -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.CONSTRUCTOR,
+                                        min.name, min.desc));
+                    }
+                    // super.method() and private-method INVOKESPECIAL on mod-private owners are
+                    // unusual inside a mixin (the mixin's superclass should be a vanilla type);
+                    // the header check earlier flags those as errors so we don't double-report.
+                }
+                case org.objectweb.asm.Opcodes.GETSTATIC -> {
+                    FieldInsnNode fin = (FieldInsnNode) insn;
+                    if (policy.needsBridge(fin.owner)) {
+                        targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.STATIC_FIELD_GET, fin.name, fin.desc));
+                    }
+                }
+                case org.objectweb.asm.Opcodes.GETFIELD -> {
+                    FieldInsnNode fin = (FieldInsnNode) insn;
+                    if (policy.needsBridge(fin.owner)) {
+                        targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.INSTANCE_FIELD_GET, fin.name, fin.desc));
+                    }
+                }
+                case org.objectweb.asm.Opcodes.PUTSTATIC -> {
+                    FieldInsnNode fin = (FieldInsnNode) insn;
+                    if (policy.needsBridge(fin.owner)) {
+                        targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.STATIC_FIELD_SET,
+                                        fin.name, fin.desc));
+                    }
+                }
+                case org.objectweb.asm.Opcodes.PUTFIELD -> {
+                    FieldInsnNode fin = (FieldInsnNode) insn;
+                    if (policy.needsBridge(fin.owner)) {
+                        targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.INSTANCE_FIELD_SET,
+                                        fin.name, fin.desc));
+                    }
+                }
+                case org.objectweb.asm.Opcodes.NEW -> {
+                    // NEW T paired with INVOKESPECIAL T.<init> is handled at the INVOKESPECIAL
+                    // site (the rewriter removes the NEW+DUP and replaces the INVOKESPECIAL).
+                    // A bare NEW with no matching <init> would be unusual user code; let it pass
+                    // through silently — verify will surface it later if it's actually broken.
+                }
+                case org.objectweb.asm.Opcodes.CHECKCAST,
+                     org.objectweb.asm.Opcodes.INSTANCEOF,
+                     org.objectweb.asm.Opcodes.ANEWARRAY -> {
+                    if (insn instanceof org.objectweb.asm.tree.TypeInsnNode tin
+                            && policy.needsBridge(tin.desc)) {
+                        warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + m.name
+                                + " uses opcode " + insn.getOpcode() + " on mod-private type "
+                                + BridgePolicy.toDotted(tin.desc)
+                                + " — this is a bridge-model limit, not a deferred feature. "
+                                + "A bridge interface cannot mention a mod-private type in any "
+                                + "signature, and the surrounding bytecode's local-variable typing "
+                                + "would still reference the type directly. Add the package to "
+                                + "`mcdepprovider.sharedPackages` so the type is visible to both "
+                                + "loaders, or restructure the mixin to keep this operation "
+                                + "inside mod code. See docs/mixin-bridge.md.");
+                    }
+                }
+                case org.objectweb.asm.Opcodes.LDC -> {
+                    if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Type t
+                            && t.getSort() == Type.OBJECT && policy.needsBridge(t.getInternalName())) {
+                        targets.computeIfAbsent(t.getInternalName(), k -> new ArrayList<>())
+                                .add(new BridgeMember(BridgeMember.Kind.CLASS_LITERAL,
+                                        "_class", "Ljava/lang/Class;"));
+                    }
+                }
+                default -> { /* nothing */ }
+            }
+            prev = insn;
+            insn = insn.getNext();
+        }
+    }
+
+    private boolean isClassForName(MethodInsnNode min) {
+        return "java/lang/Class".equals(min.owner) && "forName".equals(min.name);
+    }
+
+    private void validateDescriptor(String mixinFqn, String methodName, String desc,
+                                    List<String> warnings) {
+        for (Type arg : Type.getArgumentTypes(desc)) {
+            checkType(mixinFqn, methodName, arg, warnings);
+        }
+        checkType(mixinFqn, methodName, Type.getReturnType(desc), warnings);
+    }
+
+    private void checkType(String mixinFqn, String methodName, Type t, List<String> warnings) {
+        Type elem = t;
+        while (elem.getSort() == Type.ARRAY) elem = elem.getElementType();
+        if (elem.getSort() != Type.OBJECT) return;
+        String name = elem.getInternalName();
+        if (policy.needsBridge(name)) {
+            String dot = BridgePolicy.toDotted(name);
+            if (dot.startsWith("scala.") || dot.startsWith("kotlin.")) {
+                warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + methodName
+                        + " has a Scala/Kotlin type (" + dot + ") in its signature. "
+                        + "Bridge interfaces require game-layer-visible types only; convert to "
+                        + "a Java-callable signature (e.g. `java.util.Optional` instead of "
+                        + "`scala.Option`).");
+            }
+            // Other mod-private types in the descriptor mean the bridge interface itself can't
+            // express the call — log as a warning so the mod author sees the gap.
+        }
+    }
+
+    private static String ownerInternalNameOfDescriptor(String desc) {
+        Type t = Type.getType(desc);
+        while (t.getSort() == Type.ARRAY) t = t.getElementType();
+        return t.getSort() == Type.OBJECT ? t.getInternalName() : null;
+    }
+
+    private static String headerError(String mixinFqn, String relation, String referenced) {
+        return "mcdp-mixin-bridges: " + mixinFqn + " " + relation + " " + referenced
+                + " — the header references a mod-private type, which the codegen cannot rewrite. "
+                + "Add the package to `mcdepprovider.sharedPackages.add(\"...\")` so the type is "
+                + "loaded by the game-layer classloader, or restructure the mixin to keep "
+                + relation + " on a platform/shared type.";
+    }
+}

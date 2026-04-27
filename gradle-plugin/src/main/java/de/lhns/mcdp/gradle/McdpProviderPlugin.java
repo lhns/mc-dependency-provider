@@ -1,13 +1,17 @@
 package de.lhns.mcdp.gradle;
 
+import de.lhns.mcdp.gradle.mixinbridges.BridgeCodegenTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.language.jvm.tasks.ProcessResources;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -44,6 +48,32 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                 "runServer",
                 "runGameTestServer",
                 "runData"));
+
+        // Mixin-bridge codegen defaults. Compute per-project so the typical mod author writes
+        // zero `mixinBridges {}` config: bridgePackage = <group>.<projectName>.mcdp_mixin_bridges,
+        // modPrivatePackages = [<group>.] (every type under the project's group is bridge-eligible).
+        ext.getMixinBridges().getEnabled().convention(true);
+        ext.getMixinBridges().getBridgePackage().convention(project.provider(() -> {
+            String group = String.valueOf(project.getGroup());
+            if (group.isEmpty() || "unspecified".equals(group)) return "";
+            String name = project.getName().replace('-', '_');
+            return group + "." + name + ".mcdp_mixin_bridges";
+        }));
+        ext.getMixinBridges().getModPrivatePackages().convention(project.provider(() -> {
+            String group = String.valueOf(project.getGroup());
+            return (group.isEmpty() || "unspecified".equals(group)) ? List.of() : List.of(group + ".");
+        }));
+
+        // Auto-register the bridge package on sharedPackages so the per-mod ModClassLoader
+        // delegates the generated interface parent-first. Skipped when no project group is set
+        // (typical for test fixtures) so we never inject ad-hoc entries the user can't see.
+        ext.getSharedPackages().addAll(project.provider(() -> {
+            if (!Boolean.TRUE.equals(ext.getMixinBridges().getEnabled().getOrElse(true))) {
+                return List.of();
+            }
+            String pkg = ext.getMixinBridges().getBridgePackage().getOrNull();
+            return (pkg == null || pkg.isEmpty()) ? List.<String>of() : List.of(pkg + ".");
+        }));
 
         project.getPluginManager().withPlugin("java", applied -> {
             JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
@@ -151,6 +181,83 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     });
 
             RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());
+
+            registerMixinBridgeCodegen(project, ext, main);
         });
+    }
+
+    /**
+     * Wires {@code generateMcdpMixinBridges}: scans compiled mixin classes (declared in
+     * {@code src/main/resources/*.mixins.json}), rewrites their bytecode in place under
+     * {@code build/mcdp-mixin-bridges/classes/}, and produces matching bridge interfaces +
+     * impls + a manifest tree under {@code build/mcdp-mixin-bridges/resources/}. The
+     * rewritten classes are layered onto the jar so they win over the original ones.
+     */
+    private void registerMixinBridgeCodegen(Project project, McdpProviderExtension ext, SourceSet main) {
+        var bridgeTask = project.getTasks().register(
+                "generateMcdpMixinBridges", BridgeCodegenTask.class, t -> {
+                    t.setGroup("mcdepprovider");
+                    t.setDescription("Auto-generates Mixin → mod-private bridges (ADR-0018).");
+                    t.onlyIf(self -> {
+                        if (!Boolean.TRUE.equals(ext.getMixinBridges().getEnabled().getOrElse(true))) {
+                            return false;
+                        }
+                        // Skip when there are no compiled classes — a project applying the plugin
+                        // for manifest generation alone (no Java/Scala/Kotlin source) shouldn't
+                        // be forced through codegen.
+                        File classes = main.getJava().getDestinationDirectory().getAsFile().get();
+                        return classes.isDirectory();
+                    });
+                    t.getCompiledClassesDir().fileProvider(
+                            project.provider(() -> main.getJava().getDestinationDirectory()
+                                    .getAsFile().get()));
+                    t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
+                    t.getSharedPackages().set(ext.getSharedPackages());
+                    t.getMixinConfigFiles().from(project.provider(() -> {
+                        List<File> matches = new ArrayList<>();
+                        for (File r : main.getResources().getSrcDirs()) {
+                            if (!r.isDirectory()) continue;
+                            File[] children = r.listFiles((dir, name) -> name.endsWith("mixins.json"));
+                            if (children != null) {
+                                for (File c : children) matches.add(c);
+                            }
+                        }
+                        return matches;
+                    }));
+                    t.getOutputClassesDir().set(project.getLayout().getBuildDirectory()
+                            .dir("mcdp-mixin-bridges/classes"));
+                    t.getManifestOutputDir().set(project.getLayout().getBuildDirectory()
+                            .dir("mcdp-mixin-bridges/resources"));
+                    t.getReportFile().set(project.getLayout().getBuildDirectory()
+                            .file("mcdp-mixin-bridges/report.txt"));
+                    var compileJava = project.getTasks().findByName("compileJava");
+                    if (compileJava != null) t.dependsOn(compileJava);
+                    var compileScala = project.getTasks().findByName("compileScala");
+                    if (compileScala != null) t.dependsOn(compileScala);
+                    var compileKotlin = project.getTasks().findByName("compileKotlin");
+                    if (compileKotlin != null) t.dependsOn(compileKotlin);
+                });
+
+        // Layer the rewritten classes onto every Jar task. Set duplicatesStrategy=INCLUDE so the
+        // bridge output (added after the Jar plugin's default from(main.output)) overwrites the
+        // original compiled mixins in the final archive.
+        project.getTasks().withType(Jar.class).configureEach(jar -> {
+            jar.dependsOn(bridgeTask);
+            jar.setDuplicatesStrategy(org.gradle.api.file.DuplicatesStrategy.INCLUDE);
+            jar.from(bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
+            jar.from(bridgeTask.flatMap(BridgeCodegenTask::getManifestOutputDir));
+        });
+        // Also feed processResources so dev-mode runs (Loom/MDG) pick up the META-INF
+        // manifests without rebuilding the jar; rewritten classes flow into runtime classpath
+        // through SourceSet.output below.
+        project.getTasks().named("processResources", ProcessResources.class, resources -> {
+            resources.dependsOn(bridgeTask);
+            resources.setDuplicatesStrategy(org.gradle.api.file.DuplicatesStrategy.INCLUDE);
+            resources.from(bridgeTask.flatMap(BridgeCodegenTask::getManifestOutputDir));
+        });
+        // Add bridge classes to the main source set output so dev runs and downstream
+        // dependents see rewritten mixin classes + emitted bridge interfaces / impls.
+        main.getOutput().dir(java.util.Map.of("builtBy", bridgeTask),
+                bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
     }
 }

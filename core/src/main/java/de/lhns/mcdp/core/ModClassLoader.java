@@ -77,13 +77,21 @@ public final class ModClassLoader extends URLClassLoader {
                     try {
                         c = getParent().loadClass(name);
                     } catch (ClassNotFoundException parentMiss) {
-                        c = findClass(name);
+                        try {
+                            c = findClass(name);
+                        } catch (ClassNotFoundException childMiss) {
+                            throw decorateMissing(name, childMiss);
+                        }
                     }
                 } else {
                     try {
                         c = findClass(name);
                     } catch (ClassNotFoundException childMiss) {
-                        c = getParent().loadClass(name);
+                        try {
+                            c = getParent().loadClass(name);
+                        } catch (ClassNotFoundException parentMiss) {
+                            throw decorateMissing(name, parentMiss);
+                        }
                     }
                 }
             }
@@ -92,6 +100,36 @@ public final class ModClassLoader extends URLClassLoader {
             }
             return c;
         }
+    }
+
+    /**
+     * If the missing class looks mod-private (no platform prefix, not in {@code sharedPackages})
+     * or sits under {@code scala.}/{@code kotlin.}, rethrow with a tailored message that points
+     * the user at the Mixin bridge documentation. The original exception is preserved as the
+     * cause. For genuinely platform-domain misses we surface the bare {@code ClassNotFoundException}
+     * so JVM/log output matches a stock {@code URLClassLoader}.
+     */
+    private ClassNotFoundException decorateMissing(String name, ClassNotFoundException cause) {
+        if (!looksModPrivate(name)) return cause;
+        String msg = "mcdepprovider: " + name + " isn't visible to this classloader (mod '"
+                + modId + "'). If this came from a Mixin, automatic bridge codegen handles "
+                + "cross-classloader calls — make sure you haven't disabled it via "
+                + "`mixinBridges { enabled.set(false) }`. See docs/mixin-bridge.md "
+                + "(ADR-0008/0018) for the hand-written-bridge path if you need explicit control.";
+        ClassNotFoundException tailored = new ClassNotFoundException(msg, cause);
+        tailored.setStackTrace(cause.getStackTrace());
+        return tailored;
+    }
+
+    private boolean looksModPrivate(String name) {
+        if (name.startsWith("scala.") || name.startsWith("kotlin.")) return true;
+        for (String prefix : PLATFORM_PREFIXES) {
+            if (name.startsWith(prefix)) return false;
+        }
+        for (String prefix : sharedPackages) {
+            if (name.startsWith(prefix)) return false;
+        }
+        return true;
     }
 
     private boolean isParentFirst(String name) {

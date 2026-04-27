@@ -8,6 +8,7 @@ fabric-loader = "0.16.9"
 neoforge-spi = "9.0.2"
 neoforge-fml-loader = "4.0.42"
 neoforge-bus = "8.0.5"
+asm = "9.7.1"
 
 [libraries]
 maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "maven-resolver" }
@@ -22,6 +23,11 @@ fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-l
 neoforge-spi = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
 neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
+
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+asm-util = { module = "org.ow2.asm:asm-util", version.ref = "asm" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
