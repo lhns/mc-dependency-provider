@@ -113,11 +113,15 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                                 if (!mclibKeys.contains(key)) platformKeys.add(key);
                             }
                             // Always exclude mcdepprovider's own artifacts — they're shipped by
-                            // the platform adapter jar, not via the manifest.
+                            // the unified mcdp jar, not via the manifest. The legacy
+                            // `mcdp-fabric`/`mcdp-neoforge` coords are still recognized in case
+                            // a downstream consumer pins them via a substitution that bypasses
+                            // the unified `mcdp` artifact.
                             platformKeys.add("de.lhns.mcdp:core");
                             platformKeys.add("de.lhns.mcdp:deps-lib");
-                            platformKeys.add("de.lhns.mcdp:fabric");
-                            platformKeys.add("de.lhns.mcdp:neoforge");
+                            platformKeys.add("de.lhns.mcdp:mcdp");
+                            platformKeys.add("de.lhns.mcdp:mcdp-fabric");
+                            platformKeys.add("de.lhns.mcdp:mcdp-neoforge");
                             return List.copyOf(platformKeys);
                         }));
                     });

@@ -2,7 +2,6 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     `java-library`
-    `maven-publish`
     alias(libs.plugins.shadow)
 }
 
@@ -81,11 +80,7 @@ configurations.apply {
     }
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifactId = "mcdp-neoforge"
-            artifact(tasks.named("shadowJar"))
-        }
-    }
-}
+// :neoforge is no longer published. Only :dist publishes (the unified `mcdp` jar
+// containing both fabric and neoforge adapters). The shadowJar here remains
+// produced for inspection/debugging and is consumed via :dist's `bundle`
+// configuration through apiElements/runtimeElements above.

@@ -9,6 +9,11 @@ pluginManagement {
     }
 }
 
+// Top-level includeBuild for module substitution (auto-substitutes
+// `de.lhns.mcdp:mcdp:VERSION` to project `:mcdp`). See kotlin-example/
+// settings.gradle.kts for the full rationale.
+includeBuild("../..")
+
 dependencyResolutionManagement {
     repositories {
         maven("https://maven.fabricmc.net/") { name = "Fabric" }

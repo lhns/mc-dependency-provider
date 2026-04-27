@@ -28,10 +28,11 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // The mcdepprovider Fabric adapter — the actual mod with id "mcdepprovider"
-    // that fabric_example depends on at runtime. Resolved via the composite build's
-    // settings-level includeBuild substitution.
-    modImplementation("de.lhns.mcdp:mcdp-fabric:0.1.0-SNAPSHOT")
+    // The unified mcdpprovider jar (ADR-0016) — the mod with id "mcdepprovider"
+    // that fabric_example depends on at runtime. Composite-substituted to :dist.
+    // The jar carries a `fabric.mod.json` at the root (Fabric reads it) plus a
+    // `META-INF/neoforge.mods.toml` shape that Fabric ignores.
+    modImplementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcdepImplementation is the opt-in bucket: deps placed here are emitted into

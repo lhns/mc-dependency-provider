@@ -37,3 +37,4 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0013](0013-neoforge-faithful-entry-init.md) | NeoForge-faithful entry init via `@Mod` + FML helpers | Accepted |
 | [0014](0014-opt-in-mcdep-implementation.md) | Opt-in `mcdepImplementation` Gradle bucket replaces `excludeGroup` | Accepted |
 | [0015](0015-in-tree-closed-schema-parsers.md) | In-tree closed-schema parsers (`MiniJson`, `MiniToml`) | Accepted |
+| [0016](0016-unified-mcdp-jar.md) | Unified `mcdp` jar bundling Fabric and NeoForge adapters | Accepted |

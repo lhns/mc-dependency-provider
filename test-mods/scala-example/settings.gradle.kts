@@ -1,8 +1,7 @@
 rootProject.name = "scala-example"
 
 pluginManagement {
-    // Composite-build the whole mcdepprovider repo so we pick up local changes
-    // without any publish step. The :gradle-plugin subproject supplies the plugin.
+    // Composite-build the mcdepprovider repo for plugin resolution.
     includeBuild("../..")
 
     repositories {
@@ -10,6 +9,10 @@ pluginManagement {
         mavenCentral()
     }
 }
+
+// Top-level includeBuild for module substitution. See kotlin-example/
+// settings.gradle.kts for the full rationale.
+includeBuild("../..")
 
 dependencyResolutionManagement {
     repositories {

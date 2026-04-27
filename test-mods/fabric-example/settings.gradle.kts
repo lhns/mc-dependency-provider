@@ -1,8 +1,7 @@
 rootProject.name = "fabric-example"
 
 pluginManagement {
-    // Composite-build the whole mcdepprovider repo so the mcdepprovider Gradle
-    // plugin applies without a publish step.
+    // Composite-build the mcdepprovider repo for plugin resolution.
     includeBuild("../..")
 
     repositories {
@@ -12,13 +11,12 @@ pluginManagement {
     }
 }
 
-// ADR-0012: runtime library artifacts (de.lhns.mcdp:mcdp-fabric, :core)
-// resolve via mavenLocal rather than composite substitution. The :fabric subproject
-// publishes a shadow jar containing core+deps-lib+tomlj; composite substitution
-// would resolve to per-subproject source-set outputs instead of the shaded jar,
-// which Fabric's ClasspathModCandidateFinder rejects. Workflow:
-//   ../../gradlew :fabric:publishToMavenLocal
-// before any runServer/runClient on this test mod.
+// Top-level includeBuild enables MODULE substitution from the same composite
+// build. The `:mcdp` project name matches the published artifactId, so
+// auto-substitution maps `de.lhns.mcdp:mcdp:VERSION` to it without any
+// explicit substitution rule. pluginManagement.includeBuild above contributes
+// only plugins; top-level here contributes modules.
+includeBuild("../..")
 
 dependencyResolutionManagement {
     repositories {

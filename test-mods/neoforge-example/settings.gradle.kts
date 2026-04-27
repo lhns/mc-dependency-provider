@@ -1,8 +1,7 @@
 rootProject.name = "neoforge-example"
 
 pluginManagement {
-    // Composite-build the whole mcdepprovider repo so local changes apply without
-    // any publish step. The :gradle-plugin subproject supplies the mcdepprovider plugin.
+    // Composite-build the mcdepprovider repo for plugin resolution.
     includeBuild("../..")
 
     repositories {
@@ -12,13 +11,13 @@ pluginManagement {
     }
 }
 
-// ADR-0012: runtime library artifacts (de.lhns.mcdp:mcdp-neoforge, :core)
-// resolve via mavenLocal rather than composite substitution. The :neoforge subproject
-// publishes a shadow jar containing core+deps-lib+tomlj; composite substitution
-// would resolve to per-subproject source-set outputs instead of the shaded jar,
-// which breaks NeoForge's language-provider discovery. Workflow:
-//   ../../gradlew :neoforge:publishToMavenLocal
-// before any runServer/runClient on this test mod.
+// Top-level includeBuild enables MODULE substitution from the same composite
+// build. The `:mcdp` project name matches the published artifactId, so
+// auto-substitution maps `de.lhns.mcdp:mcdp:VERSION` to it without any
+// explicit substitution rule. pluginManagement.includeBuild above contributes
+// only plugins; top-level here contributes modules.
+includeBuild("../..")
+
 dependencyResolutionManagement {
     repositories {
         maven("https://maven.neoforged.net/releases/") { name = "NeoForged" }

@@ -37,13 +37,14 @@ neoForge {
 }
 
 dependencies {
-    // ADR-0012: the mcdepprovider NeoForge adapter, consumed as a single shadow jar
-    // from mavenLocal. Lands on the sourceSet runtimeClasspath which MDG 2.0.78 feeds
-    // to runServer/runClient; FML discovers it on java.class.path via its bundled
-    // META-INF/neoforge.mods.toml and picks up the IModLanguageProvider via
-    // META-INF/services. (The `additionalRuntimeClasspath` configuration is for
-    // non-mod libs that FML would otherwise mis-scan — not for actual mod jars.)
-    implementation("de.lhns.mcdp:mcdp-neoforge:0.1.0-SNAPSHOT")
+    // The unified mcdpprovider jar (ADR-0016). Composite-substituted to :dist.
+    // Lands on the sourceSet runtimeClasspath which MDG 2.0.78 feeds to
+    // runServer/runClient; FML discovers the language provider via the bundled
+    // META-INF/services/IModLanguageLoader entry plus FMLModType=LIBRARY in the
+    // jar manifest. The `fabric.mod.json` that ships in the same jar is invisible
+    // to FML — it doesn't scan that path. (`additionalRuntimeClasspath` is for
+    // non-mod libs FML would otherwise mis-scan — not for actual mod jars.)
+    implementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcdepImplementation: opt-in bucket served through the per-mod ModClassLoader.

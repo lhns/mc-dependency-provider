@@ -1,8 +1,8 @@
 rootProject.name = "kotlin-example"
 
 pluginManagement {
-    // Composite-build the whole mcdepprovider repo so we pick up local changes
-    // without any publish step. The :gradle-plugin subproject supplies the plugin.
+    // Composite-build the mcdepprovider repo for plugin resolution
+    // (the `de.lhns.mcdp` Gradle plugin lives in :gradle-plugin).
     includeBuild("../..")
 
     repositories {
@@ -10,6 +10,13 @@ pluginManagement {
         mavenCentral()
     }
 }
+
+// Top-level includeBuild enables MODULE substitution from the same composite
+// build. The `:mcdp` project name matches the published artifactId, so
+// auto-substitution maps `de.lhns.mcdp:mcdp:VERSION` to it without any
+// explicit substitution rule. (pluginManagement.includeBuild contributes
+// only plugins, not modules — both calls are needed.)
+includeBuild("../..")
 
 dependencyResolutionManagement {
     repositories {
