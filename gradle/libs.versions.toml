@@ -9,6 +9,7 @@ neoforge-spi = "9.0.2"
 neoforge-fml-loader = "4.0.42"
 neoforge-bus = "8.0.5"
 asm = "9.7.1"
+vanniktech-maven-publish = "0.30.0"
 
 [libraries]
 maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "maven-resolver" }
@@ -31,3 +32,4 @@ asm-util = { module = "org.ow2.asm:asm-util", version.ref = "asm" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-maven-publish" }

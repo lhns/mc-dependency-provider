@@ -1,0 +1,68 @@
+name: Publish to Maven Central
+
+# Triggered on GitHub release publication. Bundles + uploads `:mcdp` and `:gradle-plugin` to
+# Sonatype Central Portal via the vanniktech-maven-publish plugin (which handles staging-bundle
+# upload, signing, and POM validation in one task). Releases land in the Central Portal staging
+# UI; deployment is *not* auto-released — the maintainer reviews and clicks "publish" manually.
+#
+# Required repository secrets:
+#   MAVEN_CENTRAL_USERNAME    — Sonatype Central Portal user-token username
+#   MAVEN_CENTRAL_PASSWORD    — Sonatype Central Portal user-token password
+#   SIGNING_KEY               — armored GPG private key (multi-line; full ASCII-armor block)
+#   SIGNING_KEY_ID            — last 8 hex chars of the GPG key ID
+#   SIGNING_KEY_PASSWORD      — passphrase for the GPG private key
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # manual trigger for testing
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false # never cancel an in-flight publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-publish-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-publish-
+            gradle-ubuntu-latest-
+
+      - name: Build everything (assert release-quality before upload)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Publish to Sonatype Central Portal
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # publishToMavenCentral runs the staging-bundle upload (vanniktech) for every
+          # subproject that applies the plugin: :mcdp (the merged jar) and :gradle-plugin.
+          ./gradlew publishToMavenCentral --no-daemon --stacktrace --no-configuration-cache
+          echo "Bundles uploaded to Central Portal staging. Review and release at:"
+          echo "  https://central.sonatype.com/publishing"

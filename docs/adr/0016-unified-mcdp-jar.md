@@ -29,7 +29,7 @@ The cross-loader pattern is the same one Architectury and the multi-loader templ
 
 ### Build-side mechanics
 
-- The Gradle subproject is named **`:mcdp`** (matching the published artifactId). Composite-build auto-substitution maps a consumer's `de.lhns.mcdp:mcdp:VERSION` request to this project automatically — no explicit `dependencySubstitution` block is needed in test-mod settings.
+- The Gradle subproject is named **`:mcdp`** (matching the published artifactId). Composite-build auto-substitution maps a consumer's `de.lhns.mcdp:mcdp:VERSION` request to this project automatically — no explicit `dependencySubstitution` block is needed in test-mod settings. The on-disk directory is **`multi/`** (decoupled from the project name via `project(":mcdp").projectDir = file("multi")` in `settings.gradle.kts`) so the folder describes the module's purpose (multi-loader bundle) without breaking the artifactId-matching constraint.
 - `:mcdp:shadowJar` consumes `:fabric:runtimeElements` and `:neoforge:runtimeElements` (which both deliver shadowJars carrying `:core` + `:deps-lib`) via a custom `bundle` configuration. Shadow's `mergeServiceFiles()` correctly concatenates `META-INF/services/` entries; `EXCLUDE` drops the second copy of `:core`/`:deps-lib` classes coming through both inputs.
 - The unified jar's `META-INF/MANIFEST.MF` carries `FMLModType: LIBRARY` and `Automatic-Module-Name: mcdepprovider`, both required by NeoForge and harmless to Fabric.
 - `:fabric` and `:neoforge` no longer apply the `maven-publish` plugin and have no `publishing { ... }` block. Their shadowJars still build for diagnostic use.
