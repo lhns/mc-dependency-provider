@@ -217,6 +217,10 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     // under java; Kotlin joint output under kotlin. The scanner picks the first
                     // dir containing the declared mixin class.
                     t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
+                    // Consumer's compile classpath — fed only to ASM's COMPUTE_FRAMES loader so
+                    // common-supertype computation can resolve Minecraft (and any other
+                    // off-plugin) types that mixin bytecode pushes across branch joins.
+                    t.getRuntimeFrameLookupClasspath().from(main.getCompileClasspath());
                     t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
                     t.getMixinConfigFiles().from(project.provider(() -> {

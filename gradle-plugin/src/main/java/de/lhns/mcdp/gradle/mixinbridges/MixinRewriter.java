@@ -40,10 +40,16 @@ public final class MixinRewriter {
 
     private final BridgePolicy policy;
     private final String bridgePackageInternal;
+    private final ClassLoader frameLookup;
 
     public MixinRewriter(BridgePolicy policy, String bridgePackage) {
+        this(policy, bridgePackage, ClassLoader.getSystemClassLoader());
+    }
+
+    public MixinRewriter(BridgePolicy policy, String bridgePackage, ClassLoader frameLookup) {
         this.policy = policy;
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
+        this.frameLookup = frameLookup;
     }
 
     /**
@@ -57,7 +63,8 @@ public final class MixinRewriter {
         ClassNode cn = new ClassNode();
         new ClassReader(classBytes).accept(cn, 0);
         rewrite(cn, targets);
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        ClassWriter cw = new ClasspathAwareClassWriter(
+                ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
         cn.accept(cw);
         return cw.toByteArray();
     }

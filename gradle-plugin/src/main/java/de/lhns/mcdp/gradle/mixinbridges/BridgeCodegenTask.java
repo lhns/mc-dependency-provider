@@ -56,6 +56,17 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract org.gradle.api.file.ConfigurableFileCollection getMixinConfigFiles();
 
+    /**
+     * Consumer's compile classpath. Consulted only by ASM's {@code COMPUTE_FRAMES} pass when it
+     * needs to compute a common supertype between two reference types referenced in mixin
+     * bytecode. Without this, MC types like {@code FluidState}/{@code BlockState} aren't visible
+     * to the gradle-plugin classloader and frame computation throws CNF. May be empty for tests
+     * or projects whose mixins reference no off-classpath types.
+     */
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getRuntimeFrameLookupClasspath();
+
     @Input
     public abstract Property<String> getBridgePackage();
 
@@ -101,9 +112,22 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 getSharedPackages().getOrElse(List.of()),
                 getBridgePackage().get());
         BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinRewriter rewriter = new MixinRewriter(policy, getBridgePackage().get());
+
+        // ASM frame-computation loader: consumer's compile classpath ∪ this project's class
+        // outputs, parented at platform so we don't leak gradle-plugin internals.
+        List<java.net.URL> urls = new ArrayList<>();
+        for (var f : getRuntimeFrameLookupClasspath().getFiles()) {
+            urls.add(f.toURI().toURL());
+        }
+        for (var f : getCompiledClassesDirs().getFiles()) {
+            urls.add(f.toURI().toURL());
+        }
+        try (java.net.URLClassLoader frameLookup = new java.net.URLClassLoader(
+                urls.toArray(new java.net.URL[0]), ClassLoader.getPlatformClassLoader())) {
+
+        MixinRewriter rewriter = new MixinRewriter(policy, getBridgePackage().get(), frameLookup);
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(getBridgePackage().get());
-        BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get());
+        BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get(), frameLookup);
 
         // Aggregated bridges across the whole compilation: we want one bridge interface per
         // target type even if multiple mixins reference it.
@@ -180,6 +204,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 List.copyOf(aggregated.keySet()), warnings);
         log.lifecycle("mcdp-mixin-bridges: rewrote " + rewrittenMixins.size()
                 + " mixin(s); emitted " + aggregated.size() + " bridge(s).");
+        }
     }
 
     private static void writeManifest(Path manifestRoot, String mixinFqn,

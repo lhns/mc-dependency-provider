@@ -21,9 +21,15 @@ import java.util.List;
 public final class BridgeImplEmitter {
 
     private final String bridgePackageInternal;
+    private final ClassLoader frameLookup;
 
     public BridgeImplEmitter(String bridgePackage) {
+        this(bridgePackage, ClassLoader.getSystemClassLoader());
+    }
+
+    public BridgeImplEmitter(String bridgePackage, ClassLoader frameLookup) {
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
+        this.frameLookup = frameLookup;
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
@@ -31,7 +37,8 @@ public final class BridgeImplEmitter {
         String ifaceInternal = bridgePackageInternal + "/" + simple + "Bridge";
         String implInternal = ifaceInternal + "Impl";
 
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        ClassWriter cw = new ClasspathAwareClassWriter(
+                ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
         cw.visit(
                 Opcodes.V21,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL,

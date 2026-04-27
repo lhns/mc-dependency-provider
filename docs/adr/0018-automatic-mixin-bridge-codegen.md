@@ -103,6 +103,12 @@ Manifest format is unchanged. Both the auto-codegen path and the hand-written `@
 
 Codegen scans every `SourceSet` output dir (`main.output.classesDirs` — java + scala + kotlin), not just `compileJava`'s. Required for Scala/Kotlin joint compilation: when a `.java` mixin source lives under `src/main/scala/` (or `src/main/kotlin/`), the polyglot compiler writes the bytecode to its own output dir while `compileJava`'s stays empty. The scanner uses first-match in the FileCollection's iteration order, which is insertion order from Gradle's source-set wiring (java, scala, kotlin).
 
+### Errata: ASM `getCommonSuperClass` loader (post-v0.1.0)
+
+`MixinRewriter` and `BridgeImplEmitter` both write classes through `ClassWriter` with `COMPUTE_FRAMES`. ASM's default `getCommonSuperClass` resolves type lookups through whichever `ClassLoader` loaded `ClassWriter.class` — i.e. the gradle-plugin classloader, which can't see Minecraft (or any consumer-only) types. Mixins that push two MC reference types onto the operand stack across a branch join would otherwise CNF inside `getCommonSuperClass` (`mc-fluid-physics` was the first real-world repro: `FluidState`, `BlockState`, `Level`).
+
+Fix: `ClasspathAwareClassWriter` overrides `getClassLoader()` to return a caller-supplied loader. `BridgeCodegenTask` builds a `URLClassLoader` from the consumer's `compileClasspath` ∪ the project's own class outputs, parented at `getPlatformClassLoader()`, and passes it to both writer call sites. Test mods don't surface the bug (their bytecode never produces ambiguous merge frames between two consumer-only types) — covered by `ClasspathAwareClassWriterTest`.
+
 ## Out of scope (revisit conditions)
 
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.
