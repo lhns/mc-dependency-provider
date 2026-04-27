@@ -114,12 +114,21 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
             McdpProvider.registerMod(e.modId, loader);
             // Bridge-manifest discovery: single TOML file per mod (ADR-0019). Single-file
-            // findPath lookup is reliable across Fabric dev/prod.
+            // findPath is reliable across Fabric dev/prod. Three-line diagnostic mirrors the
+            // NeoForge adapter; see McdpLanguageLoader for the rationale.
             Path manifestToml = fabric.getModContainer(e.modId)
                     .flatMap(mc -> mc.findPath("META-INF/mcdp-mixin-bridges.toml"))
                     .orElse(null);
-            int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
-            LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, e.modId);
+            if (manifestToml == null) {
+                LOG.info("mcdepprovider: no auto-bridge manifest file for {} "
+                        + "(mod has no mixins, or findPath returned empty)", e.modId);
+            } else {
+                LOG.info("mcdepprovider: scanning {} for {} (exists={}, regular={})",
+                        manifestToml, e.modId,
+                        Files.exists(manifestToml), Files.isRegularFile(manifestToml));
+                int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
+                LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, e.modId);
+            }
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
             registerMixinOwnersForFabricMod(e);
         }

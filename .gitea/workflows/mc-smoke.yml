@@ -450,19 +450,21 @@ jobs:
           REPORT=build/mcdp-mixin-bridges/report.txt
           test -f "$REPORT" || { echo "codegen report missing at $REPORT"; exit 1; }
           cat "$REPORT"
-          grep -q 'rewritten mixins (6)' "$REPORT" || {
-            echo "ERROR: expected report to list 6 rewritten mixins"; exit 1; }
+          grep -q 'rewritten mixins (8)' "$REPORT" || {
+            echo "ERROR: expected report to list 8 rewritten mixins"; exit 1; }
 
-          # The remapped mod jar must contain at least one bridge interface and one impl.
+          # The remapped mod jar must contain bridge classes + the unified TOML manifest.
           JAR=$(ls build/libs/*.jar | grep -v sources | head -1)
           test -f "$JAR" || { echo "no jar built"; exit 1; }
           BRIDGE_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_mixin_bridges/.*Bridge\.class$' | wc -l)
           IMPL_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_mixin_bridges/.*BridgeImpl\.class$' | wc -l)
-          MANIFEST_ENTRIES=$(unzip -l "$JAR" | grep -E 'META-INF/mcdp-mixin-bridges/.*\.txt$' | wc -l)
-          echo "bridge interfaces=$BRIDGE_ENTRIES impls=$IMPL_ENTRIES manifests=$MANIFEST_ENTRIES"
+          unzip -l "$JAR" | grep -q 'META-INF/mcdp-mixin-bridges\.toml' || {
+            echo "ERROR: META-INF/mcdp-mixin-bridges.toml missing from jar"; exit 1; }
+          BRIDGE_TOML_COUNT=$(unzip -p "$JAR" META-INF/mcdp-mixin-bridges.toml | grep -c '^\[\[bridge\]\]')
+          echo "bridge interfaces=$BRIDGE_ENTRIES impls=$IMPL_ENTRIES toml-bridges=$BRIDGE_TOML_COUNT"
           [ "$BRIDGE_ENTRIES" -ge 2 ] || { echo "expected ≥2 bridge interfaces"; exit 1; }
           [ "$IMPL_ENTRIES" -ge 2 ] || { echo "expected ≥2 bridge impls"; exit 1; }
-          [ "$MANIFEST_ENTRIES" -ge 6 ] || { echo "expected ≥6 manifest entries (one per mixin)"; exit 1; }
+          [ "$BRIDGE_TOML_COUNT" -ge 9 ] || { echo "expected ≥9 [[bridge]] entries (8 mixins + MultiTargetMixin's second target)"; exit 1; }
 
       - name: Boot mixin-example fabric server
         working-directory: test-mods/mixin-example
@@ -474,7 +476,7 @@ jobs:
             --timeout 900 \
             --log-file ../../mixin-codegen.log
 
-      - name: Assert all 6 mixin markers + boot line fired
+      - name: Assert all 9 mixin markers + boot line fired
         shell: bash
         run: |
           set -euo pipefail
@@ -486,9 +488,13 @@ jobs:
           grep -q 'mod=mixin_example boot ok' "$LOG" || {
             echo "ERROR: entrypoint did not boot (no boot ok line)"; exit 1; }
 
+          # BlocksClinitMixin fires during server init (before tick) — catches the empty-registry
+          # bug from the mc-fluid-physics report. MultiTargetMixinA/B are emitted from a single
+          # mixin body that calls into two mod-private types — catches the multi-[[bridge]] case.
           MISSING=0
           for n in MinecraftServerOneMixin MinecraftServerTwoMixin MinecraftServerThreeMixin \
-                   MinecraftServerFourMixin MinecraftServerFiveMixin MinecraftServerSixMixin; do
+                   MinecraftServerFourMixin MinecraftServerFiveMixin MinecraftServerSixMixin \
+                   BlocksClinitMixin MultiTargetMixinA MultiTargetMixinB; do
             if ! grep -q "mixin=$n ok" "$LOG"; then
               echo "ERROR: mixin marker missing for $n"
               MISSING=1

@@ -9,7 +9,7 @@ neoforge-spi = "9.0.2"
 neoforge-fml-loader = "4.0.42"
 neoforge-bus = "8.0.5"
 asm = "9.7.1"
-vanniktech-maven-publish = "0.30.0"
+vanniktech-maven-publish = "0.32.0"
 
 [libraries]
 maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "maven-resolver" }

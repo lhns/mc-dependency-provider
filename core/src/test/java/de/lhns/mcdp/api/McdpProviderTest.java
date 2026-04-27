@@ -215,9 +215,12 @@ class McdpProviderTest {
         }
     }
 
-    /** Non-existent or null path → 0 entries, no throw. */
+    /**
+     * Null path → 0 entries, no throw (legitimate "mod has no mixins, no manifest emitted"
+     * signal — adapter logs the case separately).
+     */
     @Test
-    void registerAutoBridgeManifestTomlNoopForMissingFile(@TempDir Path tmp) throws Exception {
+    void registerAutoBridgeManifestTomlNoopForNullPath(@TempDir Path tmp) throws Exception {
         Path implJar = tmp.resolve("impl.jar");
         compileFakeImplJar(implJar);
         try (ModClassLoader mod = new ModClassLoader(
@@ -226,8 +229,26 @@ class McdpProviderTest {
                 getClass().getClassLoader(),
                 List.of())) {
             assertEquals(0, McdpProvider.registerAutoBridgeManifestToml(mod, null));
-            assertEquals(0, McdpProvider.registerAutoBridgeManifestToml(
-                    mod, tmp.resolve("does-not-exist.toml")));
+        }
+    }
+
+    /**
+     * Non-null path that doesn't resolve to a readable file → loud throw with diagnostic
+     * message. The previous {@code Files.isRegularFile} silent-skip masked NeoForge UnionPath
+     * speculative-resolution bugs; this contract surfaces them at boot.
+     */
+    @Test
+    void registerAutoBridgeManifestTomlThrowsForUnreadablePath(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        try (ModClassLoader mod = new ModClassLoader(
+                "ghost", new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(), List.of())) {
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> McdpProvider.registerAutoBridgeManifestToml(
+                            mod, tmp.resolve("does-not-exist.toml")));
+            assertTrue(ex.getMessage().contains("failed to read auto-bridge manifest"),
+                    ex.getMessage());
         }
     }
 

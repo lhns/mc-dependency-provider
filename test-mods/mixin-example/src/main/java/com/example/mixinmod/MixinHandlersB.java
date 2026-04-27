@@ -6,4 +6,5 @@ public final class MixinHandlersB {
 
     public static void onMixinFour() { SmokeLog.emit("MinecraftServerFourMixin"); }
     public static void onMixinFive() { SmokeLog.emit("MinecraftServerFiveMixin"); }
+    public static void onMixinMultiTargetB() { SmokeLog.emit("MultiTargetMixinB"); }
 }

@@ -60,13 +60,28 @@ public final class McdpProvider {
      */
     public static int registerAutoBridgeManifestToml(ModClassLoader modLoader, Path tomlFile) {
         Objects.requireNonNull(modLoader, "modLoader");
-        if (tomlFile == null || !Files.isRegularFile(tomlFile)) return 0;
+        // Null path is the legitimate "mod has no mixins, no manifest emitted" signal — codegen
+        // skips emission when rewrittenMixins.isEmpty(). The platform adapter logs the null case
+        // separately so we can tell "intentional no-op" from "expected manifest but findResource
+        // returned null". Any non-null path that fails to read throws loudly: silent fall-throughs
+        // hid the UnionPath speculative-resolution bug for too long.
+        if (tomlFile == null) return 0;
+        String content;
+        try {
+            content = Files.readString(tomlFile, StandardCharsets.UTF_8);
+        } catch (java.io.IOException ioe) {
+            throw new IllegalStateException(
+                    "mcdepprovider: failed to read auto-bridge manifest " + tomlFile
+                            + " (path returned by adapter's findResource() but unreadable; "
+                            + "likely a UnionPath speculative-resolution quirk on NeoForge dev)",
+                    ioe);
+        }
         Map<String, Object> root;
         try {
-            root = MiniToml.parse(Files.readString(tomlFile, StandardCharsets.UTF_8));
+            root = MiniToml.parse(content);
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "mcdepprovider: failed to read auto-bridge manifest " + tomlFile, e);
+                    "mcdepprovider: failed to parse auto-bridge manifest " + tomlFile, e);
         }
         Object bridges = root.get("bridge");
         if (!(bridges instanceof List<?> list)) return 0;

@@ -3,14 +3,17 @@
   "minVersion": "0.8",
   "package": "com.example.mixinmod.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "BlocksClinitMixin"
+  ],
   "server": [
     "MinecraftServerOneMixin",
     "MinecraftServerTwoMixin",
     "MinecraftServerThreeMixin",
     "MinecraftServerFourMixin",
     "MinecraftServerFiveMixin",
-    "MinecraftServerSixMixin"
+    "MinecraftServerSixMixin",
+    "MultiTargetMixin"
   ],
   "client": [],
   "injectors": {

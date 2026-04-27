@@ -82,6 +82,10 @@ configurations.apply {
 // ORG_GRADLE_PROJECT_mavenCentralUsername / ORG_GRADLE_PROJECT_mavenCentralPassword and
 // ORG_GRADLE_PROJECT_signingInMemoryKey / ...keyId / ...keyPassword.
 mavenPublishing {
+    // vanniktech 0.32.0 — Central Portal snapshot publishing supported (added in 0.31).
+    // automaticRelease=false: release bundles stage at https://central.sonatype.com/publishing
+    // for manual review. Snapshots upload directly to the Central Portal snapshots repo
+    // (requires snapshot-publishing enabled on the namespace via the Central Portal UI).
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = false)
     signAllPublications()
     coordinates("de.lhns.mcdp", "mcdp", project.version.toString())

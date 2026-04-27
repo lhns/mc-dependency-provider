@@ -95,12 +95,25 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
         // Bridge-manifest discovery: single TOML file per mod (ADR-0019). Single-file
-        // findResource is reliable on Fabric and NeoForge across dev/prod modes — directory-
-        // style lookups on NeoForge UnionPath were not.
+        // findResource is reliable on Fabric and NeoForge for exact-file lookups; we never ask
+        // for a directory because NeoForge UnionPath behaves inconsistently for those.
+        // Three-line diagnostic block: distinguishes (a) "no manifest" → mod has no rewritten
+        // mixins or findResource returned null, (b) "scanning … exists=…" → path returned;
+        // useful when registration count is 0 or the next call throws, (c) "registered N" →
+        // success path. Loud failure inside registerAutoBridgeManifestToml replaces the previous
+        // silent isRegularFile gate.
         Path manifestToml = info.getOwningFile().getFile()
                 .findResource("META-INF/mcdp-mixin-bridges.toml");
-        int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
-        LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, modId);
+        if (manifestToml == null) {
+            LOG.info("mcdepprovider: no auto-bridge manifest file for {} "
+                    + "(mod has no mixins, or findResource returned null)", modId);
+        } else {
+            LOG.info("mcdepprovider: scanning {} for {} (exists={}, regular={})",
+                    manifestToml, modId,
+                    Files.exists(manifestToml), Files.isRegularFile(manifestToml));
+            int registered = McdpProvider.registerAutoBridgeManifestToml(loader, manifestToml);
+            LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, modId);
+        }
         registerMixinOwnersForNeoForgeMod(info, modId);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
