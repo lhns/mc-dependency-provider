@@ -1,9 +1,15 @@
 name: Publish to Maven Central
 
-# Triggered on GitHub release publication. Bundles + uploads `:mcdp` and `:gradle-plugin` to
-# Sonatype Central Portal via the vanniktech-maven-publish plugin (which handles staging-bundle
-# upload, signing, and POM validation in one task). Releases land in the Central Portal staging
-# UI; deployment is *not* auto-released — the maintainer reviews and clicks "publish" manually.
+# Triggered on:
+#   (a) GitHub release publication — uploads release bundles to Central Portal staging for
+#       manual review (automaticRelease=false in build.gradle.kts → maintainer clicks "publish"
+#       at https://central.sonatype.com/publishing).
+#   (b) push to `main` — publishes the current `-SNAPSHOT` to Central Portal's snapshots repo
+#       (no staging gate; snapshots are mutable and replace any prior copy of the same version).
+#
+# The same `publishToMavenCentral` Gradle task covers both: vanniktech inspects the project
+# version and routes to the right endpoint (snapshots URL when version ends in -SNAPSHOT,
+# staging-bundle API for releases).
 #
 # Required repository secrets:
 #   SONATYPE_USERNAME         — Sonatype Central Portal user-token username
@@ -17,6 +23,8 @@ name: Publish to Maven Central
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
   workflow_dispatch: # manual trigger for testing
 
 concurrency:
