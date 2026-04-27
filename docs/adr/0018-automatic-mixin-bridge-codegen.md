@@ -109,6 +109,19 @@ Codegen scans every `SourceSet` output dir (`main.output.classesDirs` — java +
 
 Fix: `ClasspathAwareClassWriter` overrides `getClassLoader()` to return a caller-supplied loader. `BridgeCodegenTask` builds a `URLClassLoader` from the consumer's `compileClasspath` ∪ the project's own class outputs, parented at `getPlatformClassLoader()`, and passes it to both writer call sites. Test mods don't surface the bug (their bytecode never produces ambiguous merge frames between two consumer-only types) — covered by `ClasspathAwareClassWriterTest`.
 
+### Errata: manifest discovery in dev mode (post-v0.1.0)
+
+The original wiring at §"Errata: runtime wiring strategy" only scanned `modLoader.getURLs()` for `META-INF/mcdp-mixin-bridges/<mixinFqn>.txt` resources. **This breaks NeoForge dev runs**: `McdpLanguageLoader` passes a single `Path` (`info.getOwningFile().getFile().getFilePath()`) to `LoaderCoordinator.register`, but FML's mod-content view is multi-rooted in dev — the bridge manifest dir typically lives in a sibling root (`build/resources/main`) that never lands on the per-mod classloader's URL list. The registry stays empty; the first rewritten mixin's `<clinit>` GETSTATIC fires during `Blocks.<clinit>` and throws `IllegalStateException: no auto-bridge registered for …`. Test-mods don't catch it because they only `@Mixin` `MinecraftServer`, which initialises *after* mod loading — the timing window where the dev-mode URL gap bites is never exercised.
+
+Fabric is structurally less affected: `expandDevRoots` walks sibling source-set outputs and feeds them all into the per-mod loader, so the manifest dir is usually visible. But it's the same shape — relying on URLs to span every content root is fragile.
+
+Fix: `McdpProvider.registerAutoBridgeManifests(modLoader, Path manifestDir)` scans an explicit directory. Platform adapters call it after `registerMod`, sourcing the path from the platform's unified mod-content API:
+
+- **NeoForge**: `info.getOwningFile().getFile().findResource("META-INF/mcdp-mixin-bridges")` — spans the multi-root dev view.
+- **Fabric**: `mod.findPath("META-INF/mcdp-mixin-bridges")` — same idea, defense-in-depth on top of `expandDevRoots`.
+
+The original URL-based scan inside `wireAutoMixinBridges` is kept for production-jar code paths (where the mod jar URL on the per-mod loader does carry the manifest). Both paths populate the same `AUTO_BRIDGE_REGISTRY`; later registrations overwrite earlier ones for the same `(mixin, field)` key. Covered by `McdpProviderTest#registerAutoBridgeManifestsScansExplicitDirectory` and the existing dev-mode runServer smoke.
+
 ## Out of scope (revisit conditions)
 
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.
