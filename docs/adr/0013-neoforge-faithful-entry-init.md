@@ -1,6 +1,6 @@
 # ADR-0013 — NeoForge-faithful entry init via `@Mod` + FML helpers
 
-**Status:** Accepted — shipped in `17cccec` (`@Mod` discovery + `AutomaticEventSubscriber.inject`) on top of `c48869b` (`IEventBus` + `Dist` reaching the entry ctor).
+**Status:** Accepted — shipped in `17cccec` (`@Mod` discovery + `AutomaticEventSubscriber.inject`) on top of `c48869b` (`IEventBus` + `Dist` reaching the entry ctor). The construction-timing aspect (eager construct in `loadMod`, then wrap) is **superseded by [ADR-0017](0017-modcontainer-as-ctor-arg.md)**, which moves construction into `McdpModContainer.constructMod()` to enable `ModContainer` in the entry ctor. The `@Mod`-discovery + bag-dispatch decisions in this ADR stand unchanged.
 
 ## Context
 

@@ -1,7 +1,6 @@
 package de.lhns.mcdp.neoforge;
 
 import de.lhns.mcdp.api.McdpProvider;
-import de.lhns.mcdp.core.EntrypointAdapter;
 import de.lhns.mcdp.core.LoaderCoordinator;
 import de.lhns.mcdp.core.MixinConfigScanner;
 import de.lhns.mcdp.core.ModClassLoader;
@@ -10,14 +9,8 @@ import de.lhns.mcdp.deps.LibraryCache;
 import de.lhns.mcdp.deps.Manifest;
 import de.lhns.mcdp.deps.ManifestConsumer;
 import de.lhns.mcdp.deps.ManifestIo;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.BusBuilder;
-import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.IModBusEvent;
-import net.neoforged.fml.javafmlmod.AutomaticEventSubscriber;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.LoadingModList;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModInfo;
@@ -33,7 +26,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -100,40 +92,11 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         McdpProvider.registerMod(modId, loader);
         registerMixinOwnersForNeoForgeMod(info, modId);
 
-        // Build the per-mod IEventBus before construct() so entries that take it as a ctor arg
-        // (the FML-default `@Mod` class shape) can subscribe to RegisterEvent / FMLClientSetupEvent
-        // / friends from inside the constructor — those are gated to the per-mod bus and fire
-        // before any global event the mod could otherwise hook into.
-        IEventBus eventBus = newPerModEventBus();
-        Dist dist = FMLEnvironment.dist;
-
+        // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
+        // McdpModContainer.constructMod() at the CONSTRUCT stage, where the entry ctor gets
+        // `this` (the container) plus IEventBus + Dist in the bag. See ADR-0017.
         Class<?> entryClass = loadEntryClass(scanResults, loader, modId);
-        Object instance = construct(manifest.lang(), entryClass, modId, eventBus, dist);
-
-        McdpModContainer container = new McdpModContainer(info, instance, eventBus);
-
-        // Reuse FML's @EventBusSubscriber scanner directly. It walks scanResults for any
-        // @EventBusSubscriber-annotated class belonging to this modId, filters by Dist, and
-        // registers each against the right bus (mod-bus or NeoForge.EVENT_BUS). Same machinery
-        // FMLModContainer uses for vanilla javafml mods.
-        try {
-            AutomaticEventSubscriber.inject(container, scanResults, entryClass.getModule());
-        } catch (RuntimeException ignored) {
-            // Best-effort: a malformed @EventBusSubscriber shouldn't fatally fail mod load.
-        }
-
-        return container;
-    }
-
-    private static IEventBus newPerModEventBus() {
-        return BusBuilder.builder()
-                .setExceptionHandler((bus, event, listeners, index, throwable) -> {
-                    // Match FMLModContainer's default — failures propagate to the dispatcher.
-                    throw new RuntimeException(throwable);
-                })
-                .markerType(IModBusEvent.class)
-                .allowPerPhasePost()
-                .build();
+        return new McdpModContainer(info, entryClass, manifest.lang(), scanResults);
     }
 
     /**
@@ -285,12 +248,4 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         }
     }
 
-    private static Object construct(String lang, Class<?> entryClass, String modId, Object... contextBag) {
-        try {
-            return EntrypointAdapter.forLang(lang).construct(entryClass, contextBag);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                    "mcdepprovider: failed to instantiate entrypoint for " + modId, e);
-        }
-    }
 }

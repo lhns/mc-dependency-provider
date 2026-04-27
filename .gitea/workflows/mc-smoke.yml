@@ -300,3 +300,90 @@ jobs:
             test-mods/fabric-example/run/crash-reports/**
             test-mods/*/build/mcdepprovider/META-INF/*.toml
           if-no-files-found: ignore
+
+  # ModContainer-in-ctor smoke (ADR-0017).
+  #
+  # kotlin-example's @Mod entry is `class ExampleMod(IEventBus, ModContainer, Dist)`. The
+  # constructor's init block prints `[mcdp-smoke] mod=kotlin_example ... container.modId=...
+  # dist=...`. After runServer reaches first tick, we grep the log to confirm the
+  # modContainer arg threaded through to the entry constructor with the expected modId, and
+  # that FMLEnvironment.dist plumbed through too. This proves McdpModContainer.constructMod
+  # built the bag correctly under live FML — vanilla-parity lifecycle.
+  modcontainer-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (neoforge)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.neoforge
+          key: mc-assets-${{ runner.os }}-neoforge-1.21.1
+          restore-keys: |
+            mc-assets-${{ runner.os }}-neoforge-
+
+      - name: Build mcdepprovider (publishes to composite build)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Boot kotlin-example NeoForge server
+        working-directory: test-mods/kotlin-example
+        shell: bash
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../modcontainer-kotlin.log
+
+      - name: Assert ModContainer + Dist plumbed through to mod ctor
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=modcontainer-kotlin.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          grep '\[mcdp-smoke\]' "$LOG" | head -5
+          grep -q 'container\.modId=kotlin_example' "$LOG" || {
+            echo "ERROR: ModContainer not threaded through to ctor (expected container.modId=kotlin_example)"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+          grep -qE 'dist=(CLIENT|DEDICATED_SERVER)' "$LOG" || {
+            echo "ERROR: Dist not threaded through (expected dist=CLIENT or dist=DEDICATED_SERVER)"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modcontainer-kotlin
+          path: |
+            modcontainer-kotlin.log
+            test-mods/kotlin-example/run/logs/**
+            test-mods/kotlin-example/run/crash-reports/**
+          if-no-files-found: ignore
