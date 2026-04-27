@@ -90,6 +90,14 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
+        // In NeoForge dev, only one Path lands on the per-mod ModClassLoader, but the bridge
+        // manifest dir lives in a sibling content root (typically build/resources/main). Use
+        // FML's unified mod-content view to locate it directly.
+        Path bridgeManifestDir = info.getOwningFile().getFile()
+                .findResource("META-INF/mcdp-mixin-bridges");
+        if (bridgeManifestDir != null) {
+            McdpProvider.registerAutoBridgeManifests(loader, bridgeManifestDir);
+        }
         registerMixinOwnersForNeoForgeMod(info, modId);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives

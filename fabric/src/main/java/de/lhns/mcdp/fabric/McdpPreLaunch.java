@@ -109,6 +109,12 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             ModClassLoader loader = COORDINATOR.register(
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
             McdpProvider.registerMod(e.modId, loader);
+            // Defense-in-depth: even though Fabric's expanded modPaths usually cover the bridge
+            // manifest dir, explicitly look it up via Fabric's unified mod-content view so we're
+            // robust against future changes to which roots show up on the per-mod loader.
+            Optional<Path> bridgeManifestDir = fabric.getModContainer(e.modId)
+                    .flatMap(mc -> mc.findPath("META-INF/mcdp-mixin-bridges"));
+            bridgeManifestDir.ifPresent(p -> McdpProvider.registerAutoBridgeManifests(loader, p));
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
             registerMixinOwnersForFabricMod(e);
         }

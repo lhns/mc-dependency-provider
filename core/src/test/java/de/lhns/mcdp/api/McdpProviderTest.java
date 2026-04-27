@@ -174,6 +174,65 @@ class McdpProviderTest {
         }
     }
 
+    /**
+     * Auto-bridge manifest dir scan: when the per-mod {@link ModClassLoader}'s URLs don't span
+     * the resources content root (NeoForge dev: only one Path lands on the loader, the manifest
+     * dir is in a sibling), the platform adapter calls
+     * {@link McdpProvider#registerAutoBridgeManifests} with the explicit dir path and impls still
+     * resolve correctly.
+     */
+    @Test
+    void registerAutoBridgeManifestsScansExplicitDirectory(@TempDir Path tmp) throws Exception {
+        // Impl jar: just the FakeImpl class; the manifest goes in a separate dir to simulate
+        // a content root that the ModClassLoader's URL list doesn't cover.
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path manifestDir = tmp.resolve("resources/META-INF/mcdp-mixin-bridges");
+        Files.createDirectories(manifestDir);
+        Files.writeString(manifestDir.resolve("com.example.NeoMixin.txt"),
+                "bridge=de.lhns.mcdp.api.FakeImplBridge\nimpl=de.lhns.mcdp.api.FakeImpl\nfield=LOGIC_Y\n");
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "neo-mod",
+                new URL[]{implJar.toUri().toURL()}, // manifest dir intentionally NOT on the loader
+                getClass().getClassLoader(),
+                List.of())) {
+
+            McdpProvider.registerMod("neo-mod", mod);
+            // Pre-condition: the URL-only registration finds nothing because the manifest isn't on
+            // any URL of the loader.
+            IllegalStateException pre = assertThrows(IllegalStateException.class,
+                    () -> McdpProvider.resolveAutoBridgeImpl("com.example.NeoMixin", "LOGIC_Y"));
+            assertTrue(pre.getMessage().contains("no auto-bridge registered"), pre.getMessage());
+
+            // Explicit-dir scan picks it up.
+            int n = McdpProvider.registerAutoBridgeManifests(mod, manifestDir);
+            assertEquals(1, n, "expected 1 entry registered from explicit manifest dir");
+
+            Object impl = McdpProvider.resolveAutoBridgeImpl("com.example.NeoMixin", "LOGIC_Y");
+            assertNotNull(impl);
+            assertEquals("de.lhns.mcdp.api.FakeImpl", impl.getClass().getName());
+            assertSame(mod, impl.getClass().getClassLoader());
+        }
+    }
+
+    @Test
+    void registerAutoBridgeManifestsIsNoopForMissingOrEmptyDir(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        try (ModClassLoader mod = new ModClassLoader(
+                "empty-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            // Non-existent path → 0, no throw.
+            assertEquals(0, McdpProvider.registerAutoBridgeManifests(mod, tmp.resolve("nope")));
+            // Empty dir → 0.
+            Path empty = Files.createDirectories(tmp.resolve("empty/META-INF/mcdp-mixin-bridges"));
+            assertEquals(0, McdpProvider.registerAutoBridgeManifests(mod, empty));
+        }
+    }
+
     @Test
     void resolveAutoBridgeImplFailsLoudlyWhenUnregistered() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,

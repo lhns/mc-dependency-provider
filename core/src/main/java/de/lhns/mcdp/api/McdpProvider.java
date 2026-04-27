@@ -46,6 +46,44 @@ public final class McdpProvider {
     }
 
     /**
+     * Register auto-bridge manifests scanned from an explicit content root. Platform adapters use
+     * this when {@code modLoader.getURLs()} doesn't span every content root of the mod (NeoForge
+     * dev: only one path lands on the per-mod loader; the resources dir holding manifests can be
+     * a sibling). The adapter has access to the unified mod-content view via the platform's own
+     * resource API ({@code IModFile.findResource} on NeoForge, {@code ModContainer.findPath} on
+     * Fabric) and feeds the resolved {@code META-INF/mcdp-mixin-bridges/} dir here.
+     *
+     * <p>Idempotent: re-registering the same {@code (mixinFqn, fieldName)} key overwrites with
+     * the new entry.</p>
+     *
+     * @param modLoader   the per-mod {@link ModClassLoader} that the bridge impls belong to
+     * @param manifestDir a directory containing {@code <mixinFqn>.txt} manifest files; safe to
+     *                    pass a non-existent path (no-op)
+     * @return number of {@code (mixin, field)} entries registered (0 if the dir is empty/missing)
+     */
+    public static int registerAutoBridgeManifests(ModClassLoader modLoader, java.nio.file.Path manifestDir) {
+        Objects.requireNonNull(modLoader, "modLoader");
+        Objects.requireNonNull(manifestDir, "manifestDir");
+        if (!java.nio.file.Files.isDirectory(manifestDir)) return 0;
+        int registered = 0;
+        try (var stream = java.nio.file.Files.list(manifestDir)) {
+            for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) stream::iterator) {
+                String name = p.getFileName().toString();
+                if (!name.endsWith(".txt")) continue;
+                String fqn = name.substring(0, name.length() - ".txt".length());
+                byte[] content = java.nio.file.Files.readAllBytes(p);
+                int before = AUTO_BRIDGE_REGISTRY.size();
+                registerOneManifest(new ManifestData(fqn, content), modLoader);
+                registered += AUTO_BRIDGE_REGISTRY.size() - before;
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "mcdepprovider: failed to scan auto-bridge manifests at " + manifestDir, e);
+        }
+        return registered;
+    }
+
+    /**
      * Read every {@code META-INF/mcdp-mixin-bridges/<mixinFqn>.txt} resource on the per-mod
      * classloader and populate {@link #AUTO_BRIDGE_REGISTRY}. The actual impl class is loaded
      * lazily via {@link #resolveAutoBridgeImpl(String, String)} from the rewritten mixin's
