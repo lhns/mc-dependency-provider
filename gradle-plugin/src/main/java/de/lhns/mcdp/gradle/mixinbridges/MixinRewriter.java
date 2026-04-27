@@ -9,6 +9,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -16,6 +17,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -62,6 +64,7 @@ public final class MixinRewriter {
 
     public void rewrite(ClassNode cn, Map<String, List<BridgeMember>> targets) {
         Map<String, String> targetToBridge = new LinkedHashMap<>();
+        List<ClinitInit> inits = new ArrayList<>();
         for (String target : targets.keySet()) {
             String bridgeInternal = bridgePackageInternal + "/" + simpleName(target) + "Bridge";
             targetToBridge.put(target, bridgeInternal);
@@ -77,10 +80,80 @@ public final class MixinRewriter {
                         fieldName, "L" + bridgeInternal + ";", null, null);
                 cn.fields.add(fn);
             }
+            inits.add(new ClinitInit(fieldName, bridgeInternal));
         }
         for (MethodNode m : cn.methods) {
             if (m.instructions == null || m.instructions.size() == 0) continue;
             rewriteMethod(cn, m, targets, targetToBridge);
+        }
+        mergeOrCreateClinit(cn, inits);
+    }
+
+    private record ClinitInit(String fieldName, String bridgeInternal) {}
+
+    /**
+     * Emit (or extend) {@code <clinit>} so each LOGIC_* field is initialized on first class
+     * use by calling back to {@code McdpProvider.resolveAutoBridgeImpl(mixinFqn, fieldName)}.
+     * Sponge Mixin forbids direct {@code Class.forName} on mixin classes, so we cannot wire
+     * these fields from outside — running the wiring as a side-effect of the JVM's GETSTATIC
+     * resolution is the reliable hook.
+     *
+     * <p>Idempotent: if {@code <clinit>} already PUTSTATICs a given field (a previous codegen
+     * run, or hand-written init), that field's init block is skipped.</p>
+     */
+    private void mergeOrCreateClinit(ClassNode cn, List<ClinitInit> inits) {
+        if (inits.isEmpty()) return;
+        String mixinDotted = BridgePolicy.toDotted(cn.name);
+
+        MethodNode clinit = null;
+        for (MethodNode mn : cn.methods) {
+            if ("<clinit>".equals(mn.name) && "()V".equals(mn.desc)) {
+                clinit = mn;
+                break;
+            }
+        }
+        Set<String> alreadyPut = new HashSet<>();
+        if (clinit != null && clinit.instructions != null) {
+            for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                if (insn.getOpcode() == Opcodes.PUTSTATIC && insn instanceof FieldInsnNode fin
+                        && fin.owner.equals(cn.name)) {
+                    alreadyPut.add(fin.name);
+                }
+            }
+        }
+
+        InsnList block = new InsnList();
+        boolean anyEmitted = false;
+        for (ClinitInit ci : inits) {
+            if (alreadyPut.contains(ci.fieldName())) continue;
+            block.add(new LdcInsnNode(mixinDotted));
+            block.add(new LdcInsnNode(ci.fieldName()));
+            block.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "de/lhns/mcdp/api/McdpProvider",
+                    "resolveAutoBridgeImpl",
+                    "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                    false));
+            block.add(new TypeInsnNode(Opcodes.CHECKCAST, ci.bridgeInternal()));
+            block.add(new FieldInsnNode(
+                    Opcodes.PUTSTATIC,
+                    cn.name,
+                    ci.fieldName(),
+                    "L" + ci.bridgeInternal() + ";"));
+            anyEmitted = true;
+        }
+        if (!anyEmitted) return;
+
+        if (clinit == null) {
+            clinit = new MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+            clinit.instructions = new InsnList();
+            clinit.instructions.add(block);
+            clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+            cn.methods.add(clinit);
+        } else {
+            // Prepend so the LOGIC_* fields are populated before any existing static init
+            // touches them.
+            clinit.instructions.insert(block);
         }
     }
 

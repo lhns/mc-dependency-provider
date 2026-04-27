@@ -13,7 +13,7 @@ import java.util.List;
  * on the leading receiver argument, or reads the named field.
  *
  * <p>The impl class lives in the codegen's bridge package and ends up in the mod's main
- * classes output, so it's loaded through the per-mod {@link de.lhns.mcdp.core.ModClassLoader}
+ * classes output, so it's loaded through the per-mod {@code ModClassLoader}
  * — that's where mod-private types resolve. Bytecode references to the target are constant-
  * pool entries against the per-mod loader; they verify only when the impl is loaded under
  * that loader (which is exactly what happens at runtime).</p>

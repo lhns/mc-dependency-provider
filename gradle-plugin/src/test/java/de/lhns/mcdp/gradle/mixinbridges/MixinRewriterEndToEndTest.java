@@ -1,11 +1,12 @@
 package de.lhns.mcdp.gradle.mixinbridges;
 
+import de.lhns.mcdp.api.McdpProvider;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +27,11 @@ class MixinRewriterEndToEndTest {
 
     private static final String BRIDGE_PKG = "mcdpbridges_test";
     private final BridgePolicy policy = new BridgePolicy(List.of(), BRIDGE_PKG);
+
+    @AfterEach
+    void clearProviderStub() {
+        McdpProvider.clearForTest();
+    }
 
     @Test
     void invokestaticDispatchesThroughBridge() throws Exception {
@@ -57,12 +63,12 @@ class MixinRewriterEndToEndTest {
         Class<?> ifaceClass = loader.loadClass(ifaceEmitter.interfaceFqn("com/example/Target"));
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/Target"));
 
-        // Wire LOGIC field.
+        // Wire LOGIC field via the registry stub — first method invocation triggers <clinit>,
+        // which calls McdpProvider.resolveAutoBridgeImpl(...) and PUTSTATICs the result.
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         assertTrue(ifaceClass.isInstance(bridgeInstance));
-        Field logic = mixinClass.getDeclaredField(MixinRewriter.logicFieldName("com/example/Target"));
-        logic.setAccessible(true);
-        logic.set(null, bridgeInstance);
+        McdpProvider.registerForTest("com.example.Mixin",
+                MixinRewriter.logicFieldName("com/example/Target"), bridgeInstance);
 
         // Invoke handler.
         Method handler = mixinClass.getDeclaredMethod("handler", int.class);
@@ -97,9 +103,8 @@ class MixinRewriterEndToEndTest {
         Class<?> mixinClass = loader.loadClass("com.example.MixinF");
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetF"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
-        Field logic = mixinClass.getDeclaredField(MixinRewriter.logicFieldName("com/example/TargetF"));
-        logic.setAccessible(true);
-        logic.set(null, bridgeInstance);
+        McdpProvider.registerForTest("com.example.MixinF",
+                MixinRewriter.logicFieldName("com/example/TargetF"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("readIt");
         Object out = handler.invoke(null);
@@ -155,9 +160,8 @@ class MixinRewriterEndToEndTest {
         Class<?> targetClass = loader.loadClass("com.example.TargetC");
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetC"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
-        Field logic = mixinClass.getDeclaredField(MixinRewriter.logicFieldName("com/example/TargetC"));
-        logic.setAccessible(true);
-        logic.set(null, bridgeInstance);
+        McdpProvider.registerForTest("com.example.MixinC",
+                MixinRewriter.logicFieldName("com/example/TargetC"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("handler");
         Object out = handler.invoke(null);
@@ -195,9 +199,8 @@ class MixinRewriterEndToEndTest {
         Class<?> mixinClass = loader.loadClass("com.example.MixinS");
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetS"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
-        Field logic = mixinClass.getDeclaredField(MixinRewriter.logicFieldName("com/example/TargetS"));
-        logic.setAccessible(true);
-        logic.set(null, bridgeInstance);
+        McdpProvider.registerForTest("com.example.MixinS",
+                MixinRewriter.logicFieldName("com/example/TargetS"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("writeAndRead", int.class);
         assertEquals(123, handler.invoke(null, 123));
@@ -233,9 +236,8 @@ class MixinRewriterEndToEndTest {
         Class<?> targetClass = loader.loadClass("com.example.TargetL");
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetL"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
-        Field logic = mixinClass.getDeclaredField(MixinRewriter.logicFieldName("com/example/TargetL"));
-        logic.setAccessible(true);
-        logic.set(null, bridgeInstance);
+        McdpProvider.registerForTest("com.example.MixinL",
+                MixinRewriter.logicFieldName("com/example/TargetL"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("handler");
         Object out = handler.invoke(null);

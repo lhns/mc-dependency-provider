@@ -57,7 +57,7 @@ public final class McdpModContainer extends ModContainer {
     /**
      * Mod instance after {@link #constructMod()} has run; {@code null} beforehand. Vanilla
      * {@code FMLModContainer} discards the instance once the ctor's side effects have run;
-     * we keep it because {@link McdpModContainerTest} asserts on it. Production paths do
+     * we keep it because {@code McdpModContainerTest} asserts on it. Production paths do
      * not reference this.
      */
     public Object getModInstance() {

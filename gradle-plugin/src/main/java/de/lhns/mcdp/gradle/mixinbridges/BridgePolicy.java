@@ -16,7 +16,7 @@ import java.util.Objects;
  */
 public final class BridgePolicy {
 
-    /** Mirror of {@link de.lhns.mcdp.core.ModClassLoader#PLATFORM_PREFIXES} (kept in dotted form). */
+    /** Mirror of {@code ModClassLoader.PLATFORM_PREFIXES} (kept in dotted form). */
     public static final List<String> PLATFORM_PREFIXES = List.of(
             "java.",
             "javax.",

@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Emits a bridge <em>interface</em> as bytecode (no Java source intermediary). Lives in the
  * codegen's bridge package, which is auto-added to {@code sharedPackages} so the per-mod
- * {@link de.lhns.mcdp.core.ModClassLoader} delegates loading parent-first — the interface
+ * {@code ModClassLoader} delegates loading parent-first — the interface
  * resolves to the same {@code Class} on both sides of the loader split.
  *
  * <p>The interface is a pure declaration: every method is abstract and public, and the

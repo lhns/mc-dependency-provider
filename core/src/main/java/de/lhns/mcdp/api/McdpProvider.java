@@ -5,7 +5,6 @@ import de.lhns.mcdp.core.ModClassLoader;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -30,6 +29,13 @@ public final class McdpProvider {
     private static final Map<String, ModClassLoader> MOD_LOADERS_BY_MIXIN_FQN = new ConcurrentHashMap<>();
     private static final Map<Class<?>, Object> MIXIN_IMPL_CACHE = new ConcurrentHashMap<>();
 
+    /** Auto-bridge registry: keyed by {@code "<mixinFqn>#<fieldName>"}. */
+    private static final Map<String, BridgeEntry> AUTO_BRIDGE_REGISTRY = new ConcurrentHashMap<>();
+    /** Resolved-impl cache for the auto-bridge path. Same key as the registry. */
+    private static final Map<String, Object> AUTO_BRIDGE_IMPL_CACHE = new ConcurrentHashMap<>();
+
+    private record BridgeEntry(String implFqn, ModClassLoader modLoader) {}
+
     /**
      * Register a mod's {@link ModClassLoader} so {@link #loadMixinImpl(Class)} can find it at
      * runtime. Called by platform adapters once per mod during boot.
@@ -41,11 +47,10 @@ public final class McdpProvider {
 
     /**
      * Read every {@code META-INF/mcdp-mixin-bridges/<mixinFqn>.txt} resource on the per-mod
-     * classloader, instantiate the bridge impl through that loader, and assign it to the
-     * mixin class's static {@code LOGIC_*} field. The mixin class itself is loaded by the
-     * <em>game-layer</em> classloader (Mixin owns its identity); we look it up via
-     * {@code Class.forName(fqn, true, gameLoader)}, where {@code gameLoader} is the parent of
-     * the {@link ModClassLoader}.
+     * classloader and populate {@link #AUTO_BRIDGE_REGISTRY}. The actual impl class is loaded
+     * lazily via {@link #resolveAutoBridgeImpl(String, String)} from the rewritten mixin's
+     * {@code <clinit>} — Sponge Mixin forbids direct {@code Class.forName} on classes declared
+     * in {@code mixins.json}, so we never touch the mixin class here.
      *
      * <p>Manifest schema (one block per bridge target, blank lines ignored):
      * <pre>
@@ -55,33 +60,71 @@ public final class McdpProvider {
      * </pre>
      */
     private static void wireAutoMixinBridges(String modId, ModClassLoader modLoader) {
-        List<URL> txtFiles = new ArrayList<>();
+        List<ManifestData> manifests = new ArrayList<>();
         for (URL root : modLoader.getURLs()) {
-            txtFiles.addAll(listBridgeManifests(root));
+            manifests.addAll(readBridgeManifests(root));
         }
-        if (txtFiles.isEmpty()) return;
-        ClassLoader gameLoader = modLoader.getParent();
-        for (URL txt : txtFiles) {
+        for (ManifestData md : manifests) {
             try {
-                wireOne(txt, modLoader, gameLoader);
+                registerOneManifest(md, modLoader);
             } catch (Throwable t) {
-                throw new IllegalStateException("mcdepprovider: failed to wire mixin bridge "
-                        + txt + " for mod '" + modId + "': " + t.getMessage(), t);
+                throw new IllegalStateException("mcdepprovider: failed to register mixin bridge "
+                        + md.mixinFqn() + " for mod '" + modId + "': " + t.getMessage(), t);
             }
         }
     }
 
-    private static List<URL> listBridgeManifests(URL jarOrDir) {
-        List<URL> out = new ArrayList<>();
+    private record ManifestData(String mixinFqn, byte[] content) {}
+
+    /**
+     * Resolve and instantiate the bridge impl for an auto-codegen mixin's {@code LOGIC_*}
+     * field. Called from the mixin's {@code <clinit>} (emitted by the gradle plugin). Returns
+     * {@code Object} so the call site lives entirely on the game-layer classloader; the
+     * caller {@code CHECKCAST}s to the bridge interface (which is in the mod's bridge package
+     * and auto-added to {@code sharedPackages}).
+     *
+     * <p>Result is cached per {@code (mixinFqn, fieldName)} — second-and-later GETSTATIC of
+     * the LOGIC field never reaches this method (the field hangs onto the impl), but a class
+     * reload during tests can hit it again, and we want stable identity then.
+     */
+    public static Object resolveAutoBridgeImpl(String mixinFqn, String fieldName) {
+        String key = mixinFqn + "#" + fieldName;
+        Object cached = AUTO_BRIDGE_IMPL_CACHE.get(key);
+        if (cached != null) return cached;
+        BridgeEntry e = AUTO_BRIDGE_REGISTRY.get(key);
+        if (e == null) {
+            throw new IllegalStateException("mcdepprovider: no auto-bridge registered for "
+                    + mixinFqn + "." + fieldName);
+        }
+        try {
+            Class<?> implCls = Class.forName(e.implFqn(), true, e.modLoader());
+            var ctor = implCls.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            Object instance = ctor.newInstance();
+            Object existing = AUTO_BRIDGE_IMPL_CACHE.putIfAbsent(key, instance);
+            return existing != null ? existing : instance;
+        } catch (ReflectiveOperationException ex) {
+            throw new IllegalStateException("mcdepprovider: failed to instantiate auto-bridge impl "
+                    + e.implFqn() + " for " + mixinFqn + "." + fieldName, ex);
+        }
+    }
+
+    private static List<ManifestData> readBridgeManifests(URL jarOrDir) {
+        List<ManifestData> out = new ArrayList<>();
         try {
             String s = jarOrDir.toString();
             if (s.endsWith(".jar") || s.endsWith(".zip")) {
+                // Read entries inline — never hand out a jar: URL, since URL.openStream()
+                // routes through JarFileFactory's permanent cache and pins the file handle
+                // on Windows (breaking @TempDir cleanup and any other file deletion).
                 try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(jarOrDir.openStream())) {
                     java.util.zip.ZipEntry e;
                     while ((e = zis.getNextEntry()) != null) {
                         String n = e.getName();
                         if (n.startsWith("META-INF/mcdp-mixin-bridges/") && n.endsWith(".txt")) {
-                            out.add(new URL("jar:" + jarOrDir + "!/" + n));
+                            String fqn = n.substring("META-INF/mcdp-mixin-bridges/".length(),
+                                    n.length() - ".txt".length());
+                            out.add(new ManifestData(fqn, zis.readAllBytes()));
                         }
                     }
                 }
@@ -90,7 +133,13 @@ public final class McdpProvider {
                 java.io.File bridgeDir = new java.io.File(dir, "META-INF/mcdp-mixin-bridges");
                 if (bridgeDir.isDirectory()) {
                     java.io.File[] children = bridgeDir.listFiles((d, name) -> name.endsWith(".txt"));
-                    if (children != null) for (java.io.File f : children) out.add(f.toURI().toURL());
+                    if (children != null) {
+                        for (java.io.File f : children) {
+                            String name = f.getName();
+                            String fqn = name.substring(0, name.length() - ".txt".length());
+                            out.add(new ManifestData(fqn, java.nio.file.Files.readAllBytes(f.toPath())));
+                        }
+                    }
                 }
             }
         } catch (Exception ignore) {
@@ -99,22 +148,8 @@ public final class McdpProvider {
         return out;
     }
 
-    private static void wireOne(URL txtUrl, ModClassLoader modLoader, ClassLoader gameLoader) throws Exception {
-        String urlStr = txtUrl.toString();
-        int slash = urlStr.lastIndexOf('/');
-        int dot = urlStr.lastIndexOf('.');
-        String mixinFqn = urlStr.substring(slash + 1, dot);
-        Class<?> mixinClass;
-        try {
-            mixinClass = Class.forName(mixinFqn, false, gameLoader);
-        } catch (ClassNotFoundException e) {
-            // Mixin classes in production are loaded by the launch classloader, which owns Mixin
-            // ownership; in dev/Knot/TransformingClassLoader they reach the same identity. If the
-            // class isn't visible to gameLoader, try the modLoader as a fallback (works in unit
-            // tests where everything shares the test classloader).
-            mixinClass = Class.forName(mixinFqn, false, modLoader);
-        }
-        try (InputStream in = txtUrl.openStream();
+    private static void registerOneManifest(ManifestData md, ModClassLoader modLoader) throws Exception {
+        try (InputStream in = new java.io.ByteArrayInputStream(md.content());
              BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
             String bridge = null, impl = null, field = null;
@@ -130,11 +165,7 @@ public final class McdpProvider {
                     case "field" -> field = v;
                 }
                 if (bridge != null && impl != null && field != null) {
-                    Class<?> implClass = Class.forName(impl, true, modLoader);
-                    Object instance = implClass.getDeclaredConstructor().newInstance();
-                    Field f = mixinClass.getDeclaredField(field);
-                    f.setAccessible(true);
-                    f.set(null, instance);
+                    AUTO_BRIDGE_REGISTRY.put(md.mixinFqn() + "#" + field, new BridgeEntry(impl, modLoader));
                     bridge = null; impl = null; field = null;
                 }
             }
@@ -247,6 +278,8 @@ public final class McdpProvider {
         MIXIN_IMPL_CACHE.clear();
         MOD_LOADERS_BY_ID.clear();
         MOD_LOADERS_BY_MIXIN_FQN.clear();
+        AUTO_BRIDGE_REGISTRY.clear();
+        AUTO_BRIDGE_IMPL_CACHE.clear();
     }
 
     /** Package-private (exposed for tests) — clears just the impl cache. */

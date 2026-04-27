@@ -87,6 +87,18 @@ Sponge Mixin's annotation processor runs during javac/scalac and emits a refmap 
 - **`@McdpMixin` AP that validates the hand-written bridge at compile time.** Useful but optional; not worth the build-tool complexity once codegen is the default.
 - **Reflection-based `McdpProvider.invokeStatic("…", args)`.** Migration aid for SCF ports. Long-term API smell; revisit only if codegen leaves users stuck.
 
+## Errata: runtime wiring strategy (post-v0.1.0)
+
+The original wiring at §"At runtime, `McdpProvider.registerMod`…" did `Class.forName(mixinFqn, false, gameLoader)` and assigned the impl to the `LOGIC_*` field via reflection. **This crashes under real Sponge Mixin** with `IllegalClassLoadError: Mixin is defined in <name>.mixins.json and cannot be referenced directly` — Sponge owns mixin-class identity and forbids any direct classload of a class declared in a `mixins.json`. Unit tests passed only because the test harness has no Sponge transformer in the chain.
+
+The fix mirrors the hand-written `@McdpMixin` pattern (ADR-0008), which already works precisely because its `<clinit>` runs as a side-effect of the JVM resolving the inlined GETSTATIC of `LOGIC` — by then Sponge has already accepted the load:
+
+1. **`McdpProvider.registerMod`** populates an `AUTO_BRIDGE_REGISTRY` keyed by `(mixinFqn, fieldName)` — manifest data only, no classload of the mixin.
+2. **The rewriter emits `<clinit>`** in the rewritten mixin (per LOGIC field): `LDC mixinFqn / LDC fieldName / INVOKESTATIC McdpProvider.resolveAutoBridgeImpl / CHECKCAST <bridgeInternal> / PUTSTATIC LOGIC_*`. If a user-authored `<clinit>` exists, the new init blocks are prepended; otherwise a fresh `<clinit>` ending in RETURN is synthesized.
+3. **`McdpProvider.resolveAutoBridgeImpl`** lazily loads the impl through the per-mod `ModClassLoader` and caches the resolved instance by key.
+
+Manifest format is unchanged. Both the auto-codegen path and the hand-written `@McdpMixin` path now defer impl resolution to the same JVM event.
+
 ## Out of scope (revisit conditions)
 
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.
