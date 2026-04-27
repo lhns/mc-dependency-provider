@@ -46,6 +46,58 @@ public final class McdpProvider {
     }
 
     /**
+     * Register auto-bridge manifests by walking a per-mod index file. Each line of {@code
+     * indexFile} is a mixin FQN; for each entry, the {@code manifestPathResolver} is asked to
+     * produce a {@link java.nio.file.Path} pointing at that mixin's individual manifest
+     * ({@code <fqn>.txt}). Platform adapters supply a resolver that uses their native
+     * single-file lookup ({@code IModFile.findResource} on NeoForge, {@code
+     * ModContainer.findPath} on Fabric) — both APIs are reliable for exact-file lookups, unlike
+     * directory-style lookups which behave inconsistently on NeoForge {@code UnionPath}.
+     *
+     * <p>Lines whose resolver returns {@code null} or a non-existent path are skipped silently
+     * (the count returned reflects only successful registrations). Re-registration of the same
+     * {@code (mixin, field)} key overwrites with the new entry.</p>
+     *
+     * @param modLoader            per-mod loader the bridge impls belong to
+     * @param indexFile            path to {@code META-INF/mcdp-mixin-bridges-index.txt}
+     * @param manifestPathResolver maps a mixin FQN to the path of its {@code <fqn>.txt} manifest
+     *                             (return {@code null} if the platform can't locate the file)
+     * @return number of {@code (mixin, field)} entries registered
+     */
+    public static int registerAutoBridgeManifestsFromIndex(
+            ModClassLoader modLoader,
+            java.nio.file.Path indexFile,
+            java.util.function.Function<String, java.nio.file.Path> manifestPathResolver) {
+        Objects.requireNonNull(modLoader, "modLoader");
+        Objects.requireNonNull(indexFile, "indexFile");
+        Objects.requireNonNull(manifestPathResolver, "manifestPathResolver");
+        if (!java.nio.file.Files.isRegularFile(indexFile)) return 0;
+        int registered = 0;
+        try {
+            for (String line : java.nio.file.Files.readAllLines(indexFile, StandardCharsets.UTF_8)) {
+                String fqn = line.trim();
+                if (fqn.isEmpty()) continue;
+                java.nio.file.Path manifestPath;
+                try {
+                    manifestPath = manifestPathResolver.apply(fqn);
+                } catch (RuntimeException re) {
+                    continue; // resolver might throw for absent entries on some platforms
+                }
+                if (manifestPath == null || !java.nio.file.Files.isRegularFile(manifestPath)) continue;
+                int before = AUTO_BRIDGE_REGISTRY.size();
+                registerOneManifest(
+                        new ManifestData(fqn, java.nio.file.Files.readAllBytes(manifestPath)),
+                        modLoader);
+                registered += AUTO_BRIDGE_REGISTRY.size() - before;
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "mcdepprovider: failed to read auto-bridge index " + indexFile, e);
+        }
+        return registered;
+    }
+
+    /**
      * Register auto-bridge manifests scanned from an explicit content root. Platform adapters use
      * this when {@code modLoader.getURLs()} doesn't span every content root of the mod (NeoForge
      * dev: only one path lands on the per-mod loader; the resources dir holding manifests can be
@@ -56,11 +108,17 @@ public final class McdpProvider {
      * <p>Idempotent: re-registering the same {@code (mixinFqn, fieldName)} key overwrites with
      * the new entry.</p>
      *
+     * @deprecated Prefer {@link #registerAutoBridgeManifestsFromIndex} — directory-style
+     *             {@code findResource} on NeoForge {@code UnionPath} returns speculative or null
+     *             paths in dev mode, leading to silent zero-registration. The index-file API
+     *             relies only on exact-file lookups, which both platforms support reliably.
+     *
      * @param modLoader   the per-mod {@link ModClassLoader} that the bridge impls belong to
      * @param manifestDir a directory containing {@code <mixinFqn>.txt} manifest files; safe to
      *                    pass a non-existent path (no-op)
      * @return number of {@code (mixin, field)} entries registered (0 if the dir is empty/missing)
      */
+    @Deprecated
     public static int registerAutoBridgeManifests(ModClassLoader modLoader, java.nio.file.Path manifestDir) {
         Objects.requireNonNull(modLoader, "modLoader");
         Objects.requireNonNull(manifestDir, "manifestDir");

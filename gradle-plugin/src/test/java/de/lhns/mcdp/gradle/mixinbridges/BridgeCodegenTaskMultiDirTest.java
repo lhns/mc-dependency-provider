@@ -68,6 +68,13 @@ class BridgeCodegenTaskMultiDirTest {
         Path manifest = outManifest.resolve("META-INF/mcdp-mixin-bridges/" + MIXIN_FQN + ".txt");
         assertTrue(Files.isRegularFile(manifest), "manifest missing at " + manifest);
 
+        // Index file lists every rewritten mixin's FQN — runtime adapters resolve each entry
+        // via single-file findResource, sidestepping NeoForge UnionPath's loose directory
+        // semantics.
+        Path index = outManifest.resolve("META-INF/mcdp-mixin-bridges-index.txt");
+        assertTrue(Files.isRegularFile(index), "index missing at " + index);
+        assertEquals(MIXIN_FQN + "\n", Files.readString(index, StandardCharsets.UTF_8));
+
         // Report lists the mixin and no "not found" warning was raised.
         String reportText = Files.readString(report);
         assertTrue(reportText.contains("rewritten mixins (1)"), reportText);

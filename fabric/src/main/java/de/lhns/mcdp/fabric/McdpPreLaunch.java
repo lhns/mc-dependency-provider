@@ -12,6 +12,8 @@ import de.lhns.mcdp.deps.ManifestIo;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,6 +39,8 @@ import java.util.Optional;
 public final class McdpPreLaunch implements PreLaunchEntrypoint {
 
     private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
+
+    private static final Logger LOG = LoggerFactory.getLogger("mcdepprovider");
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpPreLaunch.class.getClassLoader());
@@ -109,12 +113,21 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             ModClassLoader loader = COORDINATOR.register(
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
             McdpProvider.registerMod(e.modId, loader);
-            // Defense-in-depth: even though Fabric's expanded modPaths usually cover the bridge
-            // manifest dir, explicitly look it up via Fabric's unified mod-content view so we're
-            // robust against future changes to which roots show up on the per-mod loader.
-            Optional<Path> bridgeManifestDir = fabric.getModContainer(e.modId)
-                    .flatMap(mc -> mc.findPath("META-INF/mcdp-mixin-bridges"));
-            bridgeManifestDir.ifPresent(p -> McdpProvider.registerAutoBridgeManifests(loader, p));
+            // Bridge-manifest discovery via per-mod index file. Fabric's unified mod-content
+            // view (ModContainer.findPath) is reliable for exact-file lookups; we read the index
+            // and resolve each <fqn>.txt one by one rather than asking for a directory.
+            ModContainer mc = fabric.getModContainer(e.modId).orElse(null);
+            int registered = 0;
+            if (mc != null) {
+                Path indexFile = mc.findPath("META-INF/mcdp-mixin-bridges-index.txt").orElse(null);
+                if (indexFile != null) {
+                    final ModContainer mcFinal = mc;
+                    registered = McdpProvider.registerAutoBridgeManifestsFromIndex(loader, indexFile,
+                            fqn -> mcFinal.findPath("META-INF/mcdp-mixin-bridges/" + fqn + ".txt")
+                                    .orElse(null));
+                }
+            }
+            LOG.info("mcdepprovider: registered {} auto-bridge manifest(s) for {}", registered, e.modId);
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
             registerMixinOwnersForFabricMod(e);
         }

@@ -216,6 +216,88 @@ class McdpProviderTest {
         }
     }
 
+    /**
+     * Index-file API: the canonical runtime registration path. Adapter supplies the index file
+     * and a resolver that maps FQN → manifest Path; provider iterates the index and asks the
+     * resolver for each line, registering every successful lookup. Fixes the dev-mode crash on
+     * NeoForge UnionPath where directory-style {@code findResource} returns a speculative or
+     * null path.
+     */
+    @Test
+    void registerAutoBridgeManifestsFromIndexHappyPath(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path manifestDir = tmp.resolve("resources/META-INF/mcdp-mixin-bridges");
+        Files.createDirectories(manifestDir);
+        Path indexFile = tmp.resolve("resources/META-INF/mcdp-mixin-bridges-index.txt");
+        Files.writeString(indexFile, "com.example.IxMixin\n");
+        Files.writeString(manifestDir.resolve("com.example.IxMixin.txt"),
+                "bridge=de.lhns.mcdp.api.FakeImplBridge\nimpl=de.lhns.mcdp.api.FakeImpl\nfield=LOGIC_Z\n");
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "ix-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            McdpProvider.registerMod("ix-mod", mod);
+            int n = McdpProvider.registerAutoBridgeManifestsFromIndex(mod, indexFile,
+                    fqn -> manifestDir.resolve(fqn + ".txt"));
+            assertEquals(1, n);
+
+            Object impl = McdpProvider.resolveAutoBridgeImpl("com.example.IxMixin", "LOGIC_Z");
+            assertNotNull(impl);
+            assertSame(mod, impl.getClass().getClassLoader());
+        }
+    }
+
+    /**
+     * Resolver returns null OR points at a non-existent file → that line is silently skipped.
+     * Verifies the count reflects only successful lookups; the registry stays consistent.
+     */
+    @Test
+    void registerAutoBridgeManifestsFromIndexSkipsMissingEntries(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path manifestDir = tmp.resolve("META-INF/mcdp-mixin-bridges");
+        Files.createDirectories(manifestDir);
+        Path indexFile = tmp.resolve("META-INF/mcdp-mixin-bridges-index.txt");
+        // Two FQNs in the index; only one has a manifest on disk.
+        Files.writeString(indexFile, "com.example.Present\ncom.example.Missing\n");
+        Files.writeString(manifestDir.resolve("com.example.Present.txt"),
+                "bridge=B\nimpl=de.lhns.mcdp.api.FakeImpl\nfield=LOGIC_P\n");
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "skip-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            McdpProvider.registerMod("skip-mod", mod);
+            int n = McdpProvider.registerAutoBridgeManifestsFromIndex(mod, indexFile, fqn -> {
+                Path p = manifestDir.resolve(fqn + ".txt");
+                return Files.exists(p) ? p : null;
+            });
+            assertEquals(1, n, "only Present should have registered");
+
+            assertNotNull(McdpProvider.resolveAutoBridgeImpl("com.example.Present", "LOGIC_P"));
+            assertThrows(IllegalStateException.class,
+                    () -> McdpProvider.resolveAutoBridgeImpl("com.example.Missing", "LOGIC_X"));
+        }
+    }
+
+    @Test
+    void registerAutoBridgeManifestsFromIndexNoopForMissingIndex(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        try (ModClassLoader mod = new ModClassLoader(
+                "no-ix",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            assertEquals(0, McdpProvider.registerAutoBridgeManifestsFromIndex(
+                    mod, tmp.resolve("does-not-exist.txt"), fqn -> null));
+        }
+    }
+
     @Test
     void registerAutoBridgeManifestsIsNoopForMissingOrEmptyDir(@TempDir Path tmp) throws Exception {
         Path implJar = tmp.resolve("impl.jar");

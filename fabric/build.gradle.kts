@@ -19,6 +19,9 @@ dependencies {
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
     compileOnly(libs.fabric.loader)
+    // slf4j-api ships transitively with Fabric loader; declare compile visibility so we can
+    // import LoggerFactory in our pre-launch hook.
+    compileOnly("org.slf4j:slf4j-api:2.0.9")
 
     bundle(project(":core"))
     bundle(project(":deps-lib"))

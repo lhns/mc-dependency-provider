@@ -122,6 +122,14 @@ Fix: `McdpProvider.registerAutoBridgeManifests(modLoader, Path manifestDir)` sca
 
 The original URL-based scan inside `wireAutoMixinBridges` is kept for production-jar code paths (where the mod jar URL on the per-mod loader does carry the manifest). Both paths populate the same `AUTO_BRIDGE_REGISTRY`; later registrations overwrite earlier ones for the same `(mixin, field)` key. Covered by `McdpProviderTest#registerAutoBridgeManifestsScansExplicitDirectory` and the existing dev-mode runServer smoke.
 
+#### Sub-errata: index file replaces directory scan
+
+`registerAutoBridgeManifests(modLoader, manifestDir)` (the directory-scan API above) **still doesn't fire on NeoForge ModDevGradle dev runs**: `IModFile.findResource("META-INF/mcdp-mixin-bridges")` returns either `null` or a speculative `UnionPath` whose `Files.list` throws (and the caller's broad catch swallows it), leaving the registry empty. `mc-fluid-physics`'s `Blocks.<clinit>` crashed identically post-fix.
+
+Replaced with an explicit per-mod **index file**. Codegen emits `META-INF/mcdp-mixin-bridges-index.txt` listing every rewritten mixin's FQN; runtime adapters read the index by exact path and resolve each `<fqn>.txt` via single-file `findResource` — the form of the API that *is* reliable across FML versions and Fabric. New runtime entry point: `McdpProvider.registerAutoBridgeManifestsFromIndex(modLoader, indexFile, fqn -> manifestPath)` accepts the platform-specific resolver as a lambda.
+
+Both adapters log `mcdepprovider: registered N auto-bridge manifest(s) for <modId>` regardless of count, so a zero-count outcome is now visible in server logs instead of silently producing a `<clinit>` crash later. The directory-scan API is `@Deprecated` but kept for callers that may already rely on it. Covered by `McdpProviderTest#registerAutoBridgeManifestsFromIndexHappyPath` and the cross-project `mc-fluid-physics` runServer repro.
+
 ## Out of scope (revisit conditions)
 
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.

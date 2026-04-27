@@ -9,9 +9,11 @@ import de.lhns.mcdp.deps.LibraryCache;
 import de.lhns.mcdp.deps.Manifest;
 import de.lhns.mcdp.deps.ManifestConsumer;
 import de.lhns.mcdp.deps.ManifestIo;
+import com.mojang.logging.LogUtils;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.LoadingModList;
+import org.slf4j.Logger;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
@@ -43,6 +45,8 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     public static final String LANGUAGE_ID = "mcdepprovider";
     private static final String LANGUAGE_VERSION = "1";
     private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
+
+    private static final Logger LOG = LogUtils.getLogger();
 
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpLanguageLoader.class.getClassLoader());
@@ -90,14 +94,19 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
-        // In NeoForge dev, only one Path lands on the per-mod ModClassLoader, but the bridge
-        // manifest dir lives in a sibling content root (typically build/resources/main). Use
-        // FML's unified mod-content view to locate it directly.
-        Path bridgeManifestDir = info.getOwningFile().getFile()
-                .findResource("META-INF/mcdp-mixin-bridges");
-        if (bridgeManifestDir != null) {
-            McdpProvider.registerAutoBridgeManifests(loader, bridgeManifestDir);
+        // Bridge-manifest discovery via per-mod index file. Directory-style findResource is
+        // unreliable on NeoForge UnionPath (returns null or speculative path in dev), so we
+        // walk an explicit index emitted by the codegen plugin. Each line is a mixin FQN; we
+        // resolve <fqn>.txt via single-file findResource which IS reliable on both dev and prod.
+        Path indexFile = info.getOwningFile().getFile()
+                .findResource("META-INF/mcdp-mixin-bridges-index.txt");
+        int registered = 0;
+        if (indexFile != null && Files.isRegularFile(indexFile)) {
+            registered = McdpProvider.registerAutoBridgeManifestsFromIndex(loader, indexFile,
+                    fqn -> info.getOwningFile().getFile()
+                            .findResource("META-INF/mcdp-mixin-bridges/" + fqn + ".txt"));
         }
+        LOG.info("mcdepprovider: registered {} auto-bridge manifest(s) for {}", registered, modId);
         registerMixinOwnersForNeoForgeMod(info, modId);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives

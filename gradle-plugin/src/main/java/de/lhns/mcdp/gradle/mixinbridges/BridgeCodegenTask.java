@@ -184,6 +184,16 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     + "or restructure the mixin.");
         }
 
+        // Per-mod index of every manifest filename (FQN) we wrote. Runtime adapters look up
+        // this index by exact path and then look up each individual manifest by exact path —
+        // sidesteps NeoForge UnionPath's loose semantics for directory-style findResource.
+        if (!rewrittenMixins.isEmpty()) {
+            StringBuilder idx = new StringBuilder();
+            for (String fqn : rewrittenMixins) idx.append(fqn).append('\n');
+            Files.writeString(manifestRoot.resolveSibling("mcdp-mixin-bridges-index.txt"),
+                    idx.toString(), StandardCharsets.UTF_8);
+        }
+
         // Emit one bridge interface + impl per aggregated target.
         for (var e : aggregated.entrySet()) {
             String target = e.getKey();
