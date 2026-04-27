@@ -54,6 +54,17 @@ def main() -> int:
         help="Regex; shutdown when matched. Defaults to the server first-tick marker; "
         "pass a client-visible marker for runClient.",
     )
+    parser.add_argument(
+        "--post-marker-grace",
+        type=float,
+        default=5.0,
+        help=(
+            "Seconds to keep tailing log after the shutdown marker before killing the JVM. "
+            "Lets the server complete several full ticks so Mixin @At(\"TAIL\")/\"RETURN\" "
+            "injections can fire — the JVM is killed mid-tick otherwise, leaving only HEAD "
+            "injections visible. Default 5s ≈ 100 ticks at 20Hz; set 0 to terminate immediately."
+        ),
+    )
     args = parser.parse_args()
 
     marker_re = re.compile(
@@ -134,10 +145,20 @@ def main() -> int:
             if log_fh:
                 log_fh.write(line)
                 log_fh.flush()
-            if marker_re.search(line):
+            if marker_re.search(line) and not state["first_tick"]:
                 state["first_tick"] = True
-                print("[mc-smoke] shutdown marker seen — stopping", flush=True)
-                _terminate(proc)
+                if args.post_marker_grace > 0:
+                    print(
+                        f"[mc-smoke] shutdown marker seen — letting server tick "
+                        f"for {args.post_marker_grace}s before stopping",
+                        flush=True,
+                    )
+                    threading.Timer(
+                        args.post_marker_grace, lambda: _terminate(proc)
+                    ).start()
+                else:
+                    print("[mc-smoke] shutdown marker seen — stopping", flush=True)
+                    _terminate(proc)
             for pat in FATAL_PATTERNS:
                 if pat.search(line):
                     state["fatal"] = line.strip()
