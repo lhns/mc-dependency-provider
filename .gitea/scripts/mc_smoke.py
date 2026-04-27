@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -91,6 +92,28 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
 
+    # On Windows, file locks are mandatory: a stale session.lock from a previous
+    # boot whose MC JVM was orphaned (see _terminate) will block this boot's
+    # DirectoryLock.create with "another process has locked a portion of the
+    # file." Unlinking the file is cheap and only touches lock state.
+    lock = run_dir / "world" / "session.lock"
+    if lock.exists():
+        try:
+            lock.unlink()
+        except OSError as e:
+            print(f"[mc-smoke] warning: could not unlink stale {lock}: {e}", flush=True)
+
+    popen_kwargs = {}
+    if sys.platform == "win32":
+        # Spawn into a new process group so taskkill /T can walk the tree on
+        # shutdown. proc.terminate() alone only kills the gradlew wrapper and
+        # leaves the forked MC server JVM orphaned — which then holds the world
+        # session.lock past boot 1, breaking boot 2.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        # New session -> new pgid == pid; lets _terminate killpg() the whole tree.
+        popen_kwargs["start_new_session"] = True
+
     proc = subprocess.Popen(
         cmd,
         cwd=str(project),
@@ -98,6 +121,7 @@ def main() -> int:
         stderr=subprocess.STDOUT,
         bufsize=1,
         text=True,
+        **popen_kwargs,
     )
 
     state = {"first_tick": False, "fatal": None, "start": time.monotonic()}
@@ -149,10 +173,24 @@ def main() -> int:
 def _terminate(proc: subprocess.Popen) -> None:
     if proc.poll() is not None:
         return
+    if sys.platform == "win32":
+        # Walk the child tree: gradlew.bat -> Gradle JVM -> forked MC server JVM.
+        # /F is forceful; the MC server's shutdown hooks take longer than our
+        # timeout budget and we don't need a clean save for a smoke boot.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
     try:
-        proc.terminate()
-    except Exception as e:  # noqa: BLE001
-        print(f"[mc-smoke] terminate failed: {e}", flush=True)
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.terminate()
+        except Exception as e:  # noqa: BLE001
+            print(f"[mc-smoke] terminate failed: {e}", flush=True)
 
 
 if __name__ == "__main__":
