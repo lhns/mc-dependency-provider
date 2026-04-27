@@ -82,12 +82,14 @@ def main() -> int:
     log_fh = open(args.log_file, "w", encoding="utf-8") if args.log_file else None
 
     # Accept the EULA silently — the first server boot writes eula.txt=false and
-    # stops; we pre-set it to true so the boot progresses. The run/ directory is
-    # ModDevGradle's default; Loom puts it in the project root too.
-    for run_dir in (project / "run", project):
-        if run_dir.exists():
-            (run_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
-            break
+    # stops; we pre-set it to true so the boot progresses. Both ModDevGradle and
+    # Loom resolve the server CWD to <project>/run/, but Loom doesn't pre-create
+    # that directory until runServer actually fires — so on a cold CI cache the
+    # earlier `if (run/).exists()` check fell through and eula.txt landed in the
+    # project root, where MC never looks. Always create run/ first.
+    run_dir = project / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
 
     proc = subprocess.Popen(
         cmd,
