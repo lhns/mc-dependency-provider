@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.example.mixinmod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [],
+  "server": [
+    "MinecraftServerOneMixin",
+    "MinecraftServerTwoMixin",
+    "MinecraftServerThreeMixin",
+    "MinecraftServerFourMixin",
+    "MinecraftServerFiveMixin",
+    "MinecraftServerSixMixin"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

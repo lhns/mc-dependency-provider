@@ -387,3 +387,132 @@ jobs:
             test-mods/kotlin-example/run/logs/**
             test-mods/kotlin-example/run/crash-reports/**
           if-no-files-found: ignore
+
+  # Mixin codegen smoke (ADR-0018).
+  #
+  # mixin-example is a Fabric mod whose 6 server-side mixins call into mod-private Java
+  # helpers. The Gradle plugin's auto-codegen rewrites each @Inject body to dispatch through
+  # a generated bridge interface (loaded parent-first via the auto-added bridge package) and
+  # a per-mod forwarding impl (loaded by the mod's ModClassLoader). This job boots the
+  # server and asserts every mixin handler fired — proving the codegen output verifies under
+  # Sponge Mixin's transformer + the per-mod loader contract end-to-end.
+  #
+  # Linux-only — the codegen is pure JVM bytecode, mirrors of the Tier-2 runserver-smoke
+  # already cover the Windows path classloading shape.
+  mixin-codegen-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (fabric)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/fabric-loom
+          key: mc-assets-${{ runner.os }}-fabric-1.21.1
+          restore-keys: |
+            mc-assets-${{ runner.os }}-fabric-
+
+      - name: Build mcdepprovider (publishes to composite build)
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Build mixin-example and assert codegen artifacts present
+        working-directory: test-mods/mixin-example
+        shell: bash
+        run: |
+          set -euo pipefail
+          ../../gradlew build --no-daemon --stacktrace
+
+          # The codegen task must have run and produced a report listing rewrites.
+          REPORT=build/mcdp-mixin-bridges/report.txt
+          test -f "$REPORT" || { echo "codegen report missing at $REPORT"; exit 1; }
+          cat "$REPORT"
+          grep -q 'rewritten mixins (6)' "$REPORT" || {
+            echo "ERROR: expected report to list 6 rewritten mixins"; exit 1; }
+
+          # The remapped mod jar must contain at least one bridge interface and one impl.
+          JAR=$(ls build/libs/*.jar | grep -v sources | head -1)
+          test -f "$JAR" || { echo "no jar built"; exit 1; }
+          BRIDGE_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_mixin_bridges/.*Bridge\.class$' | wc -l)
+          IMPL_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_mixin_bridges/.*BridgeImpl\.class$' | wc -l)
+          MANIFEST_ENTRIES=$(unzip -l "$JAR" | grep -E 'META-INF/mcdp-mixin-bridges/.*\.txt$' | wc -l)
+          echo "bridge interfaces=$BRIDGE_ENTRIES impls=$IMPL_ENTRIES manifests=$MANIFEST_ENTRIES"
+          [ "$BRIDGE_ENTRIES" -ge 2 ] || { echo "expected ≥2 bridge interfaces"; exit 1; }
+          [ "$IMPL_ENTRIES" -ge 2 ] || { echo "expected ≥2 bridge impls"; exit 1; }
+          [ "$MANIFEST_ENTRIES" -ge 6 ] || { echo "expected ≥6 manifest entries (one per mixin)"; exit 1; }
+
+      - name: Boot mixin-example fabric server
+        working-directory: test-mods/mixin-example
+        shell: bash
+        run: |
+          python3 ../../.gitea/scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../mixin-codegen.log
+
+      - name: Assert all 6 mixin markers + boot line fired
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=mixin-codegen.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          echo "=== [mcdp-smoke] lines ==="
+          grep '\[mcdp-smoke\]' "$LOG" | sort -u
+
+          grep -q 'mod=mixin_example boot ok' "$LOG" || {
+            echo "ERROR: entrypoint did not boot (no boot ok line)"; exit 1; }
+
+          MISSING=0
+          for n in MinecraftServerOneMixin MinecraftServerTwoMixin MinecraftServerThreeMixin \
+                   MinecraftServerFourMixin MinecraftServerFiveMixin MinecraftServerSixMixin; do
+            if ! grep -q "mixin=$n ok" "$LOG"; then
+              echo "ERROR: mixin marker missing for $n"
+              MISSING=1
+            fi
+          done
+          [ "$MISSING" = 0 ] || exit 1
+
+          # Defensive: any of these in the log indicates the codegen produced bytecode
+          # the runtime rejected, or the bridge wiring failed.
+          for pat in 'NoClassDefFoundError' 'IllegalAccessError' 'VerifyError' \
+                     'mcdepprovider:.*not found'; do
+            if grep -E "$pat" "$LOG"; then
+              echo "ERROR: forbidden pattern '$pat' in log"; exit 1
+            fi
+          done
+
+      - name: Upload logs + codegen report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixin-codegen
+          path: |
+            mixin-codegen.log
+            test-mods/mixin-example/run/logs/**
+            test-mods/mixin-example/run/crash-reports/**
+            test-mods/mixin-example/build/mcdp-mixin-bridges/**
+          if-no-files-found: ignore

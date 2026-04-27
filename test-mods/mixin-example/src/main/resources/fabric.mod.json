@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "mixin_example",
+  "version": "${version}",
+  "name": "mcdepprovider mixin codegen example",
+  "description": "Smoke-test mod that exercises automatic Mixin → mod-private bridge codegen (ADR-0018).",
+  "authors": ["mcdepprovider contributors"],
+  "license": "Apache-2.0",
+
+  "environment": "*",
+
+  "mixins": [
+    "mixin_example.mixins.json"
+  ],
+
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "mcdepprovider",
+        "value": "com.example.mixinmod.MixinExampleEntry"
+      }
+    ]
+  },
+
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "mcdepprovider": "*"
+  }
+}
