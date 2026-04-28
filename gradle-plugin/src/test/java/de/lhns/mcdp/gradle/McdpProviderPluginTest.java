@@ -100,6 +100,9 @@ class McdpProviderPluginTest {
 
                 mcdepprovider {
                     lang.set("java")
+                    // Default is empty (see McdpProviderExtension docstring). Opt in here so
+                    // the patch fires and we can verify the strip-count behavior.
+                    patchRunTasks.set(listOf("runServer"))
                 }
 
                 // Synthetic run task that mimics ModDevGradle's runServer shape. The patch's

@@ -43,11 +43,15 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                 .create("mcdepprovider", McdpProviderExtension.class);
         ext.getLang().convention("java");
         ext.getSharedPackages().convention(List.of());
-        ext.getPatchRunTasks().convention(List.of(
-                "runClient",
-                "runServer",
-                "runGameTestServer",
-                "runData"));
+        // Default: no stripping. ADR-0007's original "strip manifest jars from run tasks for
+        // dev-prod parity" assumed mod classes are loaded only through mcdp's ModClassLoader
+        // even in dev. ModDevGradle 2.0.91+ doesn't honor that — mod classes go on FML's
+        // GAME-layer transformer regardless, and need their compile-time deps (Scala stdlib,
+        // etc) visible on that classloader chain. Stripping them breaks any mod whose code
+        // references Scala/Kotlin/etc at link time during world generation or other early
+        // game-layer paths. Users who want strict prod-parity dev runs can opt in via
+        // `mcdepprovider.patchRunTasks = ["runServer", ...]` — explicit choice, not default.
+        ext.getPatchRunTasks().convention(List.of());
 
         // Mixin-bridge codegen defaults. Compute per-project so the typical mod author writes
         // zero `mixinBridges {}` config: bridgePackage = <group>.<projectName>.mcdp_mixin_bridges,
@@ -115,6 +119,17 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                 Configuration src = project.getConfigurations().findByName(bucket);
                 if (src != null) platformView.extendsFrom(src);
             }
+
+            // Note: we deliberately do NOT auto-wire mcdepImplementation deps into MDG's
+            // RunModel.getAdditionalRuntimeClasspathConfiguration(). MDG's additional runtime
+            // classpath is JPMS-strict — it walks each jar to compute a module descriptor.
+            // Scala/cats jars contain packages with reserved-keyword names
+            // (e.g. cats.kernel.instances.byte) that fail JPMS validation immediately at
+            // BootstrapLauncher init, before mod loading even starts. ADR-0002 covers this:
+            // those libs must live on an unnamed-module classpath (which mcdp's per-mod
+            // ModClassLoader provides). Mod code that needs Scala/Kotlin stdlib at link time
+            // outside the per-mod ModClassLoader (e.g. mixin bodies that don't go through the
+            // bridge) is a separate problem with no clean cross-MDG-version fix.
 
             var generate = project.getTasks().register(
                     "generateMcdpManifest", GenerateMcdpManifestTask.class, t -> {

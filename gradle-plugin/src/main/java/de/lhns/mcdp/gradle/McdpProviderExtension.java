@@ -76,11 +76,21 @@ public abstract class McdpProviderExtension {
      * Names of run tasks (ModDevGradle's {@code runClient} / {@code runServer} etc., or Fabric
      * Loom's equivalents) whose classpath should be stripped of any jar that also appears in the
      * generated manifest. This is the dev-mode parity hook from ADR-0007: once stripped, the
-     * provider's {@code ManifestConsumer} + {@code ModClassLoader} pipeline is the only route by
-     * which deps reach the mod at runtime, exactly as in production.
+     * provider's {@code ManifestConsumer} + {@code ModClassLoader} pipeline becomes the only
+     * route by which deps reach the mod at runtime — useful for verifying that a mod truly
+     * works through the per-mod isolation path.
      * <p>
-     * Defaults to the standard task names on both platforms. Projects that use non-standard run
-     * task names should override this explicitly.
+     * <strong>Defaults to empty</strong> (no stripping). The original "strip everything by
+     * default" behavior assumed mod classes are routed through mcdp's {@code ModClassLoader}
+     * even in dev, but ModDevGradle 2.0.91+ puts them on FML's GAME-layer transformer
+     * regardless. Mod code that references Scala/Kotlin stdlib at link time during early
+     * world-gen paths can't reach those libs through the GAME layer's classloader chain —
+     * stripping them breaks the mod. Opt in only when intentionally testing prod-parity:
+     * <pre>
+     * mcdepprovider {
+     *     patchRunTasks.set(["runServer"])  // strict isolation test, not normal dev
+     * }
+     * </pre>
      */
     public abstract ListProperty<String> getPatchRunTasks();
 }

@@ -141,8 +141,16 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 ? promotedLoader
                 : McdpLanguageLoader.class.getClassLoader();
 
+        // In dev mode, getFilePath() returns ONE path (typically build/resources/main, where
+        // neoforge.mods.toml lives), but the mod's compiled classes live in sibling dirs
+        // (build/classes/java/main, build/classes/scala/main, build/classes/kotlin/main, plus
+        // the codegen's bridge-classes output). Without those on ModClassLoader's URL list,
+        // mod-private classes load via FML's GAME-layer parent — bypassing libsLoader and its
+        // Scala/Kotlin/etc deps. Fabric's McdpPreLaunch already does this expansion; mirror it
+        // here. Production jars are unaffected (jar files don't have sibling-dir siblings).
+        List<Path> modPaths = expandDevRoots(modFile);
         ModClassLoader loader = COORDINATOR.register(
-                modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
+                modId, reducedManifest, modPaths, reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
 
         Path manifestToml = info.getOwningFile().getFile()
@@ -311,6 +319,49 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             throw new IllegalStateException(
                     "mcdepprovider: @Mod-annotated class not loadable for " + modId + ": " + fqn, e);
         }
+    }
+
+    /**
+     * Dev-mode-only: expand a single mod path into the typical Gradle source-set output dir set
+     * (build/resources/main + build/classes/&lt;lang&gt;/main + bridge-codegen output). The input
+     * may be {@code build/classes/<lang>/main} (NeoForge MDG hands us the lang-specific classes
+     * dir), {@code build/resources/main} (Fabric Loom's typical pick), or a jar file (production).
+     * We walk up the path until we find a {@code build} dir, then enumerate every standard
+     * source-set output under it. Production jars: returns [input].
+     */
+    private static List<Path> expandDevRoots(Path modFile) {
+        List<Path> out = new ArrayList<>();
+        out.add(modFile);
+        if (modFile.getFileSystem() != java.nio.file.FileSystems.getDefault()) return out;
+        // Find the project's `build/` dir by walking up. Match by name; bail at filesystem root.
+        Path build = modFile;
+        while (build != null && !"build".equals(String.valueOf(build.getFileName()))) {
+            build = build.getParent();
+        }
+        if (build == null) return out;
+        // Include resources/main (where META-INF lives in Loom-style layouts) + every
+        // classes/<lang>/main (java, scala, kotlin, etc.) + bridge-codegen output.
+        Path resourcesMain = build.resolve("resources").resolve("main");
+        if (java.nio.file.Files.isDirectory(resourcesMain) && !out.contains(resourcesMain)) {
+            out.add(resourcesMain);
+        }
+        Path classes = build.resolve("classes");
+        if (java.nio.file.Files.isDirectory(classes)) {
+            try (var stream = java.nio.file.Files.newDirectoryStream(classes)) {
+                for (Path lang : stream) {
+                    Path candidate = lang.resolve("main");
+                    if (java.nio.file.Files.isDirectory(candidate) && !out.contains(candidate)) {
+                        out.add(candidate);
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        Path bridgeClasses = build.resolve("mcdp-mixin-bridges").resolve("classes");
+        if (java.nio.file.Files.isDirectory(bridgeClasses) && !out.contains(bridgeClasses)) {
+            out.add(bridgeClasses);
+        }
+        return List.copyOf(out);
     }
 
     // Lazy populator wiring. `LoadingModList.get()` returns null at McdpLanguageLoader.<clinit>
