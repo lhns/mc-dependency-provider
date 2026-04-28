@@ -72,6 +72,15 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     @Override
     public ModContainer loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
         String modId = info.getModId();
+        // Diagnostic: bypass log4j entirely. The mc-fluid-physics report shows no INFO
+        // lines from this method appearing despite the mod declaring modLoader=mcdepprovider.
+        // System.out is unfiltered. Includes McdpProvider class identity-hash to detect
+        // duplicate-class scenarios where loadMod populates one McdpProvider's registry
+        // and the rewritten mixin's <clinit> reads a different one.
+        System.out.println("[mcdp-debug] McdpLanguageLoader.loadMod modId=" + modId
+                + " classloader=" + McdpLanguageLoader.class.getClassLoader()
+                + " McdpProvider.class@" + System.identityHashCode(McdpProvider.class)
+                + " (loaded by " + McdpProvider.class.getClassLoader() + ")");
         Path modFile = info.getOwningFile().getFile().getFilePath();
         // IModFile#findResource spans the mod's combined classes+resources views
         // (used by FML in dev to unify build/classes/... and build/resources/main).

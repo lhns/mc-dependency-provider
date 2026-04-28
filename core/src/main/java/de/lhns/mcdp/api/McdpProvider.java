@@ -122,6 +122,15 @@ public final class McdpProvider {
         if (cached != null) return cached;
         BridgeEntry e = AUTO_BRIDGE_REGISTRY.get(key);
         if (e == null) {
+            // Diagnostic: print class identity-hash + registry size before throwing. If the
+            // hash here differs from the one McdpLanguageLoader.loadMod prints, the mixin's
+            // <clinit> is reading a *different* McdpProvider class than the one the adapter
+            // populates — duplicate-class issue (mod jar shadowed mcdp instead of relying on
+            // the PLUGIN-layer one). System.out bypasses log4j config entirely.
+            System.out.println("[mcdp-debug] resolveAutoBridgeImpl MISS key=" + key
+                    + " McdpProvider.class@" + System.identityHashCode(McdpProvider.class)
+                    + " (loaded by " + McdpProvider.class.getClassLoader() + ")"
+                    + " registrySize=" + AUTO_BRIDGE_REGISTRY.size());
             throw new IllegalStateException("mcdepprovider: no auto-bridge registered for "
                     + mixinFqn + "." + fieldName);
         }
