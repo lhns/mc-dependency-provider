@@ -83,20 +83,50 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     @Override
     public ModContainer loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
         String modId = info.getModId();
-        // Diagnostic: bypass log4j entirely. The mc-fluid-physics report shows no INFO
-        // lines from this method appearing despite the mod declaring modLoader=mcdepprovider.
-        // System.out is unfiltered. Includes McdpProvider class identity-hash to detect
-        // duplicate-class scenarios where loadMod populates one McdpProvider's registry
-        // and the rewritten mixin's <clinit> reads a different one.
-        System.out.println("[mcdp-debug] McdpLanguageLoader.loadMod modId=" + modId
-                + " classloader=" + McdpLanguageLoader.class.getClassLoader()
-                + " McdpProvider.class@" + System.identityHashCode(McdpProvider.class)
-                + " (loaded by " + McdpProvider.class.getClassLoader() + ")");
-        Path modFile = info.getOwningFile().getFile().getFilePath();
-        // IModFile#findResource spans the mod's combined classes+resources views
-        // (used by FML in dev to unify build/classes/... and build/resources/main).
-        Path manifestResource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+        System.out.println("[mcdp-debug] McdpLanguageLoader.loadMod modId=" + modId);
+        // Idempotent path: classloader + bridges may already be registered if the eager static
+        // block at the bottom of this class walked LoadingModList successfully (the only way
+        // mods whose mixins fire during MC's Bootstrap.bootStrap can register before
+        // Blocks.<clinit>). loadMod is still called by FML; we just skip the redundant work.
+        Registered reg = ensureRegistered(info);
 
+        // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
+        // McdpModContainer.constructMod() at the CONSTRUCT stage, where the entry ctor gets
+        // `this` (the container) plus IEventBus + Dist in the bag. See ADR-0017.
+        Class<?> entryClass = loadEntryClass(scanResults, reg.loader(), modId);
+        return new McdpModContainer(info, entryClass, reg.manifest().lang(), scanResults);
+    }
+
+    /** (loader, manifest) cached per modId once {@link #ensureRegistered} has run. */
+    private record Registered(ModClassLoader loader, Manifest manifest) {}
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, Registered> REGISTERED =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Build the per-mod {@link ModClassLoader}, register the mod with {@link McdpProvider}, and
+     * register its auto-bridge manifest. Idempotent — second call for the same modId returns
+     * the cached {@link Registered} record without rerunning manifest reads or library downloads.
+     *
+     * <p>This method is called from two places:
+     * <ol>
+     *   <li>The eager static block at the bottom of this class, which walks {@link
+     *       LoadingModList} during early FML init. Mods whose mixins fire during MC's
+     *       {@code Bootstrap.bootStrap} (i.e. before FML reaches the {@link #loadMod} dispatch
+     *       phase) need their bridges registered before {@code Blocks.<clinit>} runs.
+     *   <li>{@link #loadMod} itself, which FML calls per-mod after MC bootstrap. For mods whose
+     *       eager-walk path completed, this is a cache hit; for mods that arrived too late for
+     *       the eager walk (e.g. PLUGIN-layer libraries discovered post-init), this is the
+     *       canonical registration.
+     * </ol>
+     */
+    private static Registered ensureRegistered(IModInfo info) {
+        String modId = info.getModId();
+        Registered cached = REGISTERED.get(modId);
+        if (cached != null) return cached;
+
+        Path modFile = info.getOwningFile().getFile().getFilePath();
+        Path manifestResource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
         Manifest manifest = readManifest(modFile, manifestResource, modId);
         List<Path> libs = downloadLibs(manifest, modId);
 
@@ -114,14 +144,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, List.of(modFile), reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
-        // Bridge-manifest discovery: single TOML file per mod (ADR-0019). Single-file
-        // findResource is reliable on Fabric and NeoForge for exact-file lookups; we never ask
-        // for a directory because NeoForge UnionPath behaves inconsistently for those.
-        // Three-line diagnostic block: distinguishes (a) "no manifest" → mod has no rewritten
-        // mixins or findResource returned null, (b) "scanning … exists=…" → path returned;
-        // useful when registration count is 0 or the next call throws, (c) "registered N" →
-        // success path. Loud failure inside registerAutoBridgeManifestToml replaces the previous
-        // silent isRegularFile gate.
+
         Path manifestToml = info.getOwningFile().getFile()
                 .findResource("META-INF/mcdp-mixin-bridges.toml");
         if (manifestToml == null) {
@@ -136,11 +159,9 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         }
         registerMixinOwnersForNeoForgeMod(info, modId);
 
-        // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
-        // McdpModContainer.constructMod() at the CONSTRUCT stage, where the entry ctor gets
-        // `this` (the container) plus IEventBus + Dist in the bag. See ADR-0017.
-        Class<?> entryClass = loadEntryClass(scanResults, loader, modId);
-        return new McdpModContainer(info, entryClass, manifest.lang(), scanResults);
+        Registered reg = new Registered(loader, manifest);
+        Registered raced = REGISTERED.putIfAbsent(modId, reg);
+        return raced != null ? raced : reg;
     }
 
     /**
@@ -292,4 +313,38 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         }
     }
 
+    // Lazy populator wiring. `LoadingModList.get()` returns null at McdpLanguageLoader.<clinit>
+    // time (we tested — FML constructs the LanguageProviderLoader before populating
+    // LoadingModList.INSTANCE). So we can't eagerly walk now. Instead we INSTALL a populator
+    // into McdpProvider that fires on the first registry miss. By the time a rewritten mixin's
+    // <clinit> calls resolveAutoBridgeImpl during Bootstrap.bootStrap, LoadingModList IS
+    // populated even though FML hasn't reached its loadMod dispatch phase yet. The populator
+    // walks the list and runs ensureRegistered() for every mcdepprovider mod, populating both
+    // the per-mod ModClassLoader (via LoaderCoordinator) and the bridge registry.
+    //
+    // FML still calls our loadMod later for each mod; ensureRegistered is idempotent via the
+    // REGISTERED cache, so loadMod is a no-op for mods the populator already handled.
+    static {
+        McdpProvider.installLazyPopulator(() -> {
+            LoadingModList list = LoadingModList.get();
+            if (list == null) {
+                System.out.println("[mcdp-debug] lazy populator: LoadingModList still null");
+                return;
+            }
+            int registered = 0;
+            for (IModInfo info : list.getMods()) {
+                if (!LANGUAGE_ID.equals(info.getLoader().name())) continue;
+                try {
+                    ensureRegistered(info);
+                    registered++;
+                } catch (Throwable t) {
+                    LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
+                            info.getModId(), t.getMessage());
+                }
+            }
+            System.out.println("[mcdp-debug] lazy populator registered " + registered
+                    + " mcdepprovider mods (before any loadMod call)");
+        });
+        System.out.println("[mcdp-debug] McdpLanguageLoader installed lazy populator");
+    }
 }

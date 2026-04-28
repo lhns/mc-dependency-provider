@@ -125,21 +125,54 @@ public final class McdpProvider {
      * the LOGIC field never reaches this method (the field hangs onto the impl), but a class
      * reload during tests can hit it again, and we want stable identity then.
      */
+    /**
+     * Lazy populator. Set by the platform adapter at its earliest possible lifecycle hook
+     * (NeoForge: {@link #installLazyPopulator(Runnable)} called during static init of
+     * McdpLanguageLoader). Invoked on the first registry miss in {@link #resolveAutoBridgeImpl}
+     * — necessary because MC's {@code Main.main()} runs {@code Bootstrap.bootStrap()} BEFORE
+     * {@code ServerModLoader.load()}; mods whose mixins fire during bootstrap (e.g.
+     * mc-fluid-physics targeting {@code BlockBehaviour$BlockStateBase}) need the registry
+     * populated before FML reaches its loadMod dispatch phase. By the time the first mixin
+     * {@code <clinit>} calls into us, FMLLoader.LoadingModList is populated even though
+     * loadMod hasn't been invoked yet.
+     */
+    private static volatile Runnable lazyPopulator;
+    private static volatile boolean lazyPopulatorRan;
+
+    public static void installLazyPopulator(Runnable populator) {
+        lazyPopulator = populator;
+    }
+
     public static Object resolveAutoBridgeImpl(String mixinFqn, String fieldName) {
         String key = mixinFqn + "#" + fieldName;
         Object cached = AUTO_BRIDGE_IMPL_CACHE.get(key);
         if (cached != null) return cached;
         BridgeEntry e = AUTO_BRIDGE_REGISTRY.get(key);
         if (e == null) {
-            // Diagnostic: print class identity-hash + registry size before throwing. If the
-            // hash here differs from the one McdpLanguageLoader.loadMod prints, the mixin's
-            // <clinit> is reading a *different* McdpProvider class than the one the adapter
-            // populates — duplicate-class issue (mod jar shadowed mcdp instead of relying on
-            // the PLUGIN-layer one). System.out bypasses log4j config entirely.
+            // First miss → invoke the platform adapter's eager-populate hook. Only run once;
+            // subsequent misses are real (impl missing or codegen incomplete).
+            Runnable p = lazyPopulator;
+            if (p != null && !lazyPopulatorRan) {
+                synchronized (McdpProvider.class) {
+                    if (!lazyPopulatorRan) {
+                        lazyPopulatorRan = true;
+                        try {
+                            p.run();
+                        } catch (Throwable t) {
+                            System.out.println("[mcdp-debug] lazy populator failed: " + t);
+                            t.printStackTrace(System.out);
+                        }
+                    }
+                }
+                e = AUTO_BRIDGE_REGISTRY.get(key);
+            }
+        }
+        if (e == null) {
             System.out.println("[mcdp-debug] resolveAutoBridgeImpl MISS key=" + key
                     + " McdpProvider.class@" + System.identityHashCode(McdpProvider.class)
                     + " (loaded by " + McdpProvider.class.getClassLoader() + ")"
-                    + " registrySize=" + AUTO_BRIDGE_REGISTRY.size());
+                    + " registrySize=" + AUTO_BRIDGE_REGISTRY.size()
+                    + " lazyPopulatorRan=" + lazyPopulatorRan);
             throw new IllegalStateException("mcdepprovider: no auto-bridge registered for "
                     + mixinFqn + "." + fieldName);
         }
