@@ -21,6 +21,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class McdpProvider {
 
+    static {
+        Module m = McdpProvider.class.getModule();
+        ModuleLayer layer = m.getLayer();
+        System.out.println("[mcdp-debug] McdpProvider.<clinit>"
+                + " module=" + m.getName()
+                + " layer=" + (layer == null ? "<null>" : layer.toString())
+                + " classloader=" + McdpProvider.class.getClassLoader());
+    }
+
     private McdpProvider() {}
 
     private static final Map<String, ModClassLoader> MOD_LOADERS_BY_ID = new ConcurrentHashMap<>();

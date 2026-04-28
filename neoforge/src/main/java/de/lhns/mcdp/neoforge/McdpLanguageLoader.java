@@ -48,6 +48,15 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     private static final Logger LOG = LogUtils.getLogger();
 
+    static {
+        Module m = McdpLanguageLoader.class.getModule();
+        ModuleLayer layer = m.getLayer();
+        System.out.println("[mcdp-debug] McdpLanguageLoader.<clinit>"
+                + " module=" + m.getName()
+                + " layer=" + (layer == null ? "<null>" : layer.toString())
+                + " classloader=" + McdpLanguageLoader.class.getClassLoader());
+    }
+
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpLanguageLoader.class.getClassLoader());
 
@@ -61,11 +70,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     @Override
     public String name() {
+        System.out.println("[mcdp-debug] McdpLanguageLoader.name() returning '" + LANGUAGE_ID + "'");
         return LANGUAGE_ID;
     }
 
     @Override
     public String version() {
+        System.out.println("[mcdp-debug] McdpLanguageLoader.version() returning '" + LANGUAGE_VERSION + "'");
         return LANGUAGE_VERSION;
     }
 
