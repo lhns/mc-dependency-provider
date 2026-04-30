@@ -1,7 +1,6 @@
 package de.lhns.mcdp.fabric;
 
 import de.lhns.mcdp.api.McdpProvider;
-import de.lhns.mcdp.core.DevRootSafetyNet;
 import de.lhns.mcdp.core.LoaderCoordinator;
 import de.lhns.mcdp.core.MixinConfigScanner;
 import de.lhns.mcdp.core.ModClassLoader;
@@ -93,12 +92,6 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             } else {
                 modPaths = List.of(manifestPath.get().getFileSystem().getPath(""));
             }
-            // Safety net: if the bridge codegen output dir isn't already on modPaths but is
-            // reachable from one of them on disk, append it. Catches consumers whose manifest
-            // dev_roots was emitted by an older plugin or whose Loom run re-rooted the source
-            // set after our plugin's main.output.dir(...) registration. Without this, bridge
-            // impls fall through to KnotClassLoader.
-            modPaths = DevRootSafetyNet.appendBridgeClassesIfPresent(modPaths);
 
             entries.add(new ModEntry(modId, manifest, libs, modPaths));
         }

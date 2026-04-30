@@ -137,8 +137,17 @@ public final class McdpProviderPlugin implements Plugin<Project> {
             // outside the per-mod ModClassLoader (e.g. mixin bodies that don't go through the
             // bridge) is a separate problem with no clean cross-MDG-version fix.
 
+            // Register the bridge codegen task first so the manifest task can reference its
+            // output dir directly (ADR-0022). dev_roots in the emitted manifest must include
+            // build/mcdp-bridges/classes; sourcing the path from the bridge task itself
+            // eliminates the literal "mcdp-bridges/classes" duplication and avoids relying on
+            // the implicit main.output.dir(builtBy=…) registration, which Loom/MDG can re-root
+            // out from under us before the manifest provider is queried.
+            var bridgeTask = registerBridgeCodegen(project, ext, main);
+
             var generate = project.getTasks().register(
                     "generateMcdpManifest", GenerateMcdpManifestTask.class, t -> {
+                        t.dependsOn(bridgeTask);
                         t.setGroup("mcdepprovider");
                         t.setDescription("Emits META-INF/mcdepprovider.toml from mcdepImplementation.");
                         t.getLang().set(ext.getLang());
@@ -153,21 +162,19 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         // Absolute paths are harmless in shipped jars: the runtime checks each
                         // path with Files.isDirectory before using it, so paths that don't
                         // exist on the consumer's machine are silently ignored.
+                        // dev_roots: union of (sourceSet.output ∪ bridgeTask.outputClassesDir).
+                        // Sourcing the bridge dir directly from the task makes BridgeCodegenTask
+                        // the single source of truth for that path (ADR-0022). main.output may
+                        // also include the bridge dir via the main.output.dir(...) registration
+                        // below, but we don't trust it under Loom/MDG re-rooting; LinkedHashSet
+                        // dedupes if both sources contain it.
                         t.getDevRoots().set(project.provider(() -> {
                             java.util.LinkedHashSet<String> roots = new java.util.LinkedHashSet<>();
                             for (File f : main.getOutput().getFiles()) {
                                 roots.add(f.getAbsolutePath());
                             }
-                            // Belt-and-suspenders: explicitly include the bridge codegen output.
-                            // main.output.dir(...) registers it via the SourceSetOutput, but
-                            // Loom/MDG can re-root the source set after our plugin's apply
-                            // block runs, dropping the registration before this provider is
-                            // queried. Without this dir on the per-mod ModClassLoader's URL
-                            // list, bridge impls fall through to the parent loader and pull
-                            // mod-private types (Scala stdlib, mod's own classes) onto the
-                            // wrong classloader. Idempotent (LinkedHashSet dedupes).
-                            roots.add(project.getLayout().getBuildDirectory()
-                                    .dir("mcdp-bridges/classes").get().getAsFile().getAbsolutePath());
+                            roots.add(bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir)
+                                    .get().getAsFile().getAbsolutePath());
                             return new ArrayList<>(roots);
                         }));
 
@@ -227,8 +234,6 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     });
 
             RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());
-
-            registerBridgeCodegen(project, ext, main);
         });
     }
 
@@ -240,7 +245,8 @@ public final class McdpProviderPlugin implements Plugin<Project> {
      * {@code build/mcdp-bridges/resources/}. The rewritten classes are layered onto the jar
      * so they win over the original ones.
      */
-    private void registerBridgeCodegen(Project project, McdpProviderExtension ext, SourceSet main) {
+    private org.gradle.api.tasks.TaskProvider<BridgeCodegenTask> registerBridgeCodegen(
+            Project project, McdpProviderExtension ext, SourceSet main) {
         var bridgeTask = project.getTasks().register(
                 "generateMcdpBridges", BridgeCodegenTask.class, t -> {
                     t.setGroup("mcdepprovider");
@@ -316,5 +322,6 @@ public final class McdpProviderPlugin implements Plugin<Project> {
         // dependents see rewritten mixin classes + emitted bridge interfaces / impls.
         main.getOutput().dir(java.util.Map.of("builtBy", bridgeTask),
                 bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
+        return bridgeTask;
     }
 }

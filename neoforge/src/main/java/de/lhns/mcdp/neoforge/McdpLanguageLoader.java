@@ -1,7 +1,6 @@
 package de.lhns.mcdp.neoforge;
 
 import de.lhns.mcdp.api.McdpProvider;
-import de.lhns.mcdp.core.DevRootSafetyNet;
 import de.lhns.mcdp.core.LoaderCoordinator;
 import de.lhns.mcdp.core.MixinConfigScanner;
 import de.lhns.mcdp.core.ModClassLoader;
@@ -140,9 +139,6 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         List<Path> modPaths = manifestDevRoots.isEmpty()
                 ? List.of(modFile)
                 : manifestDevRoots;
-        // Safety net: append build/mcdp-bridges/classes if reachable. Mirrors Fabric's
-        // McdpPreLaunch — see DevRootSafetyNet for the failure modes this covers.
-        modPaths = DevRootSafetyNet.appendBridgeClassesIfPresent(modPaths);
         ModClassLoader loader = COORDINATOR.register(
                 modId, reducedManifest, modPaths, reducedLibs, libParent);
         McdpProvider.registerMod(modId, loader);
