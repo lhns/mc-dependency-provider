@@ -456,8 +456,10 @@ jobs:
           # The remapped mod jar must contain bridge classes + the unified TOML manifest.
           JAR=$(ls build/libs/*.jar | grep -v sources | head -1)
           test -f "$JAR" || { echo "no jar built"; exit 1; }
+          # Bridge interfaces live in <bridgePackage>/, impls in the sibling
+          # <bridgePackage>_impl/ (ADR-0018 errata, ADR-0021).
           BRIDGE_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_bridges/.*Bridge\.class$' | wc -l)
-          IMPL_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_bridges/.*BridgeImpl\.class$' | wc -l)
+          IMPL_ENTRIES=$(unzip -l "$JAR" | grep -E 'mcdp_bridges_impl/.*BridgeImpl\.class$' | wc -l)
           # Single-file TOML manifest (ADR-0019); content scanned for [[bridge]] count.
           unzip -l "$JAR" | grep -q 'META-INF/mcdp-bridges\.toml' || {
             echo "ERROR: META-INF/mcdp-bridges.toml missing from jar"; exit 1; }

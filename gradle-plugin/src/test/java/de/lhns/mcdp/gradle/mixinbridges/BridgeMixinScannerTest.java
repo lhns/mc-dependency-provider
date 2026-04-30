@@ -218,6 +218,49 @@ class BridgeMixinScannerTest {
         assertEquals(BridgeMember.Kind.CLASS_LITERAL, bm.kind());
     }
 
+    /**
+     * Self-references in the mixin body don't need bridging — same defining loader on both
+     * sides. Without this filter, ADR-0008 legacy {@code @McdpMixin} mixins (which PUTSTATIC
+     * a {@code LOGIC} field on themselves) would generate a bridge that loads the mixin class,
+     * and Sponge throws {@code IllegalClassLoadError} because mixin classes can't be loaded
+     * directly. Regression guard for the fluidphysics-fabric CI failure.
+     */
+    @Test
+    void putstaticOnSelfDoesNotEmitBridge() {
+        byte[] bytes = mixinWith(mv -> {
+            // mixinWith builds the class as com/example/mod/mixin/MixinFoo — self-reference.
+            mv.visitInsn(Opcodes.ICONST_5);
+            mv.visitFieldInsn(Opcodes.PUTSTATIC, "com/example/mod/mixin/MixinFoo", "LOGIC", "I");
+            mv.visitInsn(Opcodes.RETURN);
+        }, "()V");
+        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        assertEquals(MixinScanResult.Status.SKIPPED, r.status(),
+                "self-reference inside the mixin body should not seed a bridge target");
+        assertTrue(r.targets().isEmpty(),
+                "expected empty targets, got: " + r.targets());
+    }
+
+    @Test
+    void invokestaticOnSelfDoesNotEmitBridge() {
+        byte[] bytes = mixinWith(mv -> {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/mixin/MixinFoo",
+                    "helper", "()V", false);
+            mv.visitInsn(Opcodes.RETURN);
+        }, "()V");
+        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+    }
+
+    @Test
+    void getstaticOnSelfDoesNotEmitBridge() {
+        byte[] bytes = mixinWith(mv -> {
+            mv.visitFieldInsn(Opcodes.GETSTATIC, "com/example/mod/mixin/MixinFoo", "LOGIC", "I");
+            mv.visitInsn(Opcodes.IRETURN);
+        }, "()I");
+        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+    }
+
     /** Build a minimal class with one method whose body the caller writes via {@code body}. */
     private static byte[] mixinWith(java.util.function.Consumer<MethodVisitor> body, String desc) {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);

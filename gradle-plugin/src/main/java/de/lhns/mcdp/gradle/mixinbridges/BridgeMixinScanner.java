@@ -128,6 +128,14 @@ public final class BridgeMixinScanner {
                             List<LambdaSite> lambdaSites,
                             List<String> warnings,
                             SiteContext ctx) {
+        // Self-references (instructions whose owner is the class being scanned) never need a
+        // bridge — the receiver class and the call target share the same defining loader, so
+        // there's no cross-classloader boundary to cross. Catching this matters for ADR-0008
+        // legacy `@McdpMixin` code: those mixins have a static `LOGIC` field on themselves and
+        // a PUTSTATIC self-reference inside `<clinit>`. Without this check, the rewriter would
+        // emit a bridge impl that loads the mixin class to PUTSTATIC the field, and Sponge
+        // throws `IllegalClassLoadError` because mixin classes can't be referenced directly.
+        String selfInternal = ctx.cn.name;
         String methodId = m.name + m.desc;
         AbstractInsnNode insn = m.instructions.getFirst();
         AbstractInsnNode prev = null;
@@ -147,7 +155,7 @@ public final class BridgeMixinScanner {
                                 + "class. Reflection on mod-private classes is not bridged "
                                 + "automatically; restructure to call through a bridge.");
                     }
-                    if (policy.needsBridge(min.owner)) {
+                    if (needsBridgeFromBody(min.owner, selfInternal)) {
                         BridgeMember.Kind k = switch (insn.getOpcode()) {
                             case org.objectweb.asm.Opcodes.INVOKESTATIC -> BridgeMember.Kind.STATIC_METHOD;
                             case org.objectweb.asm.Opcodes.INVOKEVIRTUAL -> BridgeMember.Kind.VIRTUAL_METHOD;
@@ -160,7 +168,7 @@ public final class BridgeMixinScanner {
                 }
                 case org.objectweb.asm.Opcodes.INVOKESPECIAL -> {
                     MethodInsnNode min = (MethodInsnNode) insn;
-                    if (policy.needsBridge(min.owner) && min.name.equals("<init>")) {
+                    if (needsBridgeFromBody(min.owner, selfInternal) && min.name.equals("<init>")) {
                         validateDescriptor(mixinFqn, m.name, min.desc, warnings);
                         targets.computeIfAbsent(min.owner, k0 -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.CONSTRUCTOR,
@@ -172,21 +180,21 @@ public final class BridgeMixinScanner {
                 }
                 case org.objectweb.asm.Opcodes.GETSTATIC -> {
                     FieldInsnNode fin = (FieldInsnNode) insn;
-                    if (policy.needsBridge(fin.owner)) {
+                    if (needsBridgeFromBody(fin.owner, selfInternal)) {
                         targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.STATIC_FIELD_GET, fin.name, fin.desc));
                     }
                 }
                 case org.objectweb.asm.Opcodes.GETFIELD -> {
                     FieldInsnNode fin = (FieldInsnNode) insn;
-                    if (policy.needsBridge(fin.owner)) {
+                    if (needsBridgeFromBody(fin.owner, selfInternal)) {
                         targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.INSTANCE_FIELD_GET, fin.name, fin.desc));
                     }
                 }
                 case org.objectweb.asm.Opcodes.PUTSTATIC -> {
                     FieldInsnNode fin = (FieldInsnNode) insn;
-                    if (policy.needsBridge(fin.owner)) {
+                    if (needsBridgeFromBody(fin.owner, selfInternal)) {
                         targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.STATIC_FIELD_SET,
                                         fin.name, fin.desc));
@@ -194,7 +202,7 @@ public final class BridgeMixinScanner {
                 }
                 case org.objectweb.asm.Opcodes.PUTFIELD -> {
                     FieldInsnNode fin = (FieldInsnNode) insn;
-                    if (policy.needsBridge(fin.owner)) {
+                    if (needsBridgeFromBody(fin.owner, selfInternal)) {
                         targets.computeIfAbsent(fin.owner, k -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.INSTANCE_FIELD_SET,
                                         fin.name, fin.desc));
@@ -225,7 +233,8 @@ public final class BridgeMixinScanner {
                 }
                 case org.objectweb.asm.Opcodes.LDC -> {
                     if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Type t
-                            && t.getSort() == Type.OBJECT && policy.needsBridge(t.getInternalName())) {
+                            && t.getSort() == Type.OBJECT
+                            && needsBridgeFromBody(t.getInternalName(), selfInternal)) {
                         targets.computeIfAbsent(t.getInternalName(), k -> new ArrayList<>())
                                 .add(new BridgeMember(BridgeMember.Kind.CLASS_LITERAL,
                                         "_class", "Ljava/lang/Class;"));
@@ -337,6 +346,17 @@ public final class BridgeMixinScanner {
             if (name.equals(m.name) && desc.equals(m.desc)) return m;
         }
         return null;
+    }
+
+    /**
+     * Like {@link BridgePolicy#needsBridge(String)} but returns {@code false} for
+     * self-references — i.e. instructions in the body of the class being scanned whose owner
+     * is that same class. Self-references resolve via the same defining loader on both sides;
+     * there's no cross-classloader boundary to bridge.
+     */
+    private boolean needsBridgeFromBody(String owner, String selfInternal) {
+        if (BridgePolicy.toInternal(owner).equals(selfInternal)) return false;
+        return policy.needsBridge(owner);
     }
 
     private boolean isClassForName(MethodInsnNode min) {
