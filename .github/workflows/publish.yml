@@ -23,12 +23,22 @@ name: Publish to Maven Central
 on:
   release:
     types: [published]
-  push:
+  # Snapshot publishes fire after CI completes — and only when BOTH Tier 1 (unit/TestKit)
+  # and Tier 2 (MC runServer smoke) succeeded for the same commit. Tier 1 and Tier 2 still
+  # run in parallel on push:main; this workflow listens for either to finish, then gates
+  # itself on the other one's status before doing any work. The later-of-the-two firing
+  # finds both green and proceeds; an earlier firing finds the second one still in progress
+  # (or failed) and no-ops.
+  workflow_run:
+    workflows:
+      - "CI — Tier 1 (unit + TestKit + manifest)"
+      - "CI — Tier 2 (MC runServer smoke)"
+    types: [completed]
     branches: [main]
   workflow_dispatch: # manual trigger for testing
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.ref }}-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false # never cancel an in-flight publish
 
 jobs:
@@ -37,18 +47,68 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
 
     steps:
+      - name: Gate on Tier 1 + Tier 2 success
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          TRIGGERING_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          # release / workflow_dispatch paths bypass the gate; only workflow_run firings
+          # check that both required workflows succeeded for this commit.
+          if [ "$EVENT" != "workflow_run" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$TRIGGERING_CONCLUSION" != "success" ]; then
+            echo "Triggering workflow concluded with '$TRIGGERING_CONCLUSION'. Skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          required=(
+            "CI — Tier 1 (unit + TestKit + manifest)"
+            "CI — Tier 2 (MC runServer smoke)"
+          )
+          for name in "${required[@]}"; do
+            conclusion=$(gh run list \
+              --repo "$REPO" \
+              --workflow "$name" \
+              --branch main \
+              --commit "$HEAD_SHA" \
+              --limit 1 \
+              --json conclusion \
+              --jq '.[0].conclusion // "none"')
+            echo "  $name → $conclusion"
+            if [ "$conclusion" != "success" ]; then
+              echo "Required workflow '$name' not green at $HEAD_SHA (got: $conclusion). Skipping; the other workflow_run firing will retry the gate when it finishes."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "All required workflows green at $HEAD_SHA — proceeding."
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.gate.outputs.publish == 'true'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up JDK 21 (Temurin)
+        if: steps.gate.outputs.publish == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Cache Gradle home
+        if: steps.gate.outputs.publish == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -60,9 +120,11 @@ jobs:
             gradle-ubuntu-latest-
 
       - name: Build everything (assert release-quality before upload)
+        if: steps.gate.outputs.publish == 'true'
         run: ./gradlew build --no-daemon --stacktrace
 
       - name: Publish to Sonatype Central Portal
+        if: steps.gate.outputs.publish == 'true'
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
