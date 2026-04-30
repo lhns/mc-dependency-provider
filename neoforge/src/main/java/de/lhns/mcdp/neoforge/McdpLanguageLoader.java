@@ -48,15 +48,6 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     private static final Logger LOG = LogUtils.getLogger();
 
-    static {
-        Module m = McdpLanguageLoader.class.getModule();
-        ModuleLayer layer = m.getLayer();
-        System.out.println("[mcdp-debug] McdpLanguageLoader.<clinit>"
-                + " module=" + m.getName()
-                + " layer=" + (layer == null ? "<null>" : layer.toString())
-                + " classloader=" + McdpLanguageLoader.class.getClassLoader());
-    }
-
     private static final LoaderCoordinator COORDINATOR =
             new LoaderCoordinator(McdpLanguageLoader.class.getClassLoader());
 
@@ -70,20 +61,17 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     @Override
     public String name() {
-        System.out.println("[mcdp-debug] McdpLanguageLoader.name() returning '" + LANGUAGE_ID + "'");
         return LANGUAGE_ID;
     }
 
     @Override
     public String version() {
-        System.out.println("[mcdp-debug] McdpLanguageLoader.version() returning '" + LANGUAGE_VERSION + "'");
         return LANGUAGE_VERSION;
     }
 
     @Override
     public ModContainer loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
         String modId = info.getModId();
-        System.out.println("[mcdp-debug] McdpLanguageLoader.loadMod modId=" + modId);
         // Idempotent path: classloader + bridges may already be registered if the eager static
         // block at the bottom of this class walked LoadingModList successfully (the only way
         // mods whose mixins fire during MC's Bootstrap.bootStrap can register before
@@ -378,24 +366,16 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     static {
         McdpProvider.installLazyPopulator(() -> {
             LoadingModList list = LoadingModList.get();
-            if (list == null) {
-                System.out.println("[mcdp-debug] lazy populator: LoadingModList still null");
-                return;
-            }
-            int registered = 0;
+            if (list == null) return;
             for (IModInfo info : list.getMods()) {
                 if (!LANGUAGE_ID.equals(info.getLoader().name())) continue;
                 try {
                     ensureRegistered(info);
-                    registered++;
                 } catch (Throwable t) {
                     LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
                             info.getModId(), t.getMessage());
                 }
             }
-            System.out.println("[mcdp-debug] lazy populator registered " + registered
-                    + " mcdepprovider mods (before any loadMod call)");
         });
-        System.out.println("[mcdp-debug] McdpLanguageLoader installed lazy populator");
     }
 }

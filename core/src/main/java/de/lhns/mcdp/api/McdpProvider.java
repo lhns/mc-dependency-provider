@@ -21,15 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class McdpProvider {
 
-    static {
-        Module m = McdpProvider.class.getModule();
-        ModuleLayer layer = m.getLayer();
-        System.out.println("[mcdp-debug] McdpProvider.<clinit>"
-                + " module=" + m.getName()
-                + " layer=" + (layer == null ? "<null>" : layer.toString())
-                + " classloader=" + McdpProvider.class.getClassLoader());
-    }
-
     private McdpProvider() {}
 
     private static final Map<String, ModClassLoader> MOD_LOADERS_BY_ID = new ConcurrentHashMap<>();
@@ -159,8 +150,8 @@ public final class McdpProvider {
                         try {
                             p.run();
                         } catch (Throwable t) {
-                            System.out.println("[mcdp-debug] lazy populator failed: " + t);
-                            t.printStackTrace(System.out);
+                            throw new IllegalStateException(
+                                    "mcdepprovider: lazy bridge-registry populator failed", t);
                         }
                     }
                 }
@@ -168,11 +159,6 @@ public final class McdpProvider {
             }
         }
         if (e == null) {
-            System.out.println("[mcdp-debug] resolveAutoBridgeImpl MISS key=" + key
-                    + " McdpProvider.class@" + System.identityHashCode(McdpProvider.class)
-                    + " (loaded by " + McdpProvider.class.getClassLoader() + ")"
-                    + " registrySize=" + AUTO_BRIDGE_REGISTRY.size()
-                    + " lazyPopulatorRan=" + lazyPopulatorRan);
             throw new IllegalStateException("mcdepprovider: no auto-bridge registered for "
                     + mixinFqn + "." + fieldName);
         }
