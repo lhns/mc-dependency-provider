@@ -1,19 +1,23 @@
 package de.lhns.mcdp.gradle.mixinbridges;
 
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reads a compiled mixin class with ASM and produces a {@link MixinScanResult}: either
@@ -83,14 +87,19 @@ public final class BridgeMixinScanner {
         }
 
         Map<String, List<BridgeMember>> targets = new LinkedHashMap<>();
+        List<LambdaSite> lambdaSites = new ArrayList<>();
+        // Per-class state for lambda walking: a stable site index across the whole class (so
+        // wrapper class names stay unique) and a guard set against recursion through self-
+        // referential synthetics.
+        SiteContext ctx = new SiteContext(cn);
         if (cn.methods != null) {
             for (MethodNode m : cn.methods) {
                 if (m.instructions == null) continue;
-                walkMethod(mixinFqn, m, targets, warnings);
+                walkMethod(mixinFqn, m, targets, lambdaSites, warnings, ctx);
             }
         }
 
-        if (targets.isEmpty()) {
+        if (targets.isEmpty() && lambdaSites.isEmpty()) {
             return MixinScanResult.skipped(mixinFqn, warnings);
         }
         // Dedupe per-target members (a single call site appears once but multiple sites can refer
@@ -103,13 +112,26 @@ public final class BridgeMixinScanner {
             }
             deduped.put(e.getKey(), uniq);
         }
-        return MixinScanResult.rewritable(mixinFqn, deduped, warnings);
+        return MixinScanResult.rewritable(mixinFqn, deduped, lambdaSites, warnings);
+    }
+
+    /** Per-class scan context: stable site numbering and recursion guard. */
+    private static final class SiteContext {
+        final ClassNode cn;
+        int nextSiteIndex = 0;
+        final Set<String> visitedSyntheticIds = new HashSet<>();
+        SiteContext(ClassNode cn) { this.cn = cn; }
     }
 
     private void walkMethod(String mixinFqn, MethodNode m,
-                            Map<String, List<BridgeMember>> targets, List<String> warnings) {
+                            Map<String, List<BridgeMember>> targets,
+                            List<LambdaSite> lambdaSites,
+                            List<String> warnings,
+                            SiteContext ctx) {
+        String methodId = m.name + m.desc;
         AbstractInsnNode insn = m.instructions.getFirst();
         AbstractInsnNode prev = null;
+        int instructionIndex = 0;
         while (insn != null) {
             switch (insn.getOpcode()) {
                 case org.objectweb.asm.Opcodes.INVOKESTATIC,
@@ -209,11 +231,112 @@ public final class BridgeMixinScanner {
                                         "_class", "Ljava/lang/Class;"));
                     }
                 }
+                case org.objectweb.asm.Opcodes.INVOKEDYNAMIC -> {
+                    if (insn instanceof InvokeDynamicInsnNode indy) {
+                        handleIndy(mixinFqn, m, methodId, indy, instructionIndex,
+                                targets, lambdaSites, warnings, ctx);
+                    }
+                }
                 default -> { /* nothing */ }
             }
             prev = insn;
             insn = insn.getNext();
+            instructionIndex++;
         }
+    }
+
+    /**
+     * Inspect an {@code INVOKEDYNAMIC} site. If the bsm is {@code LambdaMetafactory.metafactory}
+     * or {@code altMetafactory} and the implementation method is a synthetic on the same class,
+     * recursively scan that method's body for cross-classloader references and record the site
+     * for the rewriter (ADR-0021 lambda-site coverage).
+     */
+    private void handleIndy(String mixinFqn, MethodNode containingMethod, String containingMethodId,
+                            InvokeDynamicInsnNode indy, int instructionIndex,
+                            Map<String, List<BridgeMember>> targets,
+                            List<LambdaSite> lambdaSites,
+                            List<String> warnings, SiteContext ctx) {
+        Handle bsm = indy.bsm;
+        if (bsm == null) return;
+        boolean isMetafactory = "java/lang/invoke/LambdaMetafactory".equals(bsm.getOwner())
+                && ("metafactory".equals(bsm.getName()) || "altMetafactory".equals(bsm.getName()));
+        if (!isMetafactory) {
+            // Other indy bootstraps (Scala 3 string interpolation, custom MethodHandle plumbing)
+            // are out of scope for the scanner — warn so a real-world miss is visible.
+            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+                    + " uses INVOKEDYNAMIC with a non-LambdaMetafactory bootstrap ("
+                    + bsm.getOwner() + "." + bsm.getName() + "). Cross-classloader refs through "
+                    + "such sites are not auto-bridged by the codegen — restructure to a regular "
+                    + "method call or add the targeted package to mcdepprovider.sharedPackages.");
+            return;
+        }
+        // bsm args are: [samMethodType, implMethod, instantiatedMethodType] (metafactory)
+        // or [samMethodType, implMethod, instantiatedMethodType, flags, ...] (altMetafactory).
+        // Index 1 is the implementation method handle in both shapes.
+        if (indy.bsmArgs == null || indy.bsmArgs.length < 2 || !(indy.bsmArgs[1] instanceof Handle implHandle)) {
+            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+                    + " has an INVOKEDYNAMIC LambdaMetafactory site with an unexpected bsm-arg "
+                    + "shape — skipping. (Report at the project tracker.)");
+            return;
+        }
+        // Resolve the SAM type from the indy descriptor's return.
+        Type indySig = Type.getMethodType(indy.desc);
+        Type samType = indySig.getReturnType();
+        if (samType.getSort() != Type.OBJECT) {
+            return;  // primitive-typed indy — not a lambda metafactory
+        }
+        String samInternal = samType.getInternalName();
+
+        // Only wrap when the impl method is a synthetic on this same class. If the impl points
+        // at a different class (method reference like `Foo::bar`), the lambda body lives on
+        // that other class and isn't part of our mixin's bytecode — out of scope here.
+        boolean implOnContainer = ctx.cn.name.equals(implHandle.getOwner());
+        if (!implOnContainer) {
+            // Method reference: the call goes through the existing INVOKE rules (LambdaMetafactory
+            // wraps the target as the SAM, but the underlying call is to the referenced method).
+            // If the referenced owner is mod-private, the regular INVOKE branch wouldn't have
+            // caught it (it's wrapped inside the indy). Surface as a warning.
+            if (policy.needsBridge(implHandle.getOwner())) {
+                warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+                        + " uses a method reference to " + BridgePolicy.toDotted(implHandle.getOwner())
+                        + "." + implHandle.getName() + " through LambdaMetafactory. The referenced "
+                        + "method is on a mod-private type; method references to mod-private types "
+                        + "are not auto-bridged. Restructure to a lambda body whose synthetic "
+                        + "lives on this class so the codegen can rewrite it.");
+            }
+            return;
+        }
+
+        // Locate the synthetic body and scan it for cross-classloader references. The
+        // synthetic's own body still gets the regular bridge treatment so when it runs (e.g.,
+        // through the wrapper's SAM dispatch) its mod-private references resolve correctly.
+        MethodNode synthetic = findMethod(ctx.cn, implHandle.getName(), implHandle.getDesc());
+        if (synthetic == null) {
+            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+                    + " references synthetic " + implHandle.getName() + implHandle.getDesc()
+                    + " which is not present on the class — skipping the lambda site.");
+            return;
+        }
+        String syntheticId = synthetic.name + synthetic.desc;
+        if (ctx.visitedSyntheticIds.add(syntheticId)) {
+            // Recurse into the synthetic body so any mod-private refs inside it are also bridged
+            // through the regular targets map (the synthetic is a normal method on the container
+            // and will be rewritten by the existing pipeline). Nested lambdas inside the synthetic
+            // re-enter handleIndy with their own SiteContext entries.
+            walkMethod(mixinFqn, synthetic, targets, lambdaSites, warnings, ctx);
+        }
+
+        int siteIndex = ctx.nextSiteIndex++;
+        lambdaSites.add(new LambdaSite(ctx.cn.name, containingMethodId, instructionIndex,
+                samInternal, indy.name, implHandle, indy.desc, siteIndex));
+    }
+
+    private static MethodNode findMethod(ClassNode cn, String name, String desc) {
+        if (cn.methods == null) return null;
+        for (MethodNode m : cn.methods) {
+            if (name.equals(m.name) && desc.equals(m.desc)) return m;
+        }
+        return null;
     }
 
     private boolean isClassForName(MethodInsnNode min) {

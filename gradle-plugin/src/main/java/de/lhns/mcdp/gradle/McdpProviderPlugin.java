@@ -67,6 +67,14 @@ public final class McdpProviderPlugin implements Plugin<Project> {
             String group = String.valueOf(project.getGroup());
             return (group.isEmpty() || "unspecified".equals(group)) ? List.of() : List.of(group + ".");
         }));
+        // Annotation seed (ADR-0021). Default covers Sponge-Mixin and NeoForge's automatic event
+        // subscriber registrar — the two FML/Sponge side-loads documented as leak-prone in
+        // mc-fluid-physics. Override per project to pin to a different NeoForge version's
+        // annotation FQN or to add custom annotation-driven side-loads.
+        ext.getMixinBridges().getBridgedAnnotations().convention(List.of(
+                "org.spongepowered.asm.mixin.Mixin",
+                "net.neoforged.bus.api.EventBusSubscriber"
+        ));
 
         // Auto-register the bridge package on sharedPackages so the per-mod ModClassLoader
         // delegates the generated interface parent-first. Skipped when no project group is set
@@ -238,6 +246,7 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     t.getRuntimeFrameLookupClasspath().from(main.getCompileClasspath());
                     t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
+                    t.getBridgedAnnotations().set(ext.getMixinBridges().getBridgedAnnotations());
                     t.getMixinConfigFiles().from(project.provider(() -> {
                         List<File> matches = new ArrayList<>();
                         for (File r : main.getResources().getSrcDirs()) {

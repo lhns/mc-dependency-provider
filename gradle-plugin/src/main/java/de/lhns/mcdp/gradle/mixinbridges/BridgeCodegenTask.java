@@ -73,6 +73,13 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getSharedPackages();
 
+    /**
+     * Class-level annotation FQNs that seed the codegen alongside {@code *.mixins.json}.
+     * See {@link de.lhns.mcdp.gradle.MixinBridgesExtension#getBridgedAnnotations()} (ADR-0021).
+     */
+    @Input
+    public abstract ListProperty<String> getBridgedAnnotations();
+
     @OutputDirectory
     public abstract DirectoryProperty getOutputClassesDir();
 
@@ -97,13 +104,22 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         cleanDirectory(manifestDir);
         Files.createDirectories(manifestFile.getParent());
 
-        Set<String> mixinFqns = new LinkedHashSet<>();
+        Set<String> seedFqns = new LinkedHashSet<>();
         for (var f : getMixinConfigFiles().getFiles()) {
             if (!f.isFile()) continue;
-            mixinFqns.addAll(extractMixinFqns(f.toPath()));
+            seedFqns.addAll(extractMixinFqns(f.toPath()));
         }
-        if (mixinFqns.isEmpty()) {
-            log.info("mcdp-mixin-bridges: no mixin classes declared in any *.mixins.json — nothing to do.");
+        // Annotation-driven seed: discovers @Mixin / @EventBusSubscriber / etc. by ASM-scanning
+        // each compiled .class for class-level annotations. Belt-and-braces with the JSON seed
+        // above (mixin discovery) and the only path covering non-mixin annotations (ADR-0021).
+        List<String> annoFqns = getBridgedAnnotations().getOrElse(List.of());
+        if (!annoFqns.isEmpty()) {
+            AnnotationSeedScanner annoScanner = new AnnotationSeedScanner(annoFqns);
+            seedFqns.addAll(annoScanner.scan(inDirs));
+        }
+        if (seedFqns.isEmpty()) {
+            log.info("mcdp-mixin-bridges: no mixin classes declared in any *.mixins.json and no "
+                    + "classes carry a configured bridgedAnnotation — nothing to do.");
             writeReport(getReportFile().get().getAsFile().toPath(), List.of(), List.of(), List.of());
             return;
         }
@@ -128,6 +144,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         MixinRewriter rewriter = new MixinRewriter(policy, getBridgePackage().get(), frameLookup);
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(getBridgePackage().get());
         BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get(), frameLookup);
+        LambdaWrapperEmitter lambdaEmitter = new LambdaWrapperEmitter(getBridgePackage().get(), frameLookup);
 
         // Aggregated bridges across the whole compilation: we want one bridge interface per
         // target type even if multiple mixins reference it.
@@ -135,10 +152,13 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         List<String> rewrittenMixins = new ArrayList<>();
         // Per-mixin target map preserved for the unified TOML manifest emission below.
         Map<String, Map<String, List<BridgeMember>>> perMixinTargets = new LinkedHashMap<>();
+        // Per-mixin lambda artifacts — emitted as separate class files and registered in the
+        // manifest via the same [[bridge]] schema as regular bridges (ADR-0021).
+        Map<String, List<LambdaWrapperEmitter.Artifacts>> perMixinLambdas = new LinkedHashMap<>();
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
-        for (String fqn : mixinFqns) {
+        for (String fqn : seedFqns) {
             String relPath = BridgePolicy.toInternal(fqn) + ".class";
             Path classFile = null;
             for (Path inDir : inDirs) {
@@ -146,7 +166,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 if (Files.isRegularFile(candidate)) { classFile = candidate; break; }
             }
             if (classFile == null) {
-                warnings.add("mcdp-mixin-bridges: declared mixin class " + fqn
+                warnings.add("mcdp-mixin-bridges: seeded class " + fqn
                         + " not found in any compiled-classes dir " + inDirs
                         + " — skipping. (Was the build clean?)");
                 continue;
@@ -162,7 +182,47 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     log.info("mcdp-mixin-bridges: " + fqn + " has no cross-classloader refs.");
                 }
                 case REWRITABLE -> {
-                    byte[] rewritten = rewriter.rewrite(bytes, result.targets());
+                    // Lambda sites: emit one bridge interface + impl pair per site, write
+                    // their .class files, and feed the artifacts to the rewriter so it can
+                    // replace the indys with INVOKEINTERFACE through LAMBDA_* fields.
+                    Map<Integer, LambdaWrapperEmitter.Artifacts> lambdaArtifactsBySite =
+                            new LinkedHashMap<>();
+                    if (!result.lambdaSites().isEmpty()) {
+                        org.objectweb.asm.tree.ClassNode containerCn = new org.objectweb.asm.tree.ClassNode();
+                        new org.objectweb.asm.ClassReader(bytes)
+                                .accept(containerCn, org.objectweb.asm.ClassReader.SKIP_FRAMES);
+                        List<LambdaWrapperEmitter.Artifacts> mixinLambdas = new ArrayList<>();
+                        for (LambdaSite site : result.lambdaSites()) {
+                            org.objectweb.asm.tree.MethodNode synth = null;
+                            for (var mn : containerCn.methods) {
+                                if (mn.name.equals(site.implMethod().getName())
+                                        && mn.desc.equals(site.implMethod().getDesc())) {
+                                    synth = mn;
+                                    break;
+                                }
+                            }
+                            if (synth == null) {
+                                warnings.add("mcdp-mixin-bridges: lambda site " + site
+                                        + " references absent synthetic — skipping.");
+                                continue;
+                            }
+                            LambdaWrapperEmitter.Artifacts art = lambdaEmitter.emit(
+                                    containerCn, site, synth);
+                            lambdaArtifactsBySite.put(site.siteIndex(), art);
+                            mixinLambdas.add(art);
+                            // Write bridge interface + impl class files.
+                            Path ifaceOut = outClassesDir.resolve(art.bridgeIfaceInternal + ".class");
+                            Path implOut = outClassesDir.resolve(art.bridgeImplInternal + ".class");
+                            Files.createDirectories(ifaceOut.getParent());
+                            Files.write(ifaceOut, art.bridgeIfaceBytes);
+                            Files.write(implOut, art.bridgeImplBytes);
+                        }
+                        if (!mixinLambdas.isEmpty()) {
+                            perMixinLambdas.put(fqn, mixinLambdas);
+                        }
+                    }
+                    byte[] rewritten = rewriter.rewrite(bytes, result.targets(),
+                            result.lambdaSites(), lambdaArtifactsBySite);
                     Path outClass = outClassesDir.resolve(BridgePolicy.toInternal(fqn) + ".class");
                     Files.createDirectories(outClass.getParent());
                     Files.write(outClass, rewritten);
@@ -190,7 +250,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         // (mixin, field) pair — runtime parses with MiniToml, no bespoke parser needed, and a
         // single-file findResource lookup is reliable across Fabric + NeoForge dev/prod (no
         // UnionPath directory quirks). Format documented in ADR-0019.
-        if (!perMixinTargets.isEmpty()) {
+        if (!perMixinTargets.isEmpty() || !perMixinLambdas.isEmpty()) {
             StringBuilder sb = new StringBuilder("# auto-generated by mcdp-mixin-bridges; do not edit\n");
             for (var mixinEntry : perMixinTargets.entrySet()) {
                 String mixinFqn = mixinEntry.getKey();
@@ -200,6 +260,18 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     sb.append("field = ").append(tomlString(MixinRewriter.logicFieldName(target))).append('\n');
                     sb.append("interface = ").append(tomlString(ifaceEmitter.interfaceFqn(target))).append('\n');
                     sb.append("impl = ").append(tomlString(implEmitter.implFqn(target))).append('\n');
+                }
+            }
+            // Lambda sites use the same [[bridge]] schema; the runtime can't (and doesn't need
+            // to) tell them apart from regular bridges. ADR-0021 §Static-handler integrity check.
+            for (var lambdaEntry : perMixinLambdas.entrySet()) {
+                String mixinFqn = lambdaEntry.getKey();
+                for (LambdaWrapperEmitter.Artifacts art : lambdaEntry.getValue()) {
+                    sb.append("\n[[bridge]]\n");
+                    sb.append("mixin = ").append(tomlString(mixinFqn)).append('\n');
+                    sb.append("field = ").append(tomlString(art.logicFieldName)).append('\n');
+                    sb.append("interface = ").append(tomlString(BridgePolicy.toDotted(art.bridgeIfaceInternal))).append('\n');
+                    sb.append("impl = ").append(tomlString(BridgePolicy.toDotted(art.bridgeImplInternal))).append('\n');
                 }
             }
             Files.writeString(manifestFile, sb.toString(), StandardCharsets.UTF_8);
@@ -216,6 +288,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
             Path ifaceOut = outClassesDir.resolve(BridgePolicy.toInternal(ifaceFqn) + ".class");
             Path implOut = outClassesDir.resolve(BridgePolicy.toInternal(implFqn) + ".class");
             Files.createDirectories(ifaceOut.getParent());
+            Files.createDirectories(implOut.getParent());
             Files.write(ifaceOut, iface);
             Files.write(implOut, impl);
         }

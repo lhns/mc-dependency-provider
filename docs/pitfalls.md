@@ -72,9 +72,56 @@ class — so the runtime stack frame under the static-field initializer is
 fallback `if (MOD_LOADERS_BY_ID.size() == 1) return the only one` was
 masking the issue.
 
-**Fix (pending).** Either pass `modId` explicitly at the call site, or have
-`McdpPreLaunch` parse each mod's Mixin configs and call `registerMixinOwner`
-ahead of time. Documented as follow-up; not v0.1-blocking.
+**Fix.** Shipped post-v0.1 (commit `f438ee4`): each mod's mixin configs are
+parsed at PreLaunch and `registerMixinOwner` is called ahead of time. The
+fallback "if there's only one registered mod, return it" was removed at the
+same time so the failure mode is now immediate and unambiguous.
+
+### `ClassNotFoundException: scala.math.Ordering` mid chunk-gen, no mod frame
+
+**Symptom.** A NeoForge mod with a mixin containing a Scala-style closure
+(e.g., `Comparator.comparingInt(o -> o.someScalaCalc())`) crashes during
+chunk generation with `CNF: scala.math.Ordering`. The stack is pure MC code
+(`PlacedFeature.placeWithContext` → stream → CNF), no mod frame visible.
+
+**Root cause.** Scala-emitted closures inside a mixin compile to
+`INVOKEDYNAMIC LambdaMetafactory` plus a synthetic `lambda$body$N` on the
+mixin class. ADR-0018 v1 had no `INVOKEDYNAMIC` branch in the rewriter, so
+the indy and synthetic both passed through unchanged. After Sponge merges
+the mixin into the MC target, the synthetic body lives on MC's class. JVM
+resolves the synthetic body's class names via MC's defining loader (FML's
+`ModuleClassLoader`) — which can't see Scala. Crash.
+
+**Fix.** Two-part. (1) ADR-0021 lambda-wrapper codegen handles the
+`INVOKEDYNAMIC` case. (2) **More importantly for fluidphysics specifically**,
+the same ADR's errata moves bridge impls into a sibling package
+(`<bridgePackage>_impl`) outside `sharedPackages`. Without the impl-package
+fix, even simple non-lambda bridge calls into Scala fail (the impl's body
+references Scala types directly, and the impl was being defined by FML's
+loader because parent-first delegation kicked in for the auto-shared bridge
+package). The lambda case happens not to hit fluidphysics at all (the
+scanner finds zero LambdaMetafactory sites in fluidphysics's mixins) — the
+real CNF was always the impl-loader leak, surfaced by fluidphysics being
+the first real-world Scala consumer.
+
+### `@EventBusSubscriber` with Scala-touching static handlers
+
+**Symptom.** A mod with a `@EventBusSubscriber`-annotated class whose static
+handler calls Scala / Kotlin / mod-private code crashes at server start when
+NeoForge registers the subscriber. NCDFE on the first Scala-stdlib reference
+inside the handler.
+
+**Root cause.** NeoForge's automatic-subscriber registrar reads the
+annotation via ASM and calls `Class.forName(fqn)` against FML's loader. The
+defining loader of the subscriber class is FML's, so any non-platform
+reference inside its body resolves via FML — which can't see mcdp's per-mod
+deps. Same JVM rule that hits the lambda case above.
+
+**Fix.** ADR-0021 generalized seeding. The codegen now also seeds on
+class-level annotations (default list includes `@EventBusSubscriber`); the
+existing bridge plumbing rewrites the subscriber's body so cross-classloader
+calls go through bridges resolved by `ModClassLoader`. No mod-author action
+needed beyond applying the plugin.
 
 ## Caching
 

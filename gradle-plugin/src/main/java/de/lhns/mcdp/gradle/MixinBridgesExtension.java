@@ -35,4 +35,23 @@ public abstract class MixinBridgesExtension {
      * Default: {@code <group>.<projectName>.mcdp_mixin_bridges}.
      */
     public abstract Property<String> getBridgePackage();
+
+    /**
+     * Class-level annotation FQNs whose bytecode the codegen should seed on (in addition to the
+     * existing {@code *.mixins.json} seed). The codegen is no longer Sponge-Mixin-specific:
+     * any class FML/Sponge will define from the mod jar — mixins, {@code @EventBusSubscriber}
+     * registrar targets, custom annotation-driven side-loads — needs cross-classloader call
+     * sites rewritten through bridges if it touches Scala/Kotlin/mod-private code.
+     * <p>
+     * Default (set in {@code McdpProviderPlugin}):
+     * <ul>
+     *   <li>{@code org.spongepowered.asm.mixin.Mixin}</li>
+     *   <li>{@code net.neoforged.bus.api.EventBusSubscriber}</li>
+     * </ul>
+     * <p>
+     * See ADR-0021. The FQN list is config-driven so users can pin against a specific NeoForge
+     * version (the {@code @EventBusSubscriber} package may rename across major versions) and add
+     * project-specific annotations driving custom registries.
+     */
+    public abstract ListProperty<String> getBridgedAnnotations();
 }

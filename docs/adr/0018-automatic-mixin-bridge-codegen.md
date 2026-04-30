@@ -1,6 +1,6 @@
 # ADR-0018 — Automatic Mixin → mod-private bridge codegen
 
-**Status:** Accepted — first cut shipped post-v0.1. Refines [ADR-0008](0008-mixin-via-bridge-pattern.md): the bridge pattern itself stays — the codegen is a layer that hides it from the consumer.
+**Status:** Accepted — first cut shipped post-v0.1. Refines [ADR-0008](0008-mixin-via-bridge-pattern.md): the bridge pattern itself stays — the codegen is a layer that hides it from the consumer. Further refined by [ADR-0021](0021-generalized-bridge-codegen.md): seeding generalized to arbitrary class-level annotations (covers `@EventBusSubscriber` etc.); INVOKEDYNAMIC LambdaMetafactory sites now rewrite to per-site wrapper bridges, closing the Scala-lambda-merged-into-MC leak (the fluidphysics CNF).
 
 ## Context
 

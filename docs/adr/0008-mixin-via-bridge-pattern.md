@@ -1,6 +1,6 @@
 # ADR-0008 — Mixin supported via a bridge pattern
 
-**Status:** Accepted — refined by [ADR-0018](0018-automatic-mixin-bridge-codegen.md). The bridge-pattern runtime architecture in this ADR is unchanged; ADR-0018 layers a Gradle-side bytecode-rewriter on top so the mod author writes a normal Sponge-Common-style mixin and the bridge plumbing is generated for them.
+**Status:** Accepted — refined by [ADR-0018](0018-automatic-mixin-bridge-codegen.md) and [ADR-0021](0021-generalized-bridge-codegen.md). The bridge-pattern runtime architecture in this ADR is unchanged; ADR-0018 layers a Gradle-side bytecode-rewriter on top so the mod author writes a normal Sponge-Common-style mixin and the bridge plumbing is generated for them, and ADR-0021 generalizes the rewriter to seed on arbitrary class-level annotations (so `@EventBusSubscriber` and similar FML side-loads are auto-bridged) and to rewrite `INVOKEDYNAMIC LambdaMetafactory` sites whose synthetic bodies leak Scala references through Sponge's mixin merge.
 **Supersedes:** the earlier draft "ADR-0008 — Mixin unsupported for Scala mod classes"
 
 ## Context

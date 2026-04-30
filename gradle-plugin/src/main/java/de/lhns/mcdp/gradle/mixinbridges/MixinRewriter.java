@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -60,9 +61,21 @@ public final class MixinRewriter {
      * @return rewritten class bytes; the input is left untouched.
      */
     public byte[] rewrite(byte[] classBytes, Map<String, List<BridgeMember>> targets) {
+        return rewrite(classBytes, targets, List.of(), Map.of());
+    }
+
+    /**
+     * Variant covering ADR-0021 lambda-site rewriting. {@code lambdaSites} is the per-site
+     * list from {@link BridgeMixinScanner}; {@code lambdaArtifactsBySite} maps each site's
+     * {@link LambdaSite#siteIndex()} to the bridge interface internal name + LOGIC field name
+     * + make-method name and descriptor — produced by {@link LambdaWrapperEmitter}.
+     */
+    public byte[] rewrite(byte[] classBytes, Map<String, List<BridgeMember>> targets,
+                          List<LambdaSite> lambdaSites,
+                          Map<Integer, LambdaWrapperEmitter.Artifacts> lambdaArtifactsBySite) {
         ClassNode cn = new ClassNode();
         new ClassReader(classBytes).accept(cn, 0);
-        rewrite(cn, targets);
+        rewrite(cn, targets, lambdaSites, lambdaArtifactsBySite);
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
         cn.accept(cw);
@@ -70,6 +83,12 @@ public final class MixinRewriter {
     }
 
     public void rewrite(ClassNode cn, Map<String, List<BridgeMember>> targets) {
+        rewrite(cn, targets, List.of(), Map.of());
+    }
+
+    public void rewrite(ClassNode cn, Map<String, List<BridgeMember>> targets,
+                        List<LambdaSite> lambdaSites,
+                        Map<Integer, LambdaWrapperEmitter.Artifacts> lambdaArtifactsBySite) {
         Map<String, String> targetToBridge = new LinkedHashMap<>();
         List<ClinitInit> inits = new ArrayList<>();
         for (String target : targets.keySet()) {
@@ -89,9 +108,36 @@ public final class MixinRewriter {
             }
             inits.add(new ClinitInit(fieldName, bridgeInternal));
         }
+        // Add a LAMBDA_<simple>_<n> field per lambda site (typed as the per-site bridge
+        // interface) and queue its <clinit> initializer.
+        for (LambdaSite site : lambdaSites) {
+            LambdaWrapperEmitter.Artifacts art = lambdaArtifactsBySite.get(site.siteIndex());
+            if (art == null) continue;
+            boolean exists = false;
+            for (FieldNode fn : cn.fields) {
+                if (fn.name.equals(art.logicFieldName)) { exists = true; break; }
+            }
+            if (!exists) {
+                FieldNode fn = new FieldNode(
+                        Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
+                        art.logicFieldName, "L" + art.bridgeIfaceInternal + ";", null, null);
+                cn.fields.add(fn);
+            }
+            inits.add(new ClinitInit(art.logicFieldName, art.bridgeIfaceInternal));
+        }
+        // Index lambda sites by (methodId, instructionIndex) for the rewriter to look them up
+        // during the method walk.
+        Map<String, Map<Integer, LambdaSite>> sitesByMethod = new LinkedHashMap<>();
+        for (LambdaSite site : lambdaSites) {
+            sitesByMethod
+                    .computeIfAbsent(site.ownerMethodId(), k -> new LinkedHashMap<>())
+                    .put(site.instructionIndex(), site);
+        }
         for (MethodNode m : cn.methods) {
             if (m.instructions == null || m.instructions.size() == 0) continue;
-            rewriteMethod(cn, m, targets, targetToBridge);
+            rewriteMethod(cn, m, targets, targetToBridge,
+                    sitesByMethod.getOrDefault(m.name + m.desc, Map.of()),
+                    lambdaArtifactsBySite);
         }
         mergeOrCreateClinit(cn, inits);
     }
@@ -166,7 +212,9 @@ public final class MixinRewriter {
 
     private void rewriteMethod(ClassNode cn, MethodNode m,
                                Map<String, List<BridgeMember>> targets,
-                               Map<String, String> targetToBridge) {
+                               Map<String, String> targetToBridge,
+                               Map<Integer, LambdaSite> sitesInThisMethod,
+                               Map<Integer, LambdaWrapperEmitter.Artifacts> artifactsBySite) {
         // Pre-pass: pair each INVOKESPECIAL <init> on a target owner with its NEW + DUP. We do
         // this once forward-walking with a LIFO stack of unmatched NEWs — this matches the
         // nesting of constructor calls produced by javac/scalac/kotlinc. Bare NEWs without a
@@ -179,6 +227,7 @@ public final class MixinRewriter {
         }
 
         AbstractInsnNode insn = m.instructions.getFirst();
+        int instructionIndex = 0;
         while (insn != null) {
             AbstractInsnNode next = insn.getNext();
             int op = insn.getOpcode();
@@ -200,11 +249,56 @@ public final class MixinRewriter {
                     && ldc.cst instanceof Type t && t.getSort() == Type.OBJECT
                     && targets.containsKey(t.getInternalName())) {
                 rewriteClassLiteral(cn, m, ldc, targetToBridge.get(t.getInternalName()));
+            } else if (op == Opcodes.INVOKEDYNAMIC && insn instanceof InvokeDynamicInsnNode indy
+                    && sitesInThisMethod.containsKey(instructionIndex)) {
+                LambdaSite site = sitesInThisMethod.get(instructionIndex);
+                LambdaWrapperEmitter.Artifacts art = artifactsBySite.get(site.siteIndex());
+                if (art != null) {
+                    rewriteLambdaIndy(cn, m, indy, site, art);
+                }
             }
             // NEW/DUP nodes consumed by ctorTriplets are removed inside rewriteConstructor;
             // anything we didn't recognize is left untouched.
             insn = next;
+            instructionIndex++;
         }
+    }
+
+    /**
+     * Replace an {@code INVOKEDYNAMIC LambdaMetafactory} site with a stack-juggle that pushes
+     * the per-site {@code LAMBDA_*} static field (typed as the bridge interface) under the
+     * captures and INVOKEINTERFACEs the bridge's {@code make} factory. The factory returns the
+     * SAM instance — same shape as the original indy. ADR-0021.
+     */
+    private void rewriteLambdaIndy(ClassNode cn, MethodNode m, InvokeDynamicInsnNode indy,
+                                   LambdaSite site, LambdaWrapperEmitter.Artifacts art) {
+        Type[] captures = Type.getArgumentTypes(indy.desc);
+        InsnList replacement = new InsnList();
+        // Spill captures to fresh locals (in reverse stack order).
+        int next = nextFreeLocal(m);
+        int[] capLocals = new int[captures.length];
+        for (int i = 0; i < captures.length; i++) {
+            capLocals[i] = next;
+            next += captures[i].getSize();
+        }
+        m.maxLocals = Math.max(m.maxLocals, next);
+        for (int i = captures.length - 1; i >= 0; i--) {
+            replacement.add(new VarInsnNode(captures[i].getOpcode(Opcodes.ISTORE), capLocals[i]));
+        }
+        // Push LAMBDA bridge ref (LOGIC field on the container).
+        replacement.add(new FieldInsnNode(
+                Opcodes.GETSTATIC, cn.name, art.logicFieldName,
+                "L" + art.bridgeIfaceInternal + ";"));
+        // Reload captures.
+        for (int i = 0; i < captures.length; i++) {
+            replacement.add(new VarInsnNode(captures[i].getOpcode(Opcodes.ILOAD), capLocals[i]));
+        }
+        // INVOKEINTERFACE bridge.make(captures...) -> SAM
+        replacement.add(new MethodInsnNode(
+                Opcodes.INVOKEINTERFACE, art.bridgeIfaceInternal,
+                art.makeName, art.makeDescriptor, true));
+        m.instructions.insertBefore(indy, replacement);
+        m.instructions.remove(indy);
     }
 
     private static Map<MethodInsnNode, AbstractInsnNode[]> findCtorTriplets(

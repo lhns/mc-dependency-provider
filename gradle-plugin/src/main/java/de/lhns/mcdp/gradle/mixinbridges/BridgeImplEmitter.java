@@ -21,6 +21,17 @@ import java.util.List;
 public final class BridgeImplEmitter {
 
     private final String bridgePackageInternal;
+    /**
+     * Sibling-package name where bridge impls live: {@code <bridgePackage>_impl}. Kept
+     * separate from the bridge interface package because the latter is auto-added to
+     * {@code sharedPackages} (so interfaces resolve to the same {@code Class} on both
+     * loaders), while impls must NOT be parent-first delegated — if FML's loader defines
+     * the impl, calls from the impl body to mod-private/Scala targets resolve via FML and
+     * fail (no Scala stdlib on FML's path). The sibling-package suffix sidesteps the
+     * sharedPackages prefix match because {@code <bridgePackage>.} (with trailing dot)
+     * does not start with {@code <bridgePackage>_impl}. ADR-0021 errata.
+     */
+    private final String implPackageInternal;
     private final ClassLoader frameLookup;
 
     public BridgeImplEmitter(String bridgePackage) {
@@ -29,13 +40,14 @@ public final class BridgeImplEmitter {
 
     public BridgeImplEmitter(String bridgePackage, ClassLoader frameLookup) {
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
+        this.implPackageInternal = this.bridgePackageInternal + "_impl";
         this.frameLookup = frameLookup;
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
         String simple = MixinRewriter.simpleName(targetInternalName);
         String ifaceInternal = bridgePackageInternal + "/" + simple + "Bridge";
-        String implInternal = ifaceInternal + "Impl";
+        String implInternal = implPackageInternal + "/" + simple + "BridgeImpl";
 
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
@@ -148,7 +160,7 @@ public final class BridgeImplEmitter {
     }
 
     public String implFqn(String targetInternalName) {
-        return BridgePolicy.toDotted(bridgePackageInternal) + "."
+        return BridgePolicy.toDotted(implPackageInternal) + "."
                 + MixinRewriter.simpleName(targetInternalName) + "BridgeImpl";
     }
 }

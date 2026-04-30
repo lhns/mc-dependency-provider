@@ -95,3 +95,40 @@ mcdepprovider {
 The shape is documented in [ADR-0008](adr/0008-mixin-via-bridge-pattern.md): a Java bridge interface in a `sharedPackages`-listed package, a Scala/Kotlin impl in any mod-private package, `@McdpMixin(impl = "...", modId = "...")` on the mixin, and `McdpProvider.loadMixinImpl(MyBridge.class)` in the mixin's static init. The hand-written path is more work per call site, but every line of glue is yours and `javap` shows you exactly what runs.
 
 The two paths are mutually exclusive per project: codegen rewrites the entire mixin set, or you opt out entirely. Mixing the two within one project is not supported — narrowing the codegen scope to a subset of mixins would require per-mixin opt-in metadata that the architecture doesn't carry.
+
+## Annotation-driven seeding (`@EventBusSubscriber` and friends)
+
+The codegen seeds on more than just `*.mixins.json`. By default it also walks every compiled `.class` and selects classes whose class-level annotations match a configured FQN list. Default list (set by `McdpProviderPlugin`):
+
+- `org.spongepowered.asm.mixin.Mixin`
+- `net.neoforged.bus.api.EventBusSubscriber`
+
+The two seed paths union by FQN; the rest of the pipeline is annotation-agnostic. This means `@EventBusSubscriber`-tagged classes that touch Scala/Kotlin/mod-private code are auto-bridged exactly the same way mixins are. No mod-author action needed.
+
+Override the list to pin to a specific NeoForge version (the registrar's annotation FQN can rename across majors) or to add custom annotation-driven side-loads:
+
+```kotlin
+mcdepprovider {
+    mixinBridges {
+        bridgedAnnotations.set(listOf(
+            "org.spongepowered.asm.mixin.Mixin",
+            "net.neoforged.bus.api.EventBusSubscriber",
+            "com.example.api.MyCustomRegistryAnnotation",
+        ))
+    }
+}
+```
+
+See [ADR-0021](adr/0021-generalized-bridge-codegen.md).
+
+## Lambda capture in mixin and subscriber bodies
+
+Scala / Kotlin closures inside an instrumented body compile to `INVOKEDYNAMIC LambdaMetafactory`. The implementation method is a synthetic `lambda$...` on the same class, and that synthetic's body still references mod-private/Scala types directly. After Sponge merges the mixin into MC's target, both the indy and the synthetic come along — and the synthetic body's references resolve via MC's defining loader (game-layer), which can't see Scala. Result: `ClassNotFoundException` at first invocation, often deep inside MC code with no mod frame on the stack.
+
+The codegen handles this automatically. For each lambda site, it emits a per-site bridge interface + impl pair (alongside the regular per-target ones) and rewrites the indy to construct the SAM through the bridge. The bridge impl's factory method does its own `LambdaMetafactory` call against an embedded synthetic on the impl class — and because the impl is loaded by `ModClassLoader`, the embedded synthetic's mod-private references resolve correctly.
+
+`javap` of a rewritten mixin will show no `INVOKEDYNAMIC` for closures over mod-private code; it'll show a stack-juggle + `INVOKEINTERFACE bridge.make` instead. The original synthetic on the mixin class is left as dead code (Sponge tolerates).
+
+Limitation: capture types are passed through to the bridge interface descriptor as-declared. If a closure captures a Scala-typed value, the bridge interface's class file names that Scala type — same limit as ADR-0018's general "no mod-private types in bridge signatures" rule. The fluidphysics-style cases (closures over Java/MC types passing Scala values inside the body) work; pure Scala-capture cases warn.
+
+See [ADR-0021](adr/0021-generalized-bridge-codegen.md).
