@@ -154,11 +154,21 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         // path with Files.isDirectory before using it, so paths that don't
                         // exist on the consumer's machine are silently ignored.
                         t.getDevRoots().set(project.provider(() -> {
-                            List<String> roots = new ArrayList<>();
+                            java.util.LinkedHashSet<String> roots = new java.util.LinkedHashSet<>();
                             for (File f : main.getOutput().getFiles()) {
                                 roots.add(f.getAbsolutePath());
                             }
-                            return roots;
+                            // Belt-and-suspenders: explicitly include the bridge codegen output.
+                            // main.output.dir(...) registers it via the SourceSetOutput, but
+                            // Loom/MDG can re-root the source set after our plugin's apply
+                            // block runs, dropping the registration before this provider is
+                            // queried. Without this dir on the per-mod ModClassLoader's URL
+                            // list, bridge impls fall through to the parent loader and pull
+                            // mod-private types (Scala stdlib, mod's own classes) onto the
+                            // wrong classloader. Idempotent (LinkedHashSet dedupes).
+                            roots.add(project.getLayout().getBuildDirectory()
+                                    .dir("mcdp-bridges/classes").get().getAsFile().getAbsolutePath());
+                            return new ArrayList<>(roots);
                         }));
 
                         t.getResolvedArtifactFiles().from(mcdepManifest);
