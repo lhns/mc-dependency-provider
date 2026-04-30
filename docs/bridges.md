@@ -1,6 +1,8 @@
-# Mixin in mcdp mods
+# Bridge codegen in mcdp mods
 
-mcdp loads each mod's classes through a per-mod `ModClassLoader`, but Sponge Mixin is hosted by the *game-layer* classloader (`TransformingClassLoader` on NeoForge, `KnotClassLoader` on Fabric). A mixin holding `import com.example.MyMod` compiles fine but throws `NoClassDefFoundError` at runtime, because the game-layer loader cannot see mod-private types. See [ADR-0001](adr/0001-per-mod-urlclassloaders.md) for the underlying isolation model and [ADR-0008](adr/0008-mixin-via-bridge-pattern.md) for the bridge pattern.
+mcdp loads each mod's classes through a per-mod `ModClassLoader`. Anything the platform loads through its *own* loader instead — Sponge Mixin transforming a mixin into MC, NeoForge's automatic `@EventBusSubscriber` registrar, etc. — can't see mod-private types. A class compiled with `import com.example.MyMod` throws `NoClassDefFoundError` at runtime when the platform's loader resolves the symbol.
+
+mcdp's bridge codegen closes that gap. The Gradle plugin scans your compiled bytecode for any class carrying a configured class-level annotation (default: `@Mixin`, `@EventBusSubscriber`), generates a bridge interface and impl, rewrites cross-classloader call sites to dispatch through the bridge, and registers the impl at mod load. See [ADR-0001](adr/0001-per-mod-urlclassloaders.md) for the underlying isolation model, [ADR-0008](adr/0008-mixin-via-bridge-pattern.md) for the bridge pattern, [ADR-0018](adr/0018-automatic-mixin-bridge-codegen.md) for the codegen, and [ADR-0021](adr/0021-generalized-bridge-codegen.md) for the generalized seeding (annotations + INVOKEDYNAMIC lambdas).
 
 mcdp offers two paths across that boundary. Pick one per project.
 
@@ -13,12 +15,12 @@ mcdepprovider {
     lang.set("scala")
     sharedPackages.add("com.example.api")  // your own shared types
 
-    // mixinBridges {} is implicit; defaults are correct for the typical case.
+    // bridges {} is implicit; defaults are correct for the typical case.
     // Override only if you need to:
-    //   mixinBridges {
+    //   bridges {
     //       enabled.set(false)                                         // opt out (see Track 2)
     //       modPrivatePackages.add("com.example.mymod.*")              // narrow the rewrite scope
-    //       bridgePackage.set("com.example.mymod.mcdp_mixin_bridges")  // change the emitted pkg
+    //       bridgePackage.set("com.example.mymod.mcdp_bridges")  // change the emitted pkg
     //   }
 }
 ```
@@ -56,9 +58,9 @@ public abstract class BlockMixin {
 
 `.java` mixin sources can live under `src/main/scala/` (Scala joint compilation) or `src/main/kotlin/` (Kotlin joint compilation); the codegen finds them in whichever compile-task output dir contains the bytecode.
 
-Build output: a generated `BlockMixin` whose constant pool no longer references `com.example.mymod.MyMod`, plus an emitted bridge package (`com.example.mymod.mcdp_mixin_bridges`) holding `MyModBridge` (interface, game-layer-loaded) and `MyModBridgeImpl` (implementation, per-mod-loaded). At mod load, mcdp reads a single `META-INF/mcdp-mixin-bridges.toml` per mod (one `[[bridge]]` entry per `(mixin, field)` pair — see [ADR-0019](adr/0019-bridge-manifest-format-and-registration.md) for the format) and registers each entry — no mixin classload is performed (Sponge forbids that). The rewriter also injects a `<clinit>` into the mixin: when Sponge's transformer inlines a mixin method into the target and the JVM resolves the first GETSTATIC of `LOGIC_*`, the mixin's `<clinit>` fires, calls back into `McdpProvider.resolveAutoBridgeImpl`, and populates the field with an impl instance loaded through the per-mod `ModClassLoader`. Every subsequent cross-classloader call goes through the cached bridge interface.
+Build output: a generated `BlockMixin` whose constant pool no longer references `com.example.mymod.MyMod`, plus an emitted bridge package (`com.example.mymod.mcdp_bridges`) holding `MyModBridge` (interface, game-layer-loaded) and `MyModBridgeImpl` (implementation, per-mod-loaded). At mod load, mcdp reads a single `META-INF/mcdp-bridges.toml` per mod (one `[[bridge]]` entry per `(mixin, field)` pair — see [ADR-0019](adr/0019-bridge-manifest-format-and-registration.md) for the format) and registers each entry — no mixin classload is performed (Sponge forbids that). The rewriter also injects a `<clinit>` into the mixin: when Sponge's transformer inlines a mixin method into the target and the JVM resolves the first GETSTATIC of `LOGIC_*`, the mixin's `<clinit>` fires, calls back into `McdpProvider.resolveAutoBridgeImpl`, and populates the field with an impl instance loaded through the per-mod `ModClassLoader`. Every subsequent cross-classloader call goes through the cached bridge interface.
 
-Stack-trace fidelity: `LineNumberTable` is preserved by the rewrite, so a NPE inside `LOGIC_MyMod.shouldCancel(...)` reports the original Scala source line. A few synthetic frames inside `mcdp_mixin_bridges` show up in the chain — those are the auto-generated forwarders.
+Stack-trace fidelity: `LineNumberTable` is preserved by the rewrite, so a NPE inside `LOGIC_MyMod.shouldCancel(...)` reports the original Scala source line. A few synthetic frames inside `mcdp_bridges` show up in the chain — those are the auto-generated forwarders.
 
 What automatic codegen does **not** handle (these still need manual `sharedPackages`):
 
@@ -88,7 +90,7 @@ For users who want explicit control (no codegen, no bytecode rewriting): keep th
 
 ```kotlin
 mcdepprovider {
-    mixinBridges { enabled.set(false) }
+    bridges { enabled.set(false) }
 }
 ```
 
@@ -109,7 +111,7 @@ Override the list to pin to a specific NeoForge version (the registrar's annotat
 
 ```kotlin
 mcdepprovider {
-    mixinBridges {
+    bridges {
         bridgedAnnotations.set(listOf(
             "org.spongepowered.asm.mixin.Mixin",
             "net.neoforged.bus.api.EventBusSubscriber",

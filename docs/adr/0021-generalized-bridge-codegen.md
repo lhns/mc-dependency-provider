@@ -18,11 +18,11 @@ The user-asked design ("make the bridged annotations configurable") subsumes the
 
 Two orthogonal extensions to the ADR-0018 codegen:
 
-1. **Generalized seeding.** A new `bridgedAnnotations` `ListProperty<String>` on `MixinBridgesExtension` lists class-level annotation FQNs to seed on, in addition to the existing `*.mixins.json` discovery. Defaults: `org.spongepowered.asm.mixin.Mixin` and `net.neoforged.bus.api.EventBusSubscriber`. The two seed paths union by FQN; the rest of the pipeline (scanner / rewriter / emitters / manifest) is annotation-agnostic and processes seeded classes uniformly.
+1. **Generalized seeding.** A new `bridgedAnnotations` `ListProperty<String>` on `BridgeCodegenExtension` lists class-level annotation FQNs to seed on, in addition to the existing `*.mixins.json` discovery. Defaults: `org.spongepowered.asm.mixin.Mixin` and `net.neoforged.bus.api.EventBusSubscriber`. The two seed paths union by FQN; the rest of the pipeline (scanner / rewriter / emitters / manifest) is annotation-agnostic and processes seeded classes uniformly.
 
 2. **Lambda-site coverage.** `BridgeMixinScanner` gains an `INVOKEDYNAMIC` branch that recognizes `LambdaMetafactory.metafactory` and `altMetafactory` bootstrap methods, recursively scans the synthetic body for cross-classloader references, and records a `LambdaSite` per indy. A new `LambdaWrapperEmitter` produces a per-site bridge interface + impl pair: the impl's `make(captures...) -> SAM` factory method uses its own `INVOKEDYNAMIC LambdaMetafactory` against an *embedded* synthetic on the impl class. The rewriter replaces the original indy with `spill captures + GETSTATIC LAMBDA_<simple>_<n> + reload captures + INVOKEINTERFACE bridge.make`.
 
-The `LAMBDA_*` static fields and their `<clinit>` initialization use the same `McdpProvider.resolveAutoBridgeImpl` plumbing as ADR-0018 (no runtime API changes). The manifest schema (`META-INF/mcdp-mixin-bridges.toml`) is unchanged: lambda sites emit `[[bridge]]` entries with `mixin = container_fqn, field = LAMBDA_*, interface = ..., impl = ...` — the runtime can't tell them apart from regular bridges and doesn't need to.
+The `LAMBDA_*` static fields and their `<clinit>` initialization use the same `McdpProvider.resolveAutoBridgeImpl` plumbing as ADR-0018 (no runtime API changes). The manifest schema (`META-INF/mcdp-bridges.toml`) is unchanged: lambda sites emit `[[bridge]]` entries with `mixin = container_fqn, field = LAMBDA_*, interface = ..., impl = ...` — the runtime can't tell them apart from regular bridges and doesn't need to.
 
 ### Why bytecode rewriting and not a runtime hook
 
@@ -73,7 +73,7 @@ For each site, `LambdaWrapperEmitter` produces:
 
 ```kotlin
 mcdepprovider {
-    mixinBridges {
+    bridges {
         bridgedAnnotations.set(listOf(
             "org.spongepowered.asm.mixin.Mixin",
             "net.neoforged.bus.api.EventBusSubscriber",
@@ -105,7 +105,7 @@ Default covers Sponge-Mixin and NeoForge 1.21.x's automatic event subscriber reg
 
 | Path | Change |
 |---|---|
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/MixinBridgesExtension.java` | Added `getBridgedAnnotations()`. |
+| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/BridgeCodegenExtension.java` | Added `getBridgedAnnotations()`. |
 | `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderPlugin.java` | Convention default for `bridgedAnnotations` (covers Mixin + EventBusSubscriber). |
 | `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/AnnotationSeedScanner.java` | NEW — ASM walk to seed by class-level annotation. |
 | `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/LambdaSite.java` | NEW — per-indy site descriptor. |

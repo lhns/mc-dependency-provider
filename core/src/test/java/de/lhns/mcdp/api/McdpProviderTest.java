@@ -274,7 +274,7 @@ class McdpProviderTest {
     }
 
     private static Path writeBridgeToml(Path tmp, String content) throws Exception {
-        Path p = tmp.resolve("META-INF/mcdp-mixin-bridges.toml");
+        Path p = tmp.resolve("META-INF/mcdp-bridges.toml");
         Files.createDirectories(p.getParent());
         Files.writeString(p, content);
         return p;

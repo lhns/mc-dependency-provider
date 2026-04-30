@@ -113,3 +113,18 @@ Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md). The d
 - **Class-header rewriting** — interface injection / mod-private superclass / mod-private `@Unique` field type. Today: explicit `sharedPackages`. Open if real users hit it often.
 - **`CHECKCAST` / `INSTANCEOF` / `ANEWARRAY` of mod-private types** — formal bridge-model limit, see Consequences above. Not deferred work.
 - **Per-mod fluidphysics-style ports** — out of scope for this ADR; ports happen separately, this codegen is the substrate they'll run on.
+
+### Errata: rename `mcdp_mixin_bridges` → `mcdp_bridges` (post-ADR-0021)
+
+Once ADR-0021 generalized the codegen to seed on arbitrary class-level annotations (subscribers, custom registry-driving annotations, …), the "mixin" prefix in the user-facing names was misleading. A cleanup pass renamed every consumer-visible identifier:
+
+- `META-INF/mcdp-mixin-bridges.toml` → `META-INF/mcdp-bridges.toml`
+- Default `bridgePackage` `<group>.<mod>.mcdp_mixin_bridges` → `<group>.<mod>.mcdp_bridges`
+- Sibling impl package `<...>_impl` follows
+- `mixinBridges { }` DSL → `bridges { }`
+- `MixinBridgesExtension` → `BridgeCodegenExtension`
+- Task `:generateMcdpMixinBridges` → `:generateMcdpBridges`
+- Build dir `build/mcdp-mixin-bridges/` → `build/mcdp-bridges/`
+- Doc `docs/mixin-bridge.md` → `docs/bridges.md`
+
+Hard cut, no deprecated alias — pre-v0.1.0, no shipped consumer was depending on the old DSL. Migration guide at `docs/migrating-to-bridges-rename.md`.

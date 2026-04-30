@@ -45,8 +45,8 @@ public final class McdpProvider {
     }
 
     /**
-     * Register auto-bridge entries from a per-mod {@code META-INF/mcdp-mixin-bridges.toml}
-     * manifest emitted by the {@code mcdp-mixin-bridges} Gradle plugin. The format is documented
+     * Register auto-bridge entries from a per-mod {@code META-INF/mcdp-bridges.toml}
+     * manifest emitted by the {@code mcdp-bridges} Gradle plugin. The format is documented
      * in ADR-0019: one {@code [[bridge]]} array-of-tables entry per {@code (mixin, field)} pair,
      * with keys {@code mixin}, {@code field}, {@code interface} (informational), {@code impl}.
      *

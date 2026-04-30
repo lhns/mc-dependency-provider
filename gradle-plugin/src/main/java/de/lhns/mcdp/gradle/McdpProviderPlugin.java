@@ -53,21 +53,21 @@ public final class McdpProviderPlugin implements Plugin<Project> {
         // `mcdepprovider.patchRunTasks = ["runServer", ...]` — explicit choice, not default.
         ext.getPatchRunTasks().convention(List.of());
 
-        // Mixin-bridge codegen defaults. Compute per-project so the typical mod author writes
-        // zero `mixinBridges {}` config: bridgePackage = <group>.<projectName>.mcdp_mixin_bridges,
-        // modPrivatePackages = [<group>.] (every type under the project's group is bridge-eligible).
-        ext.getMixinBridges().getEnabled().convention(true);
-        ext.getMixinBridges().getBridgePackage().convention(project.provider(() -> {
+        // Bridge codegen defaults. Compute per-project so the typical mod author writes zero
+        // `bridges {}` config: bridgePackage = <group>.<projectName>.mcdp_bridges. Bridge impls
+        // go in the sibling <bridgePackage>_impl package (ADR-0021 errata).
+        ext.getBridges().getEnabled().convention(true);
+        ext.getBridges().getBridgePackage().convention(project.provider(() -> {
             String group = String.valueOf(project.getGroup());
             if (group.isEmpty() || "unspecified".equals(group)) return "";
             String name = project.getName().replace('-', '_');
-            return group + "." + name + ".mcdp_mixin_bridges";
+            return group + "." + name + ".mcdp_bridges";
         }));
         // Annotation seed (ADR-0021). Default covers Sponge-Mixin and NeoForge's automatic event
         // subscriber registrar — the two FML/Sponge side-loads documented as leak-prone in
         // mc-fluid-physics. Override per project to pin to a different NeoForge version's
         // annotation FQN or to add custom annotation-driven side-loads.
-        ext.getMixinBridges().getBridgedAnnotations().convention(List.of(
+        ext.getBridges().getBridgedAnnotations().convention(List.of(
                 "org.spongepowered.asm.mixin.Mixin",
                 "net.neoforged.bus.api.EventBusSubscriber"
         ));
@@ -75,11 +75,13 @@ public final class McdpProviderPlugin implements Plugin<Project> {
         // Auto-register the bridge package on sharedPackages so the per-mod ModClassLoader
         // delegates the generated interface parent-first. Skipped when no project group is set
         // (typical for test fixtures) so we never inject ad-hoc entries the user can't see.
+        // Note: only the bridge interface package is auto-shared; the sibling _impl package is
+        // intentionally NOT shared so ModClassLoader child-loads impls (ADR-0021 errata).
         ext.getSharedPackages().addAll(project.provider(() -> {
-            if (!Boolean.TRUE.equals(ext.getMixinBridges().getEnabled().getOrElse(true))) {
+            if (!Boolean.TRUE.equals(ext.getBridges().getEnabled().getOrElse(true))) {
                 return List.of();
             }
-            String pkg = ext.getMixinBridges().getBridgePackage().getOrNull();
+            String pkg = ext.getBridges().getBridgePackage().getOrNull();
             return (pkg == null || pkg.isEmpty()) ? List.<String>of() : List.of(pkg + ".");
         }));
 
@@ -201,24 +203,25 @@ public final class McdpProviderPlugin implements Plugin<Project> {
 
             RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());
 
-            registerMixinBridgeCodegen(project, ext, main);
+            registerBridgeCodegen(project, ext, main);
         });
     }
 
     /**
-     * Wires {@code generateMcdpMixinBridges}: scans compiled mixin classes (declared in
-     * {@code src/main/resources/*.mixins.json}), rewrites their bytecode in place under
-     * {@code build/mcdp-mixin-bridges/classes/}, and produces matching bridge interfaces +
-     * impls + a manifest tree under {@code build/mcdp-mixin-bridges/resources/}. The
-     * rewritten classes are layered onto the jar so they win over the original ones.
+     * Wires {@code generateMcdpBridges}: scans compiled classes whose annotations match
+     * {@code bridgedAnnotations} (default: {@code @Mixin}, {@code @EventBusSubscriber}),
+     * rewrites their bytecode in place under {@code build/mcdp-bridges/classes/}, and
+     * produces matching bridge interfaces + impls + a manifest tree under
+     * {@code build/mcdp-bridges/resources/}. The rewritten classes are layered onto the jar
+     * so they win over the original ones.
      */
-    private void registerMixinBridgeCodegen(Project project, McdpProviderExtension ext, SourceSet main) {
+    private void registerBridgeCodegen(Project project, McdpProviderExtension ext, SourceSet main) {
         var bridgeTask = project.getTasks().register(
-                "generateMcdpMixinBridges", BridgeCodegenTask.class, t -> {
+                "generateMcdpBridges", BridgeCodegenTask.class, t -> {
                     t.setGroup("mcdepprovider");
-                    t.setDescription("Auto-generates Mixin → mod-private bridges (ADR-0018).");
+                    t.setDescription("Auto-generates cross-classloader bridges (ADR-0018, ADR-0021).");
                     t.onlyIf(self -> {
-                        if (!Boolean.TRUE.equals(ext.getMixinBridges().getEnabled().getOrElse(true))) {
+                        if (!Boolean.TRUE.equals(ext.getBridges().getEnabled().getOrElse(true))) {
                             return false;
                         }
                         // Skip when no compile task produced any classes — a project applying
@@ -234,21 +237,21 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     // Feed every compile-task output dir into the scanner. .java mixins
                     // joint-compiled by scalac live under the scala output dir; pure-Java mixins
                     // under java; Kotlin joint output under kotlin. The scanner picks the first
-                    // dir containing the declared mixin class.
+                    // dir containing the seeded class.
                     t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
                     // Consumer's compile classpath — fed only to ASM's COMPUTE_FRAMES loader so
                     // common-supertype computation can resolve Minecraft (and any other
                     // off-plugin) types that mixin bytecode pushes across branch joins.
                     t.getRuntimeFrameLookupClasspath().from(main.getCompileClasspath());
-                    t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
+                    t.getBridgePackage().set(ext.getBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
-                    t.getBridgedAnnotations().set(ext.getMixinBridges().getBridgedAnnotations());
+                    t.getBridgedAnnotations().set(ext.getBridges().getBridgedAnnotations());
                     t.getOutputClassesDir().set(project.getLayout().getBuildDirectory()
-                            .dir("mcdp-mixin-bridges/classes"));
+                            .dir("mcdp-bridges/classes"));
                     t.getManifestOutputDir().set(project.getLayout().getBuildDirectory()
-                            .dir("mcdp-mixin-bridges/resources"));
+                            .dir("mcdp-bridges/resources"));
                     t.getReportFile().set(project.getLayout().getBuildDirectory()
-                            .file("mcdp-mixin-bridges/report.txt"));
+                            .file("mcdp-bridges/report.txt"));
                     var compileJava = project.getTasks().findByName("compileJava");
                     if (compileJava != null) t.dependsOn(compileJava);
                     var compileScala = project.getTasks().findByName("compileScala");

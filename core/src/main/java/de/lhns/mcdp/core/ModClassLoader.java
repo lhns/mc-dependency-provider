@@ -114,7 +114,7 @@ public final class ModClassLoader extends URLClassLoader {
         String msg = "mcdepprovider: " + name + " isn't visible to this classloader (mod '"
                 + modId + "'). If this came from a Mixin, automatic bridge codegen handles "
                 + "cross-classloader calls — make sure you haven't disabled it via "
-                + "`mixinBridges { enabled.set(false) }`. See docs/mixin-bridge.md "
+                + "`bridges { enabled.set(false) }`. See docs/bridges.md "
                 + "(ADR-0008/0018) for the hand-written-bridge path if you need explicit control.";
         ClassNotFoundException tailored = new ClassNotFoundException(msg, cause);
         tailored.setStackTrace(cause.getStackTrace());

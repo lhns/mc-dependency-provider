@@ -142,7 +142,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         McdpProvider.registerMod(modId, loader);
 
         Path manifestToml = info.getOwningFile().getFile()
-                .findResource("META-INF/mcdp-mixin-bridges.toml");
+                .findResource("META-INF/mcdp-bridges.toml");
         if (manifestToml == null) {
             LOG.info("mcdepprovider: no auto-bridge manifest file for {} "
                     + "(mod has no mixins, or findResource returned null)", modId);
@@ -345,7 +345,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             } catch (IOException ignored) {
             }
         }
-        Path bridgeClasses = build.resolve("mcdp-mixin-bridges").resolve("classes");
+        Path bridgeClasses = build.resolve("mcdp-bridges").resolve("classes");
         if (java.nio.file.Files.isDirectory(bridgeClasses) && !out.contains(bridgeClasses)) {
             out.add(bridgeClasses);
         }

@@ -101,3 +101,9 @@ The following ADR-0018 sub-sections are superseded by this ADR (kept in 0018 onl
 - "Sub-errata: index file replaces directory scan" (index file — replaced)
 
 The "Errata: input-dir resolution (post-v0.1.0)" and "Errata: ASM `getCommonSuperClass` loader (post-v0.1.0)" sub-sections in 0018 are about codegen-time concerns and stay there.
+
+## Errata: filename rename (post-ADR-0021 cleanup)
+
+The manifest filename was renamed `META-INF/mcdp-mixin-bridges.toml` → `META-INF/mcdp-bridges.toml` in the cleanup pass following ADR-0021's generalized seeding. Schema unchanged: still `[[bridge]]` array-of-tables with `mixin`/`field`/`interface`/`impl` keys. The `mixin` key name is historical — for `@EventBusSubscriber`-annotated subscriber classes it holds the subscriber FQN. The runtime can't and doesn't need to distinguish the two cases.
+
+See ADR-0018's "Errata: rename `mcdp_mixin_bridges` → `mcdp_bridges`" for the full set of renamed identifiers.

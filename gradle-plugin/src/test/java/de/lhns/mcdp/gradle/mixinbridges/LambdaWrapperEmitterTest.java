@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LambdaWrapperEmitterTest {
 
     private final LambdaWrapperEmitter emitter = new LambdaWrapperEmitter(
-            "com.example.mod.mcdp_mixin_bridges", LambdaWrapperEmitterTest.class.getClassLoader());
+            "com.example.mod.mcdp_bridges", LambdaWrapperEmitterTest.class.getClassLoader());
 
     @Test
     void emitsBridgeInterfaceWithSingleAbstractMakeMethod() {

@@ -117,7 +117,7 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             // findPath is reliable across Fabric dev/prod. Three-line diagnostic mirrors the
             // NeoForge adapter; see McdpLanguageLoader for the rationale.
             Path manifestToml = fabric.getModContainer(e.modId)
-                    .flatMap(mc -> mc.findPath("META-INF/mcdp-mixin-bridges.toml"))
+                    .flatMap(mc -> mc.findPath("META-INF/mcdp-bridges.toml"))
                     .orElse(null);
             if (manifestToml == null) {
                 LOG.info("mcdepprovider: no auto-bridge manifest file for {} "

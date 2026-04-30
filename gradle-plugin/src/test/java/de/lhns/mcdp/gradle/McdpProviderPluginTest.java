@@ -160,7 +160,7 @@ class McdpProviderPluginTest {
                 }
 
                 // group makes the plugin compute a proper default bridgePackage
-                // (com.example.scala_mixin.mcdp_mixin_bridges); without it the package is empty
+                // (com.example.scala_mixin.mcdp_bridges); without it the package is empty
                 // and the emitted bridge file path resolves to drive-root on Windows.
                 group = "com.example"
 
@@ -215,7 +215,7 @@ class McdpProviderPluginTest {
 
         BuildResult result = GradleRunner.create()
                 .withProjectDir(tmp.toFile())
-                .withArguments("generateMcdpMixinBridges", "--stacktrace")
+                .withArguments("generateMcdpBridges", "--stacktrace")
                 .withPluginClasspath()
                 .build();
 
@@ -228,7 +228,7 @@ class McdpProviderPluginTest {
                 "scalac should have produced " + scalaOut + " — joint-compilation premise broken");
 
         // Codegen report lists the rewritten mixin (proving the task found it under scala output).
-        Path report = tmp.resolve("build/mcdp-mixin-bridges/report.txt");
+        Path report = tmp.resolve("build/mcdp-bridges/report.txt");
         assertTrue(Files.exists(report), "codegen report missing at " + report);
         String reportText = Files.readString(report);
         assertTrue(reportText.contains("rewritten mixins (1)"),
@@ -237,7 +237,7 @@ class McdpProviderPluginTest {
                 "expected MyMixin in report:\n" + reportText);
 
         // Rewritten class file in the codegen output.
-        Path rewritten = tmp.resolve("build/mcdp-mixin-bridges/classes/com/example/mixin/MyMixin.class");
+        Path rewritten = tmp.resolve("build/mcdp-bridges/classes/com/example/mixin/MyMixin.class");
         assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin missing at " + rewritten);
     }
 }

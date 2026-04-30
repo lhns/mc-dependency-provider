@@ -67,20 +67,22 @@ Per-language details: **Scala** `object` resolves via `MODULE$`. **Kotlin** `obj
 
 Sponge Mixin is hosted by the game-layer classloader, but mod-private Scala/Kotlin classes live behind a per-mod `ModClassLoader` — so a mixin holding `import com.example.MyMod` throws `NoClassDefFoundError` at runtime. The same problem hits any class FML side-loads from class-level annotations: NeoForge's `@EventBusSubscriber` registrar calls `Class.forName(fqn)` against FML's loader, freezing the subscriber's defining loader at FML and locking it out of Scala/Kotlin stdlib too. mcdp closes both gaps automatically: the Gradle plugin scans seeded classes (mixins from `*.mixins.json` plus any class with a configured class-level annotation — defaults cover `@Mixin` and `@EventBusSubscriber`), emits a bridge interface plus a per-mod impl, rewrites method bodies and `INVOKEDYNAMIC LambdaMetafactory` sites to dispatch through bridges, and wires the impls in at mod load. You write plain Sponge-Common-style mixins or NeoForge-style subscribers with direct calls to your mod code — no annotations, no manual `sharedPackages` entries for ordinary call sites. Codegen is on by default; there is nothing to add to your build.
 
-For users who want explicit control there is an opt-out (`mixinBridges { enabled.set(false) }`) and a hand-written `@McdpMixin` pattern. See [`docs/mixin-bridge.md`](docs/mixin-bridge.md), [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md), [ADR-0018](docs/adr/0018-automatic-mixin-bridge-codegen.md), and [ADR-0021](docs/adr/0021-generalized-bridge-codegen.md) for the full story (including the cases the codegen still defers to manual `sharedPackages` — interface injection, mod-private mixin superclasses, reflection on mod-private class names).
+For users who want explicit control there is an opt-out (`bridges { enabled.set(false) }`) and a hand-written `@McdpMixin` pattern. See [`docs/bridges.md`](docs/bridges.md), [`docs/migrating-to-bridges-rename.md`](docs/migrating-to-bridges-rename.md) (if upgrading from the pre-rename DSL), [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md), [ADR-0018](docs/adr/0018-automatic-mixin-bridge-codegen.md), and [ADR-0021](docs/adr/0021-generalized-bridge-codegen.md) for the full story (including the cases the codegen still defers to manual `sharedPackages` — interface injection, mod-private mixin superclasses, reflection on mod-private class names).
 
 ## Repository layout
 
 ```
 deps-lib/            manifest schema, IO, HTTP/SHA consumer, Aether producer (build-time only)
-core/                ModClassLoader, LoaderCoordinator, EntrypointAdapter + impls, Mixin bridge API
-gradle-plugin/       manifest generation, dev-cache pre-warm, run-task classpath patch
+core/                ModClassLoader, LoaderCoordinator, EntrypointAdapter + impls, bridge API
+gradle-plugin/       manifest generation, dev-cache pre-warm, bridge codegen, run-task classpath patch
 fabric/              LanguageAdapter + PreLaunchEntrypoint
 neoforge/            IModLanguageProvider
 test-mods/           real-world test projects exercising the full stack via composite build
-docs/                architecture + ADRs
+docs/                end-to-end "how it works" walkthrough + ADRs (decision history)
 .gitea/workflows/    CI (Gitea Actions, GitHub-compatible YAML)
 ```
+
+For a deep walkthrough of the build → boot → runtime pipeline (with bridge bytecode examples), read [`docs/how-it-works.md`](docs/how-it-works.md).
 
 ## Building
 

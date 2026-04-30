@@ -15,7 +15,7 @@ class BridgeMixinScannerTest {
 
     private final BridgePolicy policy = new BridgePolicy(
             List.of("com/example/api/"),
-            "com.example.mod.mcdp_mixin_bridges");
+            "com.example.mod.mcdp_bridges");
 
     @Test
     void invokestaticOnModPrivateOwnerIsBridged() {

@@ -46,7 +46,7 @@ class BridgeCodegenTaskMultiDirTest {
 
         Project project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
         BridgeCodegenTask task = project.getTasks().register(
-                "generateMcdpMixinBridges", BridgeCodegenTask.class).get();
+                "generateMcdpBridges", BridgeCodegenTask.class).get();
         task.getCompiledClassesDirs().from(dirA.toFile(), dirB.toFile());
         task.getBridgedAnnotations().set(java.util.List.of(MIXIN_ANNOTATION));
         task.getBridgePackage().set("com.example.bridges");
@@ -65,7 +65,7 @@ class BridgeCodegenTaskMultiDirTest {
         assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin.class missing at " + rewritten);
 
         // Unified TOML manifest emitted (ADR-0019). Single file per mod with [[bridge]] entries.
-        Path manifestToml = outManifest.resolve("META-INF/mcdp-mixin-bridges.toml");
+        Path manifestToml = outManifest.resolve("META-INF/mcdp-bridges.toml");
         assertTrue(Files.isRegularFile(manifestToml), "manifest TOML missing at " + manifestToml);
         String tomlText = Files.readString(manifestToml, StandardCharsets.UTF_8);
         assertTrue(tomlText.contains("[[bridge]]"), tomlText);
@@ -93,7 +93,7 @@ class BridgeCodegenTaskMultiDirTest {
 
         Project project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
         BridgeCodegenTask task = project.getTasks().register(
-                "generateMcdpMixinBridges", BridgeCodegenTask.class).get();
+                "generateMcdpBridges", BridgeCodegenTask.class).get();
         task.getCompiledClassesDirs().from(dirA.toFile(), dirB.toFile());
         task.getBridgedAnnotations().set(java.util.List.of(MIXIN_ANNOTATION));
         task.getBridgePackage().set("com.example.bridges");
@@ -108,7 +108,7 @@ class BridgeCodegenTaskMultiDirTest {
         String reportText = Files.readString(report);
         assertTrue(reportText.contains("rewritten mixins (0)"), reportText);
         // No manifest file emitted when nothing was rewritten.
-        Path manifestToml = tmp.resolve("out/resources/META-INF/mcdp-mixin-bridges.toml");
+        Path manifestToml = tmp.resolve("out/resources/META-INF/mcdp-bridges.toml");
         assertFalse(Files.exists(manifestToml),
                 "manifest should not exist when nothing was rewritten");
     }

@@ -73,7 +73,7 @@ public final class BridgeMixinScanner {
             for (FieldNode f : cn.fields) {
                 String fqn = ownerInternalNameOfDescriptor(f.desc);
                 if (fqn != null && policy.needsBridge(fqn)) {
-                    errors.add("mcdp-mixin-bridges: " + mixinFqn + " declares field '"
+                    errors.add("mcdp-bridges: " + mixinFqn + " declares field '"
                             + f.name + "' of mod-private type " + BridgePolicy.toDotted(fqn)
                             + ". Declared field types live in the class header, which the codegen "
                             + "never rewrites (ADR-0018). Type the field with a bridge interface "
@@ -142,7 +142,7 @@ public final class BridgeMixinScanner {
                     // so this won't be tripped by the needsBridge gate below.
                     if (isClassForName(min) && prev instanceof LdcInsnNode ldc
                             && ldc.cst instanceof String s && policy.needsBridge(s)) {
-                        warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + m.name
+                        warnings.add("mcdp-bridges: " + mixinFqn + "#" + m.name
                                 + " uses Class.forName(\"" + s + "\") on a mod-private "
                                 + "class. Reflection on mod-private classes is not bridged "
                                 + "automatically; restructure to call through a bridge.");
@@ -211,7 +211,7 @@ public final class BridgeMixinScanner {
                      org.objectweb.asm.Opcodes.ANEWARRAY -> {
                     if (insn instanceof org.objectweb.asm.tree.TypeInsnNode tin
                             && policy.needsBridge(tin.desc)) {
-                        warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + m.name
+                        warnings.add("mcdp-bridges: " + mixinFqn + "#" + m.name
                                 + " uses opcode " + insn.getOpcode() + " on mod-private type "
                                 + BridgePolicy.toDotted(tin.desc)
                                 + " — this is a bridge-model limit, not a deferred feature. "
@@ -263,7 +263,7 @@ public final class BridgeMixinScanner {
         if (!isMetafactory) {
             // Other indy bootstraps (Scala 3 string interpolation, custom MethodHandle plumbing)
             // are out of scope for the scanner — warn so a real-world miss is visible.
-            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+            warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
                     + " uses INVOKEDYNAMIC with a non-LambdaMetafactory bootstrap ("
                     + bsm.getOwner() + "." + bsm.getName() + "). Cross-classloader refs through "
                     + "such sites are not auto-bridged by the codegen — restructure to a regular "
@@ -274,7 +274,7 @@ public final class BridgeMixinScanner {
         // or [samMethodType, implMethod, instantiatedMethodType, flags, ...] (altMetafactory).
         // Index 1 is the implementation method handle in both shapes.
         if (indy.bsmArgs == null || indy.bsmArgs.length < 2 || !(indy.bsmArgs[1] instanceof Handle implHandle)) {
-            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+            warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
                     + " has an INVOKEDYNAMIC LambdaMetafactory site with an unexpected bsm-arg "
                     + "shape — skipping. (Report at the project tracker.)");
             return;
@@ -297,7 +297,7 @@ public final class BridgeMixinScanner {
             // If the referenced owner is mod-private, the regular INVOKE branch wouldn't have
             // caught it (it's wrapped inside the indy). Surface as a warning.
             if (policy.needsBridge(implHandle.getOwner())) {
-                warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+                warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
                         + " uses a method reference to " + BridgePolicy.toDotted(implHandle.getOwner())
                         + "." + implHandle.getName() + " through LambdaMetafactory. The referenced "
                         + "method is on a mod-private type; method references to mod-private types "
@@ -312,7 +312,7 @@ public final class BridgeMixinScanner {
         // through the wrapper's SAM dispatch) its mod-private references resolve correctly.
         MethodNode synthetic = findMethod(ctx.cn, implHandle.getName(), implHandle.getDesc());
         if (synthetic == null) {
-            warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + containingMethod.name
+            warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
                     + " references synthetic " + implHandle.getName() + implHandle.getDesc()
                     + " which is not present on the class — skipping the lambda site.");
             return;
@@ -359,7 +359,7 @@ public final class BridgeMixinScanner {
         if (policy.needsBridge(name)) {
             String dot = BridgePolicy.toDotted(name);
             if (dot.startsWith("scala.") || dot.startsWith("kotlin.")) {
-                warnings.add("mcdp-mixin-bridges: " + mixinFqn + "#" + methodName
+                warnings.add("mcdp-bridges: " + mixinFqn + "#" + methodName
                         + " has a Scala/Kotlin type (" + dot + ") in its signature. "
                         + "Bridge interfaces require game-layer-visible types only; convert to "
                         + "a Java-callable signature (e.g. `java.util.Optional` instead of "
@@ -377,7 +377,7 @@ public final class BridgeMixinScanner {
     }
 
     private static String headerError(String mixinFqn, String relation, String referenced) {
-        return "mcdp-mixin-bridges: " + mixinFqn + " " + relation + " " + referenced
+        return "mcdp-bridges: " + mixinFqn + " " + relation + " " + referenced
                 + " — the header references a mod-private type, which the codegen cannot rewrite. "
                 + "Add the package to `mcdepprovider.sharedPackages.add(\"...\")` so the type is "
                 + "loaded by the game-layer classloader, or restructure the mixin to keep "

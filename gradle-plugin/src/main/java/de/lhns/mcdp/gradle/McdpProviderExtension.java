@@ -30,11 +30,11 @@ import javax.inject.Inject;
  */
 public abstract class McdpProviderExtension {
 
-    private final MixinBridgesExtension mixinBridges;
+    private final BridgeCodegenExtension bridges;
 
     @Inject
     public McdpProviderExtension(ObjectFactory objects) {
-        this.mixinBridges = objects.newInstance(MixinBridgesExtension.class);
+        this.bridges = objects.newInstance(BridgeCodegenExtension.class);
     }
 
     /** One of {@code java}, {@code scala}, {@code kotlin}. */
@@ -43,33 +43,34 @@ public abstract class McdpProviderExtension {
     /**
      * Package prefixes the per-mod {@code ModClassLoader} delegates parent-first instead of
      * child-first. Required for any class that must be the same {@code Class} object on both
-     * sides of the loader boundary — almost exclusively bridge interfaces for Mixin (ADR-0008).
+     * sides of the loader boundary — almost exclusively bridge interfaces (ADR-0008).
      * <p>
-     * The automatic Mixin bridge codegen (see {@link #getMixinBridges()}, ADR-0018) emits its
+     * The automatic bridge codegen (see {@link #getBridges()}, ADR-0018/0021) emits its
      * generated bridge package and adds it to this list automatically. Manual entries are only
      * needed for the cases codegen does not handle (interface injection, mod-private mixin
      * superclasses, hand-written bridges via {@code @McdpMixin}). See
-     * {@code docs/mixin-bridge.md}.
+     * {@code docs/bridges.md}.
      */
     public abstract ListProperty<String> getSharedPackages();
 
     /**
-     * Configuration for automatic Mixin → mod-private bridge codegen (ADR-0018). The codegen
-     * walks each compiled mixin class, identifies cross-classloader references, emits a bridge
-     * interface in a shared-package, emits a per-mod forwarding impl, and rewrites the mixin's
+     * Configuration for the automatic bridge codegen (ADR-0018, ADR-0021). The codegen walks
+     * each compiled class whose annotations match {@code bridgedAnnotations}, identifies
+     * cross-classloader references, emits a bridge interface in the shared bridge package,
+     * emits a per-mod forwarding impl in the sibling {@code _impl} package, and rewrites
      * method bodies to dispatch through the bridge. Enabled by default; opt out with
-     * {@code mixinBridges { enabled.set(false) }} to use the hand-written {@code @McdpMixin}
+     * {@code bridges { enabled.set(false) }} to use the hand-written {@code @McdpMixin}
      * pattern instead.
      */
-    public MixinBridgesExtension getMixinBridges() {
-        return mixinBridges;
+    public BridgeCodegenExtension getBridges() {
+        return bridges;
     }
 
     /**
-     * Configures the nested {@code mixinBridges} block from a Groovy/Kotlin DSL closure.
+     * Configures the nested {@code bridges} block from a Groovy/Kotlin DSL closure.
      */
-    public void mixinBridges(org.gradle.api.Action<? super MixinBridgesExtension> action) {
-        action.execute(mixinBridges);
+    public void bridges(org.gradle.api.Action<? super BridgeCodegenExtension> action) {
+        action.execute(bridges);
     }
 
     /**
