@@ -77,6 +77,15 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getBridgedAnnotations();
 
+    /**
+     * Class-file major version emitted for generated bridge interface + impl + lambda wrapper
+     * classes. Defaults to 65 (Java 21 = {@code Opcodes.V21}); the plugin overrides this from the
+     * project's {@code targetCompatibility} so emitted bridges match the rest of the mod's
+     * bytecode.
+     */
+    @Input
+    public abstract Property<Integer> getClassFileVersion();
+
     @OutputDirectory
     public abstract DirectoryProperty getOutputClassesDir();
 
@@ -135,10 +144,11 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         try (java.net.URLClassLoader frameLookup = new java.net.URLClassLoader(
                 urls.toArray(new java.net.URL[0]), ClassLoader.getPlatformClassLoader())) {
 
+        int cfv = getClassFileVersion().getOrElse(org.objectweb.asm.Opcodes.V21);
         MixinRewriter rewriter = new MixinRewriter(policy, getBridgePackage().get(), frameLookup);
-        BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(getBridgePackage().get());
-        BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get(), frameLookup);
-        LambdaWrapperEmitter lambdaEmitter = new LambdaWrapperEmitter(getBridgePackage().get(), frameLookup);
+        BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(getBridgePackage().get(), cfv);
+        BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get(), frameLookup, cfv);
+        LambdaWrapperEmitter lambdaEmitter = new LambdaWrapperEmitter(getBridgePackage().get(), frameLookup, cfv);
 
         // Aggregated bridges across the whole compilation: we want one bridge interface per
         // target type even if multiple mixins reference it.

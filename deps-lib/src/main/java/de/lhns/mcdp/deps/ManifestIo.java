@@ -17,12 +17,22 @@ import java.util.Map;
  * <pre>
  * lang = "scala"
  * shared_packages = ["com.example.api"]
+ * dev_roots = [                                        # only present in dev builds
+ *   "/abs/path/build/resources/main",
+ *   "/abs/path/build/classes/scala/main",
+ *   "/abs/path/build/mcdp-bridges/classes",
+ * ]
  *
  * [[libraries]]
  * coords = "org.typelevel:cats-core_3:2.13.0"
  * url    = "https://..."
  * sha256 = "..."
  * </pre>
+ *
+ * <p>{@code dev_roots} is the source-set output dir set the gradle plugin captured at build
+ * time. The platform adapter feeds it to the per-mod {@code ModClassLoader}'s URL list verbatim,
+ * skipping the older filesystem-walk heuristic. Absent in production jars (the plugin omits
+ * the field when emitting a publishable manifest).</p>
  */
 public final class ManifestIo {
 
@@ -52,6 +62,12 @@ public final class ManifestIo {
             for (Object o : list) sharedPackages.add((String) o);
         }
 
+        List<String> devRoots = new ArrayList<>();
+        Object dr = root.get("dev_roots");
+        if (dr instanceof List<?> list) {
+            for (Object o : list) devRoots.add((String) o);
+        }
+
         List<Manifest.Library> libraries = new ArrayList<>();
         Object libs = root.get("libraries");
         if (libs instanceof List<?> list) {
@@ -64,7 +80,7 @@ public final class ManifestIo {
             }
         }
 
-        return new Manifest(lang, sharedPackages, libraries);
+        return new Manifest(lang, sharedPackages, libraries, devRoots);
     }
 
     public static void write(Manifest manifest, Path file) throws IOException {
@@ -82,6 +98,15 @@ public final class ManifestIo {
             for (int i = 0; i < manifest.sharedPackages().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(tomlString(manifest.sharedPackages().get(i)));
+            }
+            sb.append("]\n");
+        }
+
+        if (!manifest.devRoots().isEmpty()) {
+            sb.append("dev_roots = [");
+            for (int i = 0; i < manifest.devRoots().size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(tomlString(manifest.devRoots().get(i)));
             }
             sb.append("]\n");
         }

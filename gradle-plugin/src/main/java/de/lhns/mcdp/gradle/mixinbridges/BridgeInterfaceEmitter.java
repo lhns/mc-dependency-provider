@@ -22,9 +22,15 @@ import java.util.List;
 public final class BridgeInterfaceEmitter {
 
     private final String bridgePackageInternal;
+    private final int classFileVersion;
 
     public BridgeInterfaceEmitter(String bridgePackage) {
+        this(bridgePackage, Opcodes.V21);
+    }
+
+    public BridgeInterfaceEmitter(String bridgePackage, int classFileVersion) {
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
+        this.classFileVersion = classFileVersion;
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
@@ -32,7 +38,7 @@ public final class BridgeInterfaceEmitter {
         String ifaceInternal = bridgePackageInternal + "/" + simple + "Bridge";
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         cw.visit(
-                Opcodes.V21,
+                classFileVersion,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT,
                 ifaceInternal,
                 null,

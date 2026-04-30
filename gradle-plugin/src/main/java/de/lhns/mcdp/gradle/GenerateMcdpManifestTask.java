@@ -66,6 +66,16 @@ public abstract class GenerateMcdpManifestTask extends DefaultTask {
     @Input
     public abstract ListProperty<ArtifactCoord> getArtifactCoords();
 
+    /**
+     * Absolute paths to the source-set output dirs that hold the mod's compiled classes plus
+     * the bridge codegen output. Captured at build time so the runtime adapter doesn't have to
+     * walk the filesystem to find {@code build/}. Empty for production-jar builds (the
+     * {@code processResources} flow strips the field there); populated by the plugin from the
+     * project's {@code main} source set in dev builds.
+     */
+    @Input
+    public abstract ListProperty<String> getDevRoots();
+
     @OutputFile
     public abstract RegularFileProperty getOutputFile();
 
@@ -94,7 +104,8 @@ public abstract class GenerateMcdpManifestTask extends DefaultTask {
         Manifest manifest = new Manifest(
                 getLang().get(),
                 getSharedPackages().get(),
-                libs);
+                libs,
+                getDevRoots().getOrElse(List.of()));
 
         Path out = getOutputFile().get().getAsFile().toPath();
         Files.createDirectories(out.getParent());

@@ -43,11 +43,17 @@ public final class LambdaWrapperEmitter {
     /** Sibling-package for impls — see {@link BridgeImplEmitter}'s field of the same name. */
     private final String implPackageInternal;
     private final ClassLoader frameLookup;
+    private final int classFileVersion;
 
     public LambdaWrapperEmitter(String bridgePackage, ClassLoader frameLookup) {
+        this(bridgePackage, frameLookup, Opcodes.V21);
+    }
+
+    public LambdaWrapperEmitter(String bridgePackage, ClassLoader frameLookup, int classFileVersion) {
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
         this.implPackageInternal = this.bridgePackageInternal + "_impl";
         this.frameLookup = frameLookup;
+        this.classFileVersion = classFileVersion;
     }
 
     /** Output of {@link #emit(ClassNode, LambdaSite, MethodNode)}. */
@@ -97,7 +103,7 @@ public final class LambdaWrapperEmitter {
     private byte[] emitInterface(String ifaceInternal, String makeName, String makeDesc) {
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
-        cw.visit(Opcodes.V21,
+        cw.visit(classFileVersion,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT,
                 ifaceInternal, null, "java/lang/Object", null);
         MethodVisitor mv = cw.visitMethod(
@@ -120,7 +126,7 @@ public final class LambdaWrapperEmitter {
                             LambdaSite site, MethodNode synthetic, Type[] captures) {
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
-        cw.visit(Opcodes.V21,
+        cw.visit(classFileVersion,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL,
                 implInternal, null, "java/lang/Object",
                 new String[] { ifaceInternal });

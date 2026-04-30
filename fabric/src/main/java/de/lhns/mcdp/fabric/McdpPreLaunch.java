@@ -76,9 +76,22 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                 throw new IllegalStateException("mcdepprovider: failed to download libs for " + modId, e);
             }
 
-            List<Path> modPaths = mod.getRootPaths().isEmpty()
-                    ? List.of(manifestPath.get().getFileSystem().getPath(""))
-                    : expandDevRoots(mod.getRootPaths());
+            // Source-set output dirs the manifest captured at build time. In a shipped jar this
+            // list is either absent or contains absolute paths to the build machine that don't
+            // exist on the consumer's filesystem; we filter those out and fall back to the
+            // loader's reported rootPaths.
+            List<Path> manifestDevRoots = manifest.devRoots().stream()
+                    .map(Path::of)
+                    .filter(Files::isDirectory)
+                    .toList();
+            List<Path> modPaths;
+            if (!manifestDevRoots.isEmpty()) {
+                modPaths = manifestDevRoots;
+            } else if (!mod.getRootPaths().isEmpty()) {
+                modPaths = mod.getRootPaths();
+            } else {
+                modPaths = List.of(manifestPath.get().getFileSystem().getPath(""));
+            }
 
             entries.add(new ModEntry(modId, manifest, libs, modPaths));
         }
@@ -152,7 +165,8 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             List<String> configs = MixinConfigScanner.parseFabricMixinConfigs(text);
             if (configs.isEmpty()) return;
             MixinConfigScanner.registerMixinOwnersFromConfigs(e.modId, e.modPaths, configs);
-        } catch (IOException | RuntimeException ignored) {
+        } catch (IOException | IllegalArgumentException ignored) {
+            // IOException: fabric.mod.json read failure. IllegalArgumentException: MiniJson parse error.
         }
     }
 
@@ -174,44 +188,4 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
         return LANG_BY_MOD.getOrDefault(modId, "java");
     }
 
-    // Dev-mode only: Loom exposes a mod's build/resources/main directory as the sole rootPath,
-    // not the sibling build/classes/<lang>/main directories nor the bridge codegen output.
-    // Without those on our ModClassLoader's URL list, Class.forName(modPrivate, true, modLoader)
-    // falls through to Knot, which defines the class there and defeats isolation — and for
-    // bridge impls specifically, that means impl bodies invoking mod-private code resolve via
-    // Knot's copy of those types, ending up with two copies of the mod's classes (one per
-    // loader) and a re-fired <clinit> on the wrong-window-side. Mirror McdpLanguageLoader's
-    // expandDevRoots: walk to <project>/build/ and include classes/<lang>/main siblings AND
-    // mcdp-bridges/classes (where the codegen emits bridge interfaces, impls, lambda wrappers).
-    private static List<Path> expandDevRoots(List<Path> roots) {
-        List<Path> out = new ArrayList<>(roots.size() * 2);
-        for (Path p : roots) {
-            out.add(p);
-            if (p.getFileSystem() != java.nio.file.FileSystems.getDefault()) continue;
-            Path fileName = p.getFileName();
-            Path parent = p.getParent();
-            if (fileName == null || parent == null) continue;
-            if (!"main".equals(fileName.toString())) continue;
-            // parent = <project>/build/resources, grand = <project>/build
-            Path grand = parent.getParent();
-            if (grand == null) continue;
-            Path classes = grand.resolve("classes");
-            if (java.nio.file.Files.isDirectory(classes)) {
-                try (var stream = java.nio.file.Files.newDirectoryStream(classes)) {
-                    for (Path lang : stream) {
-                        Path candidate = lang.resolve("main");
-                        if (java.nio.file.Files.isDirectory(candidate) && !out.contains(candidate)) {
-                            out.add(candidate);
-                        }
-                    }
-                } catch (IOException ignored) {
-                }
-            }
-            Path bridgeClasses = grand.resolve("mcdp-bridges").resolve("classes");
-            if (java.nio.file.Files.isDirectory(bridgeClasses) && !out.contains(bridgeClasses)) {
-                out.add(bridgeClasses);
-            }
-        }
-        return List.copyOf(out);
-    }
 }

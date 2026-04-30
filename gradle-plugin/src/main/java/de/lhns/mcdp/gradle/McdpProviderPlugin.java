@@ -145,6 +145,21 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         t.getSharedPackages().set(ext.getSharedPackages());
                         t.getOutputFile().set(project.getLayout().getBuildDirectory()
                                 .file("mcdepprovider/META-INF/mcdepprovider.toml"));
+                        // Source-set output dirs the runtime adapter should add to the per-mod
+                        // ModClassLoader's URL list when this manifest is read in dev mode.
+                        // Captures every entry the build tool already knows about (compile
+                        // outputs + resources + bridge codegen output) so the adapter doesn't
+                        // have to walk the filesystem looking for `build/<lang>/main` siblings.
+                        // Absolute paths are harmless in shipped jars: the runtime checks each
+                        // path with Files.isDirectory before using it, so paths that don't
+                        // exist on the consumer's machine are silently ignored.
+                        t.getDevRoots().set(project.provider(() -> {
+                            List<String> roots = new ArrayList<>();
+                            for (File f : main.getOutput().getFiles()) {
+                                roots.add(f.getAbsolutePath());
+                            }
+                            return roots;
+                        }));
 
                         t.getResolvedArtifactFiles().from(mcdepManifest);
                         t.getRepositoryUrls().set(project.provider(() ->
@@ -246,6 +261,16 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     t.getBridgePackage().set(ext.getBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
                     t.getBridgedAnnotations().set(ext.getBridges().getBridgedAnnotations());
+                    // Class-file version for emitted bridges = project's targetCompatibility
+                    // mapped via JavaVersion ordinal + 44 (Java 8 = 52, Java 21 = 65). Reading at
+                    // configure time inside the closure keeps the value lazy w.r.t. user overrides.
+                    t.getClassFileVersion().set(project.provider(() -> {
+                        JavaPluginExtension je = project.getExtensions().findByType(JavaPluginExtension.class);
+                        if (je == null) return org.objectweb.asm.Opcodes.V21;
+                        org.gradle.api.JavaVersion tc = je.getTargetCompatibility();
+                        if (tc == null) return org.objectweb.asm.Opcodes.V21;
+                        return tc.ordinal() + 45;
+                    }));
                     t.getOutputClassesDir().set(project.getLayout().getBuildDirectory()
                             .dir("mcdp-bridges/classes"));
                     t.getManifestOutputDir().set(project.getLayout().getBuildDirectory()

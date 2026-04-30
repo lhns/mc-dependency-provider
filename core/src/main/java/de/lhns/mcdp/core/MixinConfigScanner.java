@@ -61,8 +61,9 @@ public final class MixinConfigScanner {
                     McdpProvider.registerMixinOwner(fqn, modId);
                     registered.add(fqn);
                 }
-            } catch (IOException | RuntimeException ignored) {
-                // best-effort; annotation-modId path still works
+            } catch (IOException | IllegalArgumentException ignored) {
+                // best-effort; annotation-modId path still works.
+                // IOException: read failure. IllegalArgumentException: MiniJson parse error.
             }
         }
         return registered;

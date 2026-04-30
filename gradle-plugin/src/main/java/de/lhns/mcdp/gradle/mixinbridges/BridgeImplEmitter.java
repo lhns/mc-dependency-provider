@@ -33,15 +33,21 @@ public final class BridgeImplEmitter {
      */
     private final String implPackageInternal;
     private final ClassLoader frameLookup;
+    private final int classFileVersion;
 
     public BridgeImplEmitter(String bridgePackage) {
-        this(bridgePackage, ClassLoader.getSystemClassLoader());
+        this(bridgePackage, ClassLoader.getSystemClassLoader(), Opcodes.V21);
     }
 
     public BridgeImplEmitter(String bridgePackage, ClassLoader frameLookup) {
+        this(bridgePackage, frameLookup, Opcodes.V21);
+    }
+
+    public BridgeImplEmitter(String bridgePackage, ClassLoader frameLookup, int classFileVersion) {
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
         this.implPackageInternal = this.bridgePackageInternal + "_impl";
         this.frameLookup = frameLookup;
+        this.classFileVersion = classFileVersion;
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
@@ -52,7 +58,7 @@ public final class BridgeImplEmitter {
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
         cw.visit(
-                Opcodes.V21,
+                classFileVersion,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL,
                 implInternal,
                 null,
