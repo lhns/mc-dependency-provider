@@ -60,9 +60,15 @@ class BridgeCodegenTaskMultiDirTest {
 
         task.run();
 
-        // Rewritten class file landed in the output.
-        Path rewritten = outClasses.resolve("com/example/Mixin.class");
-        assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin.class missing at " + rewritten);
+        // Rewritten in place over the original input file (in dirB; dirA was empty). Writing
+        // back avoids the duplicate-on-classpath shadowing problem in dev runServer (see
+        // BridgeCodegenTask comment near the rewrite call site).
+        assertTrue(Files.isRegularFile(mixinClass),
+                "in-place rewritten Mixin.class missing at " + mixinClass);
+        // The original was 165-ish bytes; the rewritten one has a synthetic field, <clinit>,
+        // and a stack-juggle replacement — strictly larger.
+        assertTrue(Files.size(mixinClass) > 200,
+                "rewritten size " + Files.size(mixinClass) + " not > original (in-place rewrite didn't fire?)");
 
         // Unified TOML manifest emitted (ADR-0019). Single file per mod with [[bridge]] entries.
         Path manifestToml = outManifest.resolve("META-INF/mcdp-bridges.toml");

@@ -236,8 +236,15 @@ class McdpProviderPluginTest {
         assertTrue(reportText.contains("com.example.mixin.MyMixin"),
                 "expected MyMixin in report:\n" + reportText);
 
-        // Rewritten class file in the codegen output.
-        Path rewritten = tmp.resolve("build/mcdp-bridges/classes/com/example/mixin/MyMixin.class");
-        assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin missing at " + rewritten);
+        // Rewritten in place over the scala output (joint compilation put the .class there).
+        // The codegen overwrites the original file rather than emitting a second copy under
+        // build/mcdp-bridges/classes/ — see BridgeCodegenTask comment for why.
+        Path rewritten = tmp.resolve("build/classes/scala/main/com/example/mixin/MyMixin.class");
+        assertTrue(Files.isRegularFile(rewritten),
+                "in-place rewritten MyMixin missing at " + rewritten);
+        // Original javac output for the trivial fixture is small; rewritten has LOGIC field
+        // + <clinit> + stack-juggle, strictly larger.
+        assertTrue(Files.size(rewritten) > 400,
+                "rewritten size " + Files.size(rewritten) + " not larger than original — in-place rewrite didn't fire?");
     }
 }

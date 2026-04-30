@@ -233,22 +233,21 @@ class McdpProviderTest {
     }
 
     /**
-     * Non-null path that doesn't resolve to a readable file → loud throw with diagnostic
-     * message. The previous {@code Files.isRegularFile} silent-skip masked NeoForge UnionPath
-     * speculative-resolution bugs; this contract surfaces them at boot.
+     * Non-existent path → no-op (returns 0). NeoForge's {@code UnionFileSystem.findResource}
+     * speculatively returns a candidate path for files that aren't on disk; treating that as
+     * "no manifest" matches the null-path semantics. Real I/O failures (permissions etc.)
+     * still throw — see {@link #registerAutoBridgeManifestTomlThrowsOnIncompleteEntry} for
+     * the loud-failure path.
      */
     @Test
-    void registerAutoBridgeManifestTomlThrowsForUnreadablePath(@TempDir Path tmp) throws Exception {
+    void registerAutoBridgeManifestTomlNoopForMissingFile(@TempDir Path tmp) throws Exception {
         Path implJar = tmp.resolve("impl.jar");
         compileFakeImplJar(implJar);
         try (ModClassLoader mod = new ModClassLoader(
                 "ghost", new URL[]{implJar.toUri().toURL()},
                 getClass().getClassLoader(), List.of())) {
-            IllegalStateException ex = assertThrows(IllegalStateException.class,
-                    () -> McdpProvider.registerAutoBridgeManifestToml(
-                            mod, tmp.resolve("does-not-exist.toml")));
-            assertTrue(ex.getMessage().contains("failed to read auto-bridge manifest"),
-                    ex.getMessage());
+            assertEquals(0, McdpProvider.registerAutoBridgeManifestToml(
+                    mod, tmp.resolve("does-not-exist.toml")));
         }
     }
 

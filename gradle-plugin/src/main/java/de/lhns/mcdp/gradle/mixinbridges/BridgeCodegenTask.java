@@ -217,9 +217,18 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     }
                     byte[] rewritten = rewriter.rewrite(bytes, result.targets(),
                             result.lambdaSites(), lambdaArtifactsBySite);
-                    Path outClass = outClassesDir.resolve(BridgePolicy.toInternal(fqn) + ".class");
-                    Files.createDirectories(outClass.getParent());
-                    Files.write(outClass, rewritten);
+                    // Overwrite the original .class IN PLACE in the source-set output dir
+                    // (instead of writing to outClassesDir as a layered second copy). Layering
+                    // works correctly for the jar output (duplicatesStrategy=INCLUDE puts the
+                    // codegen copy last so it wins) but breaks dev runServer: FabricLoader and
+                    // ModDevGradle iterate `main.output.classesDirs` in registration order and
+                    // resolve mixin classes from compileScala/compileJava/compileKotlin BEFORE
+                    // they reach the codegen output dir. Sponge then applies the unrewritten
+                    // mixin and bypasses the bridge entirely (mc-fluid-physics report).
+                    // Writing back over the original location guarantees a single canonical
+                    // copy on the classpath. Re-running the rewriter on already-rewritten
+                    // bytecode is a no-op (the LOGIC field check skips re-adding the field).
+                    Files.write(classFile, rewritten);
                     rewrittenMixins.add(fqn);
                     perMixinTargets.put(fqn, result.targets());
                     for (var e : result.targets().entrySet()) {
