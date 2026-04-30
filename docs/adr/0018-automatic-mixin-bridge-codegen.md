@@ -114,6 +114,27 @@ Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md). The d
 - **`CHECKCAST` / `INSTANCEOF` / `ANEWARRAY` of mod-private types** — formal bridge-model limit, see Consequences above. Not deferred work.
 - **Per-mod fluidphysics-style ports** — out of scope for this ADR; ports happen separately, this codegen is the substrate they'll run on.
 
+### Errata: rewrite in place vs. layered copy (post-fluidphysics)
+
+**Symptom.** In dev `runServer` (Loom on Fabric, MDG on NeoForge), the loader resolved the unrewritten class file from `build/classes/scala/main/...` instead of the rewritten copy under `build/mcdp-bridges/classes/...`. Sponge applied the unrewritten injection body and bypassed the bridge entirely. Multi-language source sets (Scala or Kotlin joint compilation of `.java` mixins) hit this; pure-Java test mods didn't because there's only one compile-task output dir on the classpath.
+
+**Root cause.** The pre-fix wiring registered the codegen output via `main.getOutput().dir(...)` *after* the standard compile outputs. `main.output.classesDirs` listed the codegen dir last; FabricLoader and MDG iterate the FileCollection in declaration order and use first-match.
+
+**Fix.** Write rewritten classes back over the input file in `build/classes/<lang>/main/...`. Single canonical copy on the dev classpath, no ordering dependency. New classes (bridge interface, impl, lambda wrappers) still go to `build/mcdp-bridges/classes/`, which is properly declared as the codegen task's output.
+
+**Alternatives considered:**
+
+- **Reorder `main.output.classesDirs` so the codegen dir comes first.** Cleanest from a Gradle "task owns its output" standpoint. Rejected: requires non-trivial `ConfigurableFileCollection.setFrom` manipulation that may surprise other plugins (Loom/MDG also wire into `classesDirs`), and depends on every loader honoring declaration order. FabricLoader does (per the maintainer's report); MDG behavior at the time of writing is unverified, and the rest of the loader ecosystem is even less certain.
+- **Delete originals after writing to the codegen dir.** Equivalent mutation footprint — deleting from compileScala's output is the same kind of write-to-another-task's-output as overwriting. Adds a risk: a future Gradle version (or stricter incremental-compile mode) might detect the missing declared output and re-run the compile task unnecessarily.
+
+**Why in-place rewrite is acceptable:**
+
+1. The rewriter is idempotent. Running it twice on the same bytecode is a no-op — `MixinRewriter.rewrite` checks for the synthetic `LOGIC_*` field and skips re-adding it (`MixinRewriter.java`, `<clinit>` injection block). So an incremental rebuild that re-runs the codegen on already-rewritten input produces identical output.
+2. Java/Scala/Kotlin compile tasks track source-file state for up-to-date checks, not output state. Mutating their output post-hoc doesn't trigger spurious recompiles.
+3. Precedent. Sponge mixin's refmap remap and Loom's remapping tasks mutate compile output in the same pattern. The mixin tooling ecosystem treats this as a known compromise.
+
+The mutation is undeclared but tolerated. If a future Gradle version enforces stricter task-output isolation, the migration path is to switch to the delete-originals variant or invest in the FileCollection-reorder approach.
+
 ### Errata: rename `mcdp_mixin_bridges` → `mcdp_bridges` (post-ADR-0021)
 
 Once ADR-0021 generalized the codegen to seed on arbitrary class-level annotations (subscribers, custom registry-driving annotations, …), the "mixin" prefix in the user-facing names was misleading. A cleanup pass renamed every consumer-visible identifier:

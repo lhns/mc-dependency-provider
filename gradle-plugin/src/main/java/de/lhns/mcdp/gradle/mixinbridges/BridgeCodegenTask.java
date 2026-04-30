@@ -218,16 +218,34 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     byte[] rewritten = rewriter.rewrite(bytes, result.targets(),
                             result.lambdaSites(), lambdaArtifactsBySite);
                     // Overwrite the original .class IN PLACE in the source-set output dir
-                    // (instead of writing to outClassesDir as a layered second copy). Layering
-                    // works correctly for the jar output (duplicatesStrategy=INCLUDE puts the
-                    // codegen copy last so it wins) but breaks dev runServer: FabricLoader and
-                    // ModDevGradle iterate `main.output.classesDirs` in registration order and
-                    // resolve mixin classes from compileScala/compileJava/compileKotlin BEFORE
-                    // they reach the codegen output dir. Sponge then applies the unrewritten
-                    // mixin and bypasses the bridge entirely (mc-fluid-physics report).
-                    // Writing back over the original location guarantees a single canonical
-                    // copy on the classpath. Re-running the rewriter on already-rewritten
-                    // bytecode is a no-op (the LOGIC field check skips re-adding the field).
+                    // (instead of writing to outClassesDir as a layered second copy). The
+                    // shipped jar's duplicatesStrategy=INCLUDE handles layering correctly —
+                    // the codegen copy is appended last and wins — but dev runServer doesn't
+                    // go through the jar. FabricLoader and ModDevGradle iterate
+                    // `main.output.classesDirs` in registration order and resolve mixin
+                    // classes from compileScala/compileJava/compileKotlin BEFORE they reach
+                    // the codegen output dir. Sponge then applies the unrewritten mixin and
+                    // bypasses the bridge entirely (mc-fluid-physics report).
+                    //
+                    // Alternatives considered and rejected (see ADR-0018 errata):
+                    //   - Prepending the codegen dir to main.output.classesDirs would avoid
+                    //     mutating any task's output, but ConfigurableFileCollection reorder
+                    //     is fragile and depends on every loader honoring iteration order
+                    //     (FabricLoader does; MDG behavior is unverified).
+                    //   - Writing to outClassesDir then deleting the original is the same
+                    //     level of mutation as overwrite — a delete is still a write to
+                    //     compileScala's output dir.
+                    //
+                    // Mutating another task's declared output is technically a Gradle
+                    // anti-pattern, but it's tolerated here because (a) the rewriter is
+                    // idempotent — re-running on already-rewritten bytecode is a no-op via
+                    // the LOGIC field check in MixinRewriter; (b) Java/Scala/Kotlin compile
+                    // tasks track source-file state for up-to-date checks, not output
+                    // state, so the post-hoc mutation doesn't trigger unnecessary recompiles;
+                    // and (c) there's precedent in the mixin-tooling ecosystem — Sponge
+                    // mixin's refmap remap and Loom's remapping tasks similarly mutate
+                    // compile output. New classes (bridge interface, impl, lambda wrappers)
+                    // still go to outClassesDir, which is properly declared.
                     Files.write(classFile, rewritten);
                     rewrittenMixins.add(fqn);
                     perMixinTargets.put(fqn, result.targets());
