@@ -175,9 +175,14 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
     }
 
     // Dev-mode only: Loom exposes a mod's build/resources/main directory as the sole rootPath,
-    // not the sibling build/classes/<lang>/main directories. Without the compiled-class dirs on
-    // our ModClassLoader's URL list, Class.forName falls through to Knot, which defeats isolation.
-    // Walk from each rootPath to its siblings and add any that exist.
+    // not the sibling build/classes/<lang>/main directories nor the bridge codegen output.
+    // Without those on our ModClassLoader's URL list, Class.forName(modPrivate, true, modLoader)
+    // falls through to Knot, which defines the class there and defeats isolation — and for
+    // bridge impls specifically, that means impl bodies invoking mod-private code resolve via
+    // Knot's copy of those types, ending up with two copies of the mod's classes (one per
+    // loader) and a re-fired <clinit> on the wrong-window-side. Mirror McdpLanguageLoader's
+    // expandDevRoots: walk to <project>/build/ and include classes/<lang>/main siblings AND
+    // mcdp-bridges/classes (where the codegen emits bridge interfaces, impls, lambda wrappers).
     private static List<Path> expandDevRoots(List<Path> roots) {
         List<Path> out = new ArrayList<>(roots.size() * 2);
         for (Path p : roots) {
@@ -191,15 +196,20 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             Path grand = parent.getParent();
             if (grand == null) continue;
             Path classes = grand.resolve("classes");
-            if (!java.nio.file.Files.isDirectory(classes)) continue;
-            try (var stream = java.nio.file.Files.newDirectoryStream(classes)) {
-                for (Path lang : stream) {
-                    Path candidate = lang.resolve("main");
-                    if (java.nio.file.Files.isDirectory(candidate) && !out.contains(candidate)) {
-                        out.add(candidate);
+            if (java.nio.file.Files.isDirectory(classes)) {
+                try (var stream = java.nio.file.Files.newDirectoryStream(classes)) {
+                    for (Path lang : stream) {
+                        Path candidate = lang.resolve("main");
+                        if (java.nio.file.Files.isDirectory(candidate) && !out.contains(candidate)) {
+                            out.add(candidate);
+                        }
                     }
+                } catch (IOException ignored) {
                 }
-            } catch (IOException ignored) {
+            }
+            Path bridgeClasses = grand.resolve("mcdp-bridges").resolve("classes");
+            if (java.nio.file.Files.isDirectory(bridgeClasses) && !out.contains(bridgeClasses)) {
+                out.add(bridgeClasses);
             }
         }
         return List.copyOf(out);
