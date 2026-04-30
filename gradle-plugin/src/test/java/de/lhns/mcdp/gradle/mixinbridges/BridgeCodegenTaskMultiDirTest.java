@@ -4,6 +4,7 @@ import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -21,12 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Regression coverage for the multi-output-dir scan: when {@code .java} mixins are joint-compiled
  * by scalac/kotlinc, their bytecode lands under {@code compileScala}'s or {@code compileKotlin}'s
  * output, not {@code compileJava}'s. The codegen task must search every {@code SourceSet} output
- * dir to find the declared mixin class.
+ * dir to find the mixin class.
+ *
+ * <p>Seeding is annotation-driven (ADR-0021): the fixture mixin carries
+ * {@code @org.spongepowered.asm.mixin.Mixin} on its class header so {@link AnnotationSeedScanner}
+ * picks it up.</p>
  */
 class BridgeCodegenTaskMultiDirTest {
 
     private static final String MIXIN_FQN = "com.example.Mixin";
     private static final String TARGET_INTERNAL = "com/example/Target";
+    private static final String MIXIN_ANNOTATION = "org.spongepowered.asm.mixin.Mixin";
 
     @Test
     void findsMixinInSecondDirWhenFirstIsEmpty(@TempDir Path tmp) throws IOException {
@@ -38,17 +44,11 @@ class BridgeCodegenTaskMultiDirTest {
         Files.createDirectories(mixinClass.getParent());
         Files.write(mixinClass, mixinCallingTargetStatic());
 
-        Path mixinsJson = tmp.resolve("resources/test.mixins.json");
-        Files.createDirectories(mixinsJson.getParent());
-        Files.writeString(mixinsJson,
-                "{\"package\":\"com.example\",\"mixins\":[\"Mixin\"]}",
-                StandardCharsets.UTF_8);
-
         Project project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
         BridgeCodegenTask task = project.getTasks().register(
                 "generateMcdpMixinBridges", BridgeCodegenTask.class).get();
         task.getCompiledClassesDirs().from(dirA.toFile(), dirB.toFile());
-        task.getMixinConfigFiles().from(mixinsJson.toFile());
+        task.getBridgedAnnotations().set(java.util.List.of(MIXIN_ANNOTATION));
         task.getBridgePackage().set("com.example.bridges");
         task.getSharedPackages().set(java.util.List.of());
         Path outClasses = tmp.resolve("out/classes");
@@ -64,14 +64,12 @@ class BridgeCodegenTaskMultiDirTest {
         Path rewritten = outClasses.resolve("com/example/Mixin.class");
         assertTrue(Files.isRegularFile(rewritten), "rewritten Mixin.class missing at " + rewritten);
 
-        // Unified TOML manifest emitted (ADR-0019). Single file per mod with [[bridge]] entries
-        // — replaces per-mixin .txt + index.txt scheme.
+        // Unified TOML manifest emitted (ADR-0019). Single file per mod with [[bridge]] entries.
         Path manifestToml = outManifest.resolve("META-INF/mcdp-mixin-bridges.toml");
         assertTrue(Files.isRegularFile(manifestToml), "manifest TOML missing at " + manifestToml);
         String tomlText = Files.readString(manifestToml, StandardCharsets.UTF_8);
         assertTrue(tomlText.contains("[[bridge]]"), tomlText);
         assertTrue(tomlText.contains("mixin = \"" + MIXIN_FQN + "\""), tomlText);
-        // Parse via MiniToml — same parser the runtime uses.
         var parsed = de.lhns.mcdp.deps.MiniToml.parse(tomlText);
         @SuppressWarnings("unchecked")
         var entries = (java.util.List<java.util.Map<String, String>>) parsed.get("bridge");
@@ -88,21 +86,16 @@ class BridgeCodegenTaskMultiDirTest {
     }
 
     @Test
-    void warnsListingAllDirsWhenMixinClassIsAbsent(@TempDir Path tmp) throws IOException {
+    void emptySeedYieldsNoOpRun(@TempDir Path tmp) throws IOException {
+        // No @Mixin-annotated class anywhere → annotation seed returns empty → task short-circuits.
         Path dirA = Files.createDirectories(tmp.resolve("classes/java/main"));
         Path dirB = Files.createDirectories(tmp.resolve("classes/scala/main"));
-
-        Path mixinsJson = tmp.resolve("resources/test.mixins.json");
-        Files.createDirectories(mixinsJson.getParent());
-        Files.writeString(mixinsJson,
-                "{\"package\":\"com.example\",\"mixins\":[\"MissingMixin\"]}",
-                StandardCharsets.UTF_8);
 
         Project project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
         BridgeCodegenTask task = project.getTasks().register(
                 "generateMcdpMixinBridges", BridgeCodegenTask.class).get();
         task.getCompiledClassesDirs().from(dirA.toFile(), dirB.toFile());
-        task.getMixinConfigFiles().from(mixinsJson.toFile());
+        task.getBridgedAnnotations().set(java.util.List.of(MIXIN_ANNOTATION));
         task.getBridgePackage().set("com.example.bridges");
         task.getSharedPackages().set(java.util.List.of());
         task.getOutputClassesDir().set(tmp.resolve("out/classes").toFile());
@@ -113,30 +106,25 @@ class BridgeCodegenTaskMultiDirTest {
         task.run();
 
         String reportText = Files.readString(report);
-        assertTrue(reportText.contains("not found in any compiled-classes dir"),
-                "expected the not-found warning text:\n" + reportText);
-        // Both searched dirs appear in the message.
-        assertTrue(reportText.contains(dirA.toString().replace('\\', '/'))
-                        || reportText.contains(dirA.toString()),
-                "warning should list dirA (" + dirA + "):\n" + reportText);
-        assertTrue(reportText.contains(dirB.toString().replace('\\', '/'))
-                        || reportText.contains(dirB.toString()),
-                "warning should list dirB (" + dirB + "):\n" + reportText);
-        assertEquals(0, java.util.stream.Stream.of(reportText.split("\n"))
-                        .filter(l -> l.contains("rewritten mixins (1)")).count(),
-                "no mixin should have been rewritten");
+        assertTrue(reportText.contains("rewritten mixins (0)"), reportText);
+        // No manifest file emitted when nothing was rewritten.
+        Path manifestToml = tmp.resolve("out/resources/META-INF/mcdp-mixin-bridges.toml");
+        assertFalse(Files.exists(manifestToml),
+                "manifest should not exist when nothing was rewritten");
     }
 
     /**
      * Bytecode for {@code com/example/Mixin} containing one static method that calls
-     * {@code com/example/Target.doubleIt(I)I}. The scanner classifies this as REWRITABLE
-     * (Target is mod-private under the empty {@code sharedPackages} policy), giving us a positive
-     * "made it through the rewrite pipeline" signal — proving the file was located.
+     * {@code com/example/Target.doubleIt(I)I}, with {@code @org.spongepowered.asm.mixin.Mixin}
+     * on the class header so the annotation seed picks it up.
      */
     private static byte[] mixinCallingTargetStatic() {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
         cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/Mixin", null,
                 "java/lang/Object", null);
+        AnnotationVisitor av = cw.visitAnnotation(
+                "L" + MIXIN_ANNOTATION.replace('.', '/') + ";", true);
+        if (av != null) av.visitEnd();
         MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
                 "handler", "(I)I", null, null);
         mv.visitCode();

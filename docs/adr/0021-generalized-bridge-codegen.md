@@ -40,9 +40,9 @@ For symmetry, leak (2) (subscriber side-load) could be fixed by either runtime h
 
 Each lambda site has its own capture-type tuple and SAM. Fold them into a single shared bridge interface and the interface descriptor would have to be either erased to `Object` (loses type information) or per-call-site (which is what we already have). The existing `BridgeMember` dedup keys on `(target, kind, name, descriptor)`, which doesn't naturally extend to "this specific indy site at this specific instruction offset". Per-site bridges keep the data model orthogonal to the existing bridges.
 
-### Why we keep the `*.mixins.json` seed alongside the annotation seed
+### The `*.mixins.json` seed is dropped (post-cleanup)
 
-`@Mixin` has `RUNTIME` retention so the annotation seed catches it, but Loom's mixin annotation processor is known to mutate retention in some configurations. Keeping the JSON seed is belt-and-braces against that and against future Sponge changes. The two paths union by FQN; cost is one redundant JSON read per build.
+Initial v1 kept JSON seeding alongside the annotation seed as belt-and-braces against possible Loom-mixin-AP retention stripping. In the cleanup pass after fluidphysics shipped, we removed it: the `@Mixin` annotation has `@Retention(RUNTIME)` per Sponge's contract, the annotation seed catches every mixin in standard configurations, and the JSON parser (plus its `MixinJson` mini-parser) was redundant code surface. If a real-world Loom config ever surfaces retention-stripping behavior, the JSON path can be re-introduced from git history (see follow-up cleanup commit).
 
 ## Design
 

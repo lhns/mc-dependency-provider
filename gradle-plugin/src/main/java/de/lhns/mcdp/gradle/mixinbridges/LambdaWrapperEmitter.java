@@ -170,7 +170,7 @@ public final class LambdaWrapperEmitter {
         // The "name" arg to the metafactory IS the SAM method name; not optional. We pass it
         // through from where the rewriter knows it (rewriter passes via Artifacts caller).
         make.visitInvokeDynamicInsn(
-                site.samMethodNameOrFallback(),
+                site.samMethodName(),
                 indyDesc,
                 metafactoryBsm,
                 samMethodType,

@@ -29,14 +29,15 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * Walks every mixin class declared in {@code src/main/resources/*.mixins.json}, runs the scan
- * + rewrite pipeline, and writes back rewritten {@code .class} files plus generated bridge
- * interface and impl class files into a dedicated output directory. The output is layered onto
- * {@code processResources}/{@code jar} so the rewritten classes win over the original ones.
+ * Walks every class on {@link #getCompiledClassesDirs()} whose class-level annotations match
+ * {@link #getBridgedAnnotations()}, runs the scan + rewrite pipeline, and writes back rewritten
+ * {@code .class} files plus generated bridge interface and impl class files into a dedicated
+ * output directory. The output is layered onto {@code processResources}/{@code jar} so the
+ * rewritten classes win over the original ones.
  *
- * <p>Manifest resources ({@code META-INF/mcdp-mixin-bridges/<mixinFqn>.txt}) are written into
- * {@link #getManifestOutputDir()} so they can be picked up by {@code processResources} as
- * source for the META-INF tree.</p>
+ * <p>The unified {@code META-INF/mcdp-mixin-bridges.toml} manifest (ADR-0019) is written into
+ * {@link #getManifestOutputDir()} so it gets picked up by {@code processResources} as source
+ * for the META-INF tree.</p>
  */
 public abstract class BridgeCodegenTask extends DefaultTask {
 
@@ -51,10 +52,6 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getCompiledClassesDirs();
-
-    @InputFiles
-    @PathSensitive(PathSensitivity.RELATIVE)
-    public abstract org.gradle.api.file.ConfigurableFileCollection getMixinConfigFiles();
 
     /**
      * Consumer's compile classpath. Consulted only by ASM's {@code COMPUTE_FRAMES} pass when it
@@ -74,7 +71,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     public abstract ListProperty<String> getSharedPackages();
 
     /**
-     * Class-level annotation FQNs that seed the codegen alongside {@code *.mixins.json}.
+     * Class-level annotation FQNs that seed the codegen.
      * See {@link de.lhns.mcdp.gradle.MixinBridgesExtension#getBridgedAnnotations()} (ADR-0021).
      */
     @Input
@@ -104,22 +101,19 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         cleanDirectory(manifestDir);
         Files.createDirectories(manifestFile.getParent());
 
-        Set<String> seedFqns = new LinkedHashSet<>();
-        for (var f : getMixinConfigFiles().getFiles()) {
-            if (!f.isFile()) continue;
-            seedFqns.addAll(extractMixinFqns(f.toPath()));
-        }
-        // Annotation-driven seed: discovers @Mixin / @EventBusSubscriber / etc. by ASM-scanning
-        // each compiled .class for class-level annotations. Belt-and-braces with the JSON seed
-        // above (mixin discovery) and the only path covering non-mixin annotations (ADR-0021).
+        // Annotation-driven seed (ADR-0021): walks every compiled .class on the input dirs and
+        // selects classes whose class-level annotation table intersects the configured FQN list.
+        // Default list (set in McdpProviderPlugin) covers @Mixin and @EventBusSubscriber.
         List<String> annoFqns = getBridgedAnnotations().getOrElse(List.of());
-        if (!annoFqns.isEmpty()) {
-            AnnotationSeedScanner annoScanner = new AnnotationSeedScanner(annoFqns);
-            seedFqns.addAll(annoScanner.scan(inDirs));
+        Set<String> seedFqns;
+        if (annoFqns.isEmpty()) {
+            seedFqns = new LinkedHashSet<>();
+        } else {
+            seedFqns = new LinkedHashSet<>(new AnnotationSeedScanner(annoFqns).scan(inDirs));
         }
         if (seedFqns.isEmpty()) {
-            log.info("mcdp-mixin-bridges: no mixin classes declared in any *.mixins.json and no "
-                    + "classes carry a configured bridgedAnnotation — nothing to do.");
+            log.info("mcdp-mixin-bridges: no classes carry a configured bridgedAnnotation "
+                    + "— nothing to do.");
             writeReport(getReportFile().get().getAsFile().toPath(), List.of(), List.of(), List.of());
             return;
         }
@@ -353,36 +347,4 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         }
     }
 
-    /**
-     * Parse a Sponge-Mixin {@code *.mixins.json} config and return the FQNs of every declared
-     * mixin class. The schema relevant here:
-     * <pre>
-     * { "package": "com.example.mixin", "mixins": [...], "client": [...], "server": [...] }
-     * </pre>
-     */
-    static List<String> extractMixinFqns(Path mixinJson) throws IOException {
-        String json = Files.readString(mixinJson, StandardCharsets.UTF_8);
-        Object root;
-        try {
-            root = MixinJson.parse(json);
-        } catch (RuntimeException e) {
-            throw new IOException("mcdp-mixin-bridges: failed to parse " + mixinJson, e);
-        }
-        if (!(root instanceof Map<?, ?> obj)) {
-            throw new IOException("mcdp-mixin-bridges: " + mixinJson + " is not a JSON object.");
-        }
-        Object pkgObj = obj.get("package");
-        String pkg = pkgObj instanceof String ? ((String) pkgObj) : "";
-        List<String> out = new ArrayList<>();
-        for (String key : List.of("mixins", "client", "server")) {
-            Object arr = obj.get(key);
-            if (!(arr instanceof List<?> list)) continue;
-            for (Object o : list) {
-                if (o instanceof String s) {
-                    out.add(pkg.isEmpty() ? s : pkg + "." + s);
-                }
-            }
-        }
-        return out;
-    }
 }

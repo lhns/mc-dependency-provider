@@ -18,17 +18,6 @@ public abstract class MixinBridgesExtension {
     public abstract Property<Boolean> getEnabled();
 
     /**
-     * Glob-ish package prefixes whose types are <em>not</em> visible to the game-layer (mixin)
-     * classloader and must therefore be bridged. Each entry is a literal prefix (no wildcards
-     * needed; {@code com.example.} matches {@code com.example.foo.Bar}).
-     * <p>
-     * Default: a single prefix derived from the project's {@code group}. For most mods that's
-     * correct; override if your mod ships some types under a shared namespace already on
-     * {@link McdpProviderExtension#getSharedPackages()}.
-     */
-    public abstract ListProperty<String> getModPrivatePackages();
-
-    /**
      * Package the codegen emits bridges into. Auto-added to
      * {@link McdpProviderExtension#getSharedPackages()}.
      * <p>

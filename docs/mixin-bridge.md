@@ -98,12 +98,12 @@ The two paths are mutually exclusive per project: codegen rewrites the entire mi
 
 ## Annotation-driven seeding (`@EventBusSubscriber` and friends)
 
-The codegen seeds on more than just `*.mixins.json`. By default it also walks every compiled `.class` and selects classes whose class-level annotations match a configured FQN list. Default list (set by `McdpProviderPlugin`):
+The codegen walks every compiled `.class` and selects classes whose class-level annotations match a configured FQN list. Default list (set by `McdpProviderPlugin`):
 
 - `org.spongepowered.asm.mixin.Mixin`
 - `net.neoforged.bus.api.EventBusSubscriber`
 
-The two seed paths union by FQN; the rest of the pipeline is annotation-agnostic. This means `@EventBusSubscriber`-tagged classes that touch Scala/Kotlin/mod-private code are auto-bridged exactly the same way mixins are. No mod-author action needed.
+Both Sponge's `@Mixin` and NeoForge's `@EventBusSubscriber` have `@Retention(RUNTIME)` so they remain on the class file post-compile, where the scanner picks them up. `@EventBusSubscriber`-tagged classes that touch Scala/Kotlin/mod-private code are auto-bridged exactly the same way mixins are. No mod-author action needed.
 
 Override the list to pin to a specific NeoForge version (the registrar's annotation FQN can rename across majors) or to add custom annotation-driven side-loads:
 

@@ -65,8 +65,6 @@ public final class LambdaSite {
     public int instructionIndex() { return instructionIndex; }
     public String samInternal() { return samInternal; }
     public String samMethodName() { return samMethodName; }
-    /** Convenience accessor used by the wrapper emitter. */
-    public String samMethodNameOrFallback() { return samMethodName; }
     public Handle implMethod() { return implMethod; }
     public String indyDescriptor() { return indyDescriptor; }
     public int siteIndex() { return siteIndex; }

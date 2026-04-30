@@ -166,11 +166,16 @@ class McdpProviderPluginTest {
 
                 repositories {
                     mavenCentral()
+                    maven { url = uri("https://repo.spongepowered.org/repository/maven-public/") }
                 }
 
                 dependencies {
                     // scalac needs scala-library on the compile classpath to do joint compilation.
                     implementation("org.scala-lang:scala3-library_3:3.3.4")
+                    // Sponge Mixin annotation — needed at compile time so the seed annotation
+                    // resolves on the @Mixin-tagged source. Runtime is unused; this is a compile
+                    // dependency only for the codegen test to have a real Mixin annotation type.
+                    compileOnly("org.spongepowered:mixin:0.8.5")
                 }
 
                 mcdepprovider {
@@ -181,10 +186,13 @@ class McdpProviderPluginTest {
 
         // Mixin under src/main/scala/ — joint-compiled by scalac into build/classes/scala/main/.
         // The class calls into a mod-private static helper; scanner classifies as REWRITABLE.
+        // @org.spongepowered.asm.mixin.Mixin on the class header lets the codegen's annotation
+        // seed (ADR-0021) discover this class.
         Path mixinSrc = tmp.resolve("src/main/scala/com/example/mixin/MyMixin.java");
         Files.createDirectories(mixinSrc.getParent());
         Files.writeString(mixinSrc, """
                 package com.example.mixin;
+                @org.spongepowered.asm.mixin.Mixin(Object.class)
                 public class MyMixin {
                     public static int handler(int x) { return com.example.modcode.Helper.doubleIt(x) + 1; }
                 }

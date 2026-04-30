@@ -63,10 +63,6 @@ public final class McdpProviderPlugin implements Plugin<Project> {
             String name = project.getName().replace('-', '_');
             return group + "." + name + ".mcdp_mixin_bridges";
         }));
-        ext.getMixinBridges().getModPrivatePackages().convention(project.provider(() -> {
-            String group = String.valueOf(project.getGroup());
-            return (group.isEmpty() || "unspecified".equals(group)) ? List.of() : List.of(group + ".");
-        }));
         // Annotation seed (ADR-0021). Default covers Sponge-Mixin and NeoForge's automatic event
         // subscriber registrar — the two FML/Sponge side-loads documented as leak-prone in
         // mc-fluid-physics. Override per project to pin to a different NeoForge version's
@@ -247,17 +243,6 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     t.getBridgePackage().set(ext.getMixinBridges().getBridgePackage());
                     t.getSharedPackages().set(ext.getSharedPackages());
                     t.getBridgedAnnotations().set(ext.getMixinBridges().getBridgedAnnotations());
-                    t.getMixinConfigFiles().from(project.provider(() -> {
-                        List<File> matches = new ArrayList<>();
-                        for (File r : main.getResources().getSrcDirs()) {
-                            if (!r.isDirectory()) continue;
-                            File[] children = r.listFiles((dir, name) -> name.endsWith("mixins.json"));
-                            if (children != null) {
-                                for (File c : children) matches.add(c);
-                            }
-                        }
-                        return matches;
-                    }));
                     t.getOutputClassesDir().set(project.getLayout().getBuildDirectory()
                             .dir("mcdp-mixin-bridges/classes"));
                     t.getManifestOutputDir().set(project.getLayout().getBuildDirectory()
