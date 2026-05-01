@@ -50,11 +50,38 @@ public final class ManifestConsumer {
      * Throws if any SHA-256 doesn't match the expected value.
      */
     public List<Path> resolveAll(Manifest manifest) throws IOException {
-        List<Path> paths = new ArrayList<>(manifest.libraries().size());
-        for (Manifest.Library lib : manifest.libraries()) {
-            paths.add(resolve(lib));
+        return resolveAll(manifest, ProgressListener.NOOP);
+    }
+
+    /**
+     * Same as {@link #resolveAll(Manifest)} but invokes {@code listener} as each library is
+     * processed (see {@link ProgressListener} for the ordering contract). {@code listener.finished()}
+     * always fires, even if a download throws.
+     */
+    public List<Path> resolveAll(Manifest manifest, ProgressListener listener) throws IOException {
+        List<Manifest.Library> libs = manifest.libraries();
+        int total = libs.size();
+        listener.started(total, 0L);
+        try {
+            List<Path> paths = new ArrayList<>(total);
+            for (int i = 0; i < total; i++) {
+                Manifest.Library lib = libs.get(i);
+                listener.libraryStarted(i + 1, total, lib.coords(), 0L);
+                boolean cached = cache.contains(lib.sha256());
+                Path p = resolve(lib);
+                long actualBytes;
+                try {
+                    actualBytes = java.nio.file.Files.size(p);
+                } catch (IOException ignored) {
+                    actualBytes = 0L;
+                }
+                listener.libraryFinished(i + 1, total, lib.coords(), actualBytes, cached);
+                paths.add(p);
+            }
+            return paths;
+        } finally {
+            listener.finished();
         }
-        return paths;
     }
 
     public Path resolve(Manifest.Library lib) throws IOException {

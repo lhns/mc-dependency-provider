@@ -283,7 +283,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     private static List<Path> downloadLibs(Manifest manifest, String modId) {
         try {
-            return CONSUMER.resolveAll(manifest);
+            return CONSUMER.resolveAll(manifest, new LoggingProgressListener(LOG, modId));
         } catch (IOException e) {
             throw new IllegalStateException(
                     "mcdepprovider: failed to resolve libraries for " + modId, e);

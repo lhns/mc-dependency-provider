@@ -71,7 +71,7 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
 
             List<Path> libs;
             try {
-                libs = consumer.resolveAll(manifest);
+                libs = consumer.resolveAll(manifest, new LoggingProgressListener(LOG, modId));
             } catch (IOException e) {
                 throw new IllegalStateException("mcdepprovider: failed to download libs for " + modId, e);
             }

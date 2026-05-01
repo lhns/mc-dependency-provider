@@ -84,6 +84,17 @@ docs/                end-to-end "how it works" walkthrough + ADRs (decision hist
 
 For a deep walkthrough of the build → boot → runtime pipeline (with bridge bytecode examples), read [`docs/how-it-works.md`](docs/how-it-works.md).
 
+## First-launch downloads
+
+The first time a player launches a mod that uses `mcdp`, the adapter downloads any libraries not yet in `~/.cache/mcdepprovider/libs/` (or the OS-equivalent). With a large dep graph this can take a few seconds. Progress shows up in two places:
+
+- **Server / log file** (always): `latest.log` carries `mcdp[<modId>]: resolving N libraries`, per-library completion lines with byte counts, and a closing `resolved in N ms`. Per-library start lines are at DEBUG (enable in `log4j2.xml` if you want them).
+- **Client UI**:
+  - **NeoForge** — short progress messages flicker on the FML loading screen (via `StartupNotificationManager`). The eager download path may run before the screen exists; in that case the adapter no-ops the UI side and the log channel still carries the same content.
+  - **Fabric** — Fabric's `PreLaunchEntrypoint` runs *before* any in-game UI, so the splash never sees these events. The launcher window's stdout/stderr tail and `latest.log` are the feedback channels; the adapter prints one stderr banner at the start of the download phase to signal the wait.
+
+Subsequent launches hit the cache and skip the network entirely.
+
 ## Building
 
 ```bash
