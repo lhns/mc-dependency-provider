@@ -8,7 +8,11 @@ plugins {
 
 allprojects {
     group = "de.lhns.mcdp"
-    version = "0.1.0-SNAPSHOT"
+    // Default to a snapshot version for local + push:main builds; the publish workflow
+    // overrides via -Pversion=<tag> when triggered by a `release: published` event so
+    // vanniktech routes to the release endpoint (and automaticRelease=true below auto-
+    // publishes without a Portal click).
+    version = providers.gradleProperty("version").orElse("0.1.0-SNAPSHOT").get()
 }
 
 subprojects {

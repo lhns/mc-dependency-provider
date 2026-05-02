@@ -93,7 +93,7 @@ gradlePlugin {
 // resolve the plugin from Maven Central via `pluginManagement { repositories { mavenCentral() } }`.
 mavenPublishing {
     // vanniktech 0.32.0 — same shape as in :mcdp; see comment there.
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = false)
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
     signAllPublications()
     coordinates("de.lhns.mcdp", "gradle-plugin", project.version.toString())
     pom {

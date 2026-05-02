@@ -119,9 +119,27 @@ jobs:
             gradle-publish-
             gradle-ubuntu-latest-
 
+      - name: Compute version
+        id: ver
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            # Strip a leading "v" if present: v0.1.0 → 0.1.0; 0.1.0 → 0.1.0.
+            version="${tag#v}"
+          else
+            # Snapshot path (workflow_run / workflow_dispatch). build.gradle.kts's default
+            # already supplies 0.1.0-SNAPSHOT, but pass it explicitly so the log shows the
+            # exact version used for upload.
+            version="0.1.0-SNAPSHOT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing as version: $version"
+
       - name: Build everything (assert release-quality before upload)
         if: steps.gate.outputs.publish == 'true'
-        run: ./gradlew build --no-daemon --stacktrace
+        run: ./gradlew build --no-daemon --stacktrace -Pversion=${{ steps.ver.outputs.version }}
 
       - name: Publish to Sonatype Central Portal
         if: steps.gate.outputs.publish == 'true'
@@ -135,8 +153,11 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.PGP_KEY_PASSWORD || '' }}
         run: |
           set -euo pipefail
-          # publishToMavenCentral runs the staging-bundle upload (vanniktech) for every
-          # subproject that applies the plugin: :mcdp (the merged jar) and :gradle-plugin.
-          ./gradlew publishToMavenCentral --no-daemon --stacktrace --no-configuration-cache
-          echo "Bundles uploaded to Central Portal staging. Review and release at:"
-          echo "  https://central.sonatype.com/publishing"
+          # vanniktech routes by version suffix: -SNAPSHOT → snapshots repo;
+          # otherwise → release-staging bundle. With automaticRelease=true in
+          # multi/ + gradle-plugin/ build.gradle.kts, release uploads also call the
+          # Portal's release-now API so the artifact lands on Maven Central without a click.
+          ./gradlew publishToMavenCentral --no-daemon --stacktrace --no-configuration-cache \
+            -Pversion=${{ steps.ver.outputs.version }}
+          echo "Published version ${{ steps.ver.outputs.version }}."
+          echo "Release versions auto-publish; snapshots land at the Portal snapshots repo."

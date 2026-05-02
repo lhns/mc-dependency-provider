@@ -83,10 +83,12 @@ configurations.apply {
 // ORG_GRADLE_PROJECT_signingInMemoryKey / ...keyId / ...keyPassword.
 mavenPublishing {
     // vanniktech 0.32.0 — Central Portal snapshot publishing supported (added in 0.31).
-    // automaticRelease=false: release bundles stage at https://central.sonatype.com/publishing
-    // for manual review. Snapshots upload directly to the Central Portal snapshots repo
-    // (requires snapshot-publishing enabled on the namespace via the Central Portal UI).
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = false)
+    // automaticRelease=true: release bundles upload AND auto-invoke the Portal's release-now
+    // API so the artifact lands on Maven Central without a manual click. The publish workflow
+    // already gates release-event runs on Tier 1 + Tier 2 success — that's the trust boundary.
+    // Snapshots ignore this flag (they always go straight to the Central Portal snapshots repo,
+    // requires snapshot-publishing enabled on the namespace via the Portal UI).
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
     signAllPublications()
     coordinates("de.lhns.mcdp", "mcdp", project.version.toString())
     pom {
