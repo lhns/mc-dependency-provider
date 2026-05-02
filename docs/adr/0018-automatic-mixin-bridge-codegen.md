@@ -135,6 +135,18 @@ Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md). The d
 
 The mutation is undeclared but tolerated. If a future Gradle version enforces stricter task-output isolation, the migration path is to switch to the delete-originals variant or invest in the FileCollection-reorder approach.
 
+**Errata to the errata: incremental up-to-date hole (mc-fluid-physics 2026-05-02).**
+
+The "tolerated" framing above missed an interaction with Gradle's up-to-date check. Symptom: a production NeoForge build of mc-fluid-physics shipped a jar whose mixin handlers called mod-private targets directly (no `LOGIC_*` dispatch in the bytecode), crashing mid-tick under PrismLauncher with `NoClassDefFoundError: scala/jdk/CollectionConverters$`. On-disk evidence pinned it down: bridges and the manifest were from Build 1, but the mixin class had been rewritten by compileScala 15 minutes later in Build 2.
+
+**Mechanism.** Build 1 (clean): bridgeTask reads compileScala's ORIGINAL output, rewrites in place, writes outputs (mcdp-bridges + manifest + report). Gradle records bridgeTask's input fingerprint as ORIGINAL bytecode. The user edits an unrelated Scala source. Build 2 (incremental): compileScala re-runs to apply the changed source. **It refreshes its output dir, writing fresh ORIGINAL bytecode for every class — including those whose source didn't change.** Our in-place rewrite is wiped. bridgeTask is checked next: input fingerprint is now ORIGINAL again (matching what was recorded at the start of Build 1), and outputs (bridge dir + manifest + report) are unchanged on disk. Gradle declares bridgeTask UP-TO-DATE and skips it. The jar is then assembled from the (un-rewritten) compileScala output plus the (still-correct-but-uncalled) bridges from Build 1.
+
+The rewriter being idempotent isn't enough — Gradle simply never re-runs the task in this case. The tolerance argument was wrong.
+
+**Fix.** `getOutputs().upToDateWhen(t -> false)` in `BridgeCodegenTask`'s constructor. Force re-run every build. The cost is sub-second on a typical mixin set (pure ASM read + write); the rewriter's idempotence ensures re-running on already-rewritten input is a no-op. Regression test: `McdpProviderPluginTest.bridgeTaskRerunsAfterUpstreamOverwrite` simulates an upstream-overwrite condition with two TestKit invocations and asserts the rewrite persists.
+
+If we ever revisit the in-place design (e.g. by adopting the FileCollection-reorder approach so rewrites can live in a separate output dir), the `upToDateWhen { false }` line goes away with it. Until then, it's the only reliable answer.
+
 ### Errata: rename `mcdp_mixin_bridges` → `mcdp_bridges` (post-ADR-0021)
 
 Once ADR-0021 generalized the codegen to seed on arbitrary class-level annotations (subscribers, custom registry-driving annotations, …), the "mixin" prefix in the user-facing names was misleading. A cleanup pass renamed every consumer-visible identifier:

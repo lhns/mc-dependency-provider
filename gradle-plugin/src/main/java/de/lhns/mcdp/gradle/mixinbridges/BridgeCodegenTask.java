@@ -41,6 +41,27 @@ import java.util.stream.Stream;
  */
 public abstract class BridgeCodegenTask extends DefaultTask {
 
+    public BridgeCodegenTask() {
+        // The task mutates files in the main source-set output dirs — the in-place rewrite
+        // (ADR-0018 §Errata). Gradle's up-to-date check fingerprints @InputFiles BEFORE the
+        // task action runs, then compares against the next run's input fingerprint. Problem:
+        // when an incremental compile (typically compileScala) re-runs on an unrelated source
+        // change, it refreshes the output dir and writes fresh ORIGINAL bytecode for every
+        // class — including ones whose source didn't change. Our previous in-place rewrite
+        // is silently wiped. On the next bridgeTask check, the new input fingerprint matches
+        // what Gradle recorded at the start of the previous run (both = original bytecode),
+        // and the output dir + manifest + report are unchanged, so Gradle marks bridgeTask
+        // UP-TO-DATE and skips it. The jar then packs the un-rewritten mixin alongside the
+        // bridges from the previous run — exactly the mc-fluid-physics 2026-05-02 production
+        // crash (MixinHandler called FluidIsInfinite.set directly with no LOGIC_ dispatch,
+        // hitting the parent ModuleClassLoader → NoClassDefFoundError on Scala stdlib).
+        //
+        // Force re-run every build. The rewriter is idempotent (MixinRewriter's LOGIC field
+        // check is a no-op on already-rewritten bytecode), and the cost is sub-second on a
+        // typical mixin set since the work is pure ASM read+write.
+        getOutputs().upToDateWhen(t -> false);
+    }
+
     /**
      * All class-output directories produced by the project's compile tasks (java, scala, kotlin).
      * The scanner searches every directory for each declared mixin FQN and uses the first match

@@ -247,4 +247,111 @@ class McdpProviderPluginTest {
         assertTrue(Files.size(rewritten) > 400,
                 "rewritten size " + Files.size(rewritten) + " not larger than original — in-place rewrite didn't fire?");
     }
+
+    /**
+     * Regression for the mc-fluid-physics 2026-05-02 production crash: an incremental
+     * compileScala (or compileJava) re-run between two builds overwrites our in-place rewrite
+     * with fresh ORIGINAL bytecode. Before the fix, bridgeTask's input fingerprint matched
+     * what Gradle recorded at the start of the previous run (both = original) and its outputs
+     * (mcdp-bridges/classes + manifest + report) were unchanged, so Gradle skipped bridgeTask
+     * as up-to-date. The jar then packed the un-rewritten mixin alongside the previous run's
+     * bridges — every call site through the rewritten body fell through to the parent loader.
+     *
+     * <p>Fix: {@code outputs.upToDateWhen { false }} on BridgeCodegenTask. This test simulates
+     * the upstream-overwrite condition and asserts the rewritten file persists across two
+     * Gradle invocations.
+     */
+    @Test
+    void bridgeTaskRerunsAfterUpstreamOverwrite(@TempDir Path tmp) throws IOException {
+        Files.writeString(tmp.resolve("settings.gradle.kts"), "rootProject.name = \"rerun_test\"\n");
+        Files.writeString(tmp.resolve("build.gradle.kts"), """
+                plugins {
+                    `java-library`
+                    scala
+                    id("de.lhns.mcdp")
+                }
+                group = "com.example"
+                repositories {
+                    mavenCentral()
+                    maven { url = uri("https://repo.spongepowered.org/repository/maven-public/") }
+                }
+                dependencies {
+                    implementation("org.scala-lang:scala3-library_3:3.3.4")
+                    compileOnly("org.spongepowered:mixin:0.8.5")
+                }
+                mcdepprovider {
+                    lang.set("scala")
+                }
+                """);
+
+        Path mixinSrc = tmp.resolve("src/main/scala/com/example/mixin/MyMixin.java");
+        Files.createDirectories(mixinSrc.getParent());
+        Files.writeString(mixinSrc, """
+                package com.example.mixin;
+                @org.spongepowered.asm.mixin.Mixin(Object.class)
+                public class MyMixin {
+                    public static int handler(int x) { return com.example.modcode.Helper.doubleIt(x) + 1; }
+                }
+                """);
+        Path helperSrc = tmp.resolve("src/main/scala/com/example/modcode/Helper.java");
+        Files.createDirectories(helperSrc.getParent());
+        Files.writeString(helperSrc, """
+                package com.example.modcode;
+                public class Helper {
+                    public static int doubleIt(int x) { return x * 2; }
+                }
+                """);
+
+        // Build 1: clean build, bridgeTask rewrites in place.
+        BuildResult build1 = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpBridges", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(build1.getOutput().contains("BUILD SUCCESSFUL"), build1.getOutput());
+
+        Path mixinClass = tmp.resolve("build/classes/scala/main/com/example/mixin/MyMixin.class");
+        assertTrue(Files.isRegularFile(mixinClass), "mixin class missing after Build 1");
+        long rewrittenSize = Files.size(mixinClass);
+
+        // Stash the original (un-rewritten) bytecode by re-compiling MyMixin.java directly with
+        // javac — this gives us bytes equivalent to what an incremental compileScala would have
+        // produced. We don't shell out; we use Gradle to recompile by deleting the rewritten class
+        // and re-running compileScala, which is exactly what happens in the production scenario.
+        Files.delete(mixinClass);
+        BuildResult recompile = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("compileScala", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(recompile.getOutput().contains("BUILD SUCCESSFUL"), recompile.getOutput());
+        assertTrue(Files.isRegularFile(mixinClass), "compileScala didn't restore the class file");
+        long originalSize = Files.size(mixinClass);
+        // Sanity: the recompiled file is ORIGINAL bytecode, smaller than the rewritten one.
+        assertTrue(originalSize < rewrittenSize,
+                "expected recompile to produce smaller (un-rewritten) class: original="
+                        + originalSize + " rewritten=" + rewrittenSize);
+
+        // Build 2: same task. Pre-fix, bridgeTask is skipped UP-TO-DATE because input fingerprint
+        // (= original bytecode now) matches what Gradle recorded at the start of Build 1, and its
+        // outputs (mcdp-bridges + manifest) are unchanged. Post-fix (upToDateWhen { false }), it
+        // re-runs and re-rewrites the file in place.
+        BuildResult build2 = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpBridges", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(build2.getOutput().contains("BUILD SUCCESSFUL"), build2.getOutput());
+
+        // The fix's signature: bridgeTask should not show as UP-TO-DATE in Build 2.
+        assertFalse(build2.getOutput().contains("> Task :generateMcdpBridges UP-TO-DATE"),
+                "bridgeTask should not be UP-TO-DATE — that's the bug we're guarding against:\n" + build2.getOutput());
+
+        // The rewrite must have re-applied: file size is back to the rewritten size.
+        long rebuiltSize = Files.size(mixinClass);
+        assertEquals(rewrittenSize, rebuiltSize,
+                "mixin class size after Build 2 should match Build 1's rewritten size; "
+                        + "got " + rebuiltSize + " expected " + rewrittenSize
+                        + " — bridgeTask probably skipped and the un-rewritten class shipped.");
+    }
 }
