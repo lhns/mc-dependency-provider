@@ -11,6 +11,8 @@ import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -147,9 +149,12 @@ public final class MixinRewriter {
     /**
      * Emit (or extend) {@code <clinit>} so each LOGIC_* field is initialized on first class
      * use by calling back to {@code McdpProvider.resolveAutoBridgeImpl(mixinFqn, fieldName)}.
-     * Sponge Mixin forbids direct {@code Class.forName} on mixin classes, so we cannot wire
-     * these fields from outside — running the wiring as a side-effect of the JVM's GETSTATIC
-     * resolution is the reliable hook.
+     * Eager fast-path: when sponge merges this {@code <clinit>} into the target's class init,
+     * the populator runs once and every subsequent {@code GETSTATIC LOGIC_*} reads a non-null
+     * field directly. The lazy fallback at each call site (see {@link #emitLogicLoad}) handles
+     * cases where the populator hasn't run yet — the headline example is
+     * {@code @Inject(at=HEAD)} on the target's own {@code <clinit>}, where the merged populator
+     * sits later in the same {@code <clinit>} than the HEAD-injected handler.
      *
      * <p>Idempotent: if {@code <clinit>} already PUTSTATICs a given field (a previous codegen
      * run, or hand-written init), that field's init block is skipped.</p>
@@ -285,10 +290,8 @@ public final class MixinRewriter {
         for (int i = captures.length - 1; i >= 0; i--) {
             replacement.add(new VarInsnNode(captures[i].getOpcode(Opcodes.ISTORE), capLocals[i]));
         }
-        // Push LAMBDA bridge ref (LOGIC field on the container).
-        replacement.add(new FieldInsnNode(
-                Opcodes.GETSTATIC, cn.name, art.logicFieldName,
-                "L" + art.bridgeIfaceInternal + ";"));
+        // Push LAMBDA bridge ref (LAMBDA_* field on the container) with self-init guard.
+        emitLogicLoad(replacement, cn, art.logicFieldName, art.bridgeIfaceInternal);
         // Reload captures.
         for (int i = 0; i < captures.length; i++) {
             replacement.add(new VarInsnNode(captures[i].getOpcode(Opcodes.ILOAD), capLocals[i]));
@@ -371,12 +374,8 @@ public final class MixinRewriter {
         if (!isStatic) {
             replacement.add(new VarInsnNode(Opcodes.ASTORE, receiverLocal));
         }
-        // Push LOGIC field reference.
-        replacement.add(new FieldInsnNode(
-                Opcodes.GETSTATIC,
-                cn.name,
-                logicFieldName(min.owner),
-                "L" + bridgeInternal + ";"));
+        // Push LOGIC bridge ref (with self-init guard).
+        emitLogicLoad(replacement, cn, logicFieldName(min.owner), bridgeInternal);
         // Push receiver (for instance bridges, it's the first bridge-method arg).
         if (!isStatic) {
             replacement.add(new VarInsnNode(Opcodes.ALOAD, receiverLocal));
@@ -411,11 +410,7 @@ public final class MixinRewriter {
         InsnList replacement = new InsnList();
         if (isStatic) {
             // Stack: [...] -> [..., LOGIC] -> [..., result]
-            replacement.add(new FieldInsnNode(
-                    Opcodes.GETSTATIC,
-                    cn.name,
-                    logicFieldName(fin.owner),
-                    "L" + bridgeInternal + ";"));
+            emitLogicLoad(replacement, cn, logicFieldName(fin.owner), bridgeInternal);
             replacement.add(new MethodInsnNode(
                     Opcodes.INVOKEINTERFACE,
                     bridgeInternal,
@@ -426,11 +421,7 @@ public final class MixinRewriter {
             // Stack: [..., receiver] -> [..., LOGIC, receiver] -> [..., result]
             // Need to insert LOGIC under the receiver; ASM SWAP only works on category-1 values
             // and receiver is always one slot, so SWAP is safe here.
-            replacement.add(new FieldInsnNode(
-                    Opcodes.GETSTATIC,
-                    cn.name,
-                    logicFieldName(fin.owner),
-                    "L" + bridgeInternal + ";"));
+            emitLogicLoad(replacement, cn, logicFieldName(fin.owner), bridgeInternal);
             replacement.add(new org.objectweb.asm.tree.InsnNode(Opcodes.SWAP));
             replacement.add(new MethodInsnNode(
                     Opcodes.INVOKEINTERFACE,
@@ -476,9 +467,7 @@ public final class MixinRewriter {
         for (int i = argTypes.length - 1; i >= 0; i--) {
             replacement.add(new VarInsnNode(argTypes[i].getOpcode(Opcodes.ISTORE), argLocals[i]));
         }
-        replacement.add(new FieldInsnNode(
-                Opcodes.GETSTATIC, cn.name, logicFieldName(min.owner),
-                "L" + bridgeInternal + ";"));
+        emitLogicLoad(replacement, cn, logicFieldName(min.owner), bridgeInternal);
         for (int i = 0; i < argTypes.length; i++) {
             replacement.add(new VarInsnNode(argTypes[i].getOpcode(Opcodes.ILOAD), argLocals[i]));
         }
@@ -510,9 +499,7 @@ public final class MixinRewriter {
             int valueLocal = nextFreeLocal(m);
             m.maxLocals = Math.max(m.maxLocals, valueLocal + valueType.getSize());
             replacement.add(new VarInsnNode(valueType.getOpcode(Opcodes.ISTORE), valueLocal));
-            replacement.add(new FieldInsnNode(
-                    Opcodes.GETSTATIC, cn.name, logicFieldName(fin.owner),
-                    "L" + bridgeInternal + ";"));
+            emitLogicLoad(replacement, cn, logicFieldName(fin.owner), bridgeInternal);
             replacement.add(new VarInsnNode(valueType.getOpcode(Opcodes.ILOAD), valueLocal));
         } else {
             // Stack on entry: [..., receiver, value]
@@ -521,9 +508,7 @@ public final class MixinRewriter {
             m.maxLocals = Math.max(m.maxLocals, receiverLocal + 1);
             replacement.add(new VarInsnNode(valueType.getOpcode(Opcodes.ISTORE), valueLocal));
             replacement.add(new VarInsnNode(Opcodes.ASTORE, receiverLocal));
-            replacement.add(new FieldInsnNode(
-                    Opcodes.GETSTATIC, cn.name, logicFieldName(fin.owner),
-                    "L" + bridgeInternal + ";"));
+            emitLogicLoad(replacement, cn, logicFieldName(fin.owner), bridgeInternal);
             replacement.add(new VarInsnNode(Opcodes.ALOAD, receiverLocal));
             replacement.add(new VarInsnNode(valueType.getOpcode(Opcodes.ILOAD), valueLocal));
         }
@@ -544,9 +529,7 @@ public final class MixinRewriter {
                                      String bridgeInternal) {
         InsnList replacement = new InsnList();
         Type t = (Type) ldc.cst;
-        replacement.add(new FieldInsnNode(
-                Opcodes.GETSTATIC, cn.name, logicFieldName(t.getInternalName()),
-                "L" + bridgeInternal + ";"));
+        emitLogicLoad(replacement, cn, logicFieldName(t.getInternalName()), bridgeInternal);
         replacement.add(new MethodInsnNode(
                 Opcodes.INVOKEINTERFACE, bridgeInternal, "_class",
                 "()Ljava/lang/Class;", true));
@@ -567,6 +550,61 @@ public final class MixinRewriter {
         int top = ((m.access & Opcodes.ACC_STATIC) == 0) ? 1 : 0;
         for (Type p : Type.getArgumentTypes(m.desc)) top += p.getSize();
         return top;
+    }
+
+    /**
+     * Append the bytecode for "load LOGIC_* field, with self-init if null" to {@code target}.
+     * Stack effect: pushes one bridge ref ({@code L<bridgeInternal>;}) onto the operand stack.
+     *
+     * <p>Replaces a plain {@code GETSTATIC <mixin>.LOGIC_X}. The plain form assumes the field has
+     * already been populated by the mixin's synthetic {@code <clinit>}, which sponge-mixin merges
+     * into the target's {@code <clinit>}. That works for ordinary mixin handlers (which fire well
+     * after class init), but fails when the mixin uses {@code @Inject(at=HEAD)} on the target's
+     * own {@code <clinit>}: the merged populator runs later in the same {@code <clinit>}, so the
+     * HEAD handler sees a null field. The self-init pattern below makes every read robust to that
+     * ordering — and to any other case where the field happens not to be populated yet (sponge
+     * dropping the merge, an unrelated GETSTATIC firing during early bootstrap, etc).
+     *
+     * <p>Pattern:
+     * <pre>
+     *   GETSTATIC LOGIC
+     *   DUP
+     *   IFNONNULL hot
+     *   POP
+     *   LDC mixinFqn
+     *   LDC fieldName
+     *   INVOKESTATIC McdpProvider.resolveAutoBridgeImpl(String,String)Object
+     *   CHECKCAST Bridge
+     *   DUP
+     *   PUTSTATIC LOGIC
+     * hot:
+     * </pre>
+     *
+     * <p>The cache write at the end is a fast-path for subsequent reads — McdpProvider's own
+     * cache already serves repeated calls from a ConcurrentHashMap, but storing the cast result
+     * locally avoids the static method dispatch + map lookup on the hot path.
+     */
+    private static void emitLogicLoad(InsnList target, ClassNode cn, String fieldName,
+                                      String bridgeInternal) {
+        String mixinDotted = BridgePolicy.toDotted(cn.name);
+        String bridgeDesc = "L" + bridgeInternal + ";";
+        LabelNode hot = new LabelNode();
+        target.add(new FieldInsnNode(Opcodes.GETSTATIC, cn.name, fieldName, bridgeDesc));
+        target.add(new InsnNode(Opcodes.DUP));
+        target.add(new JumpInsnNode(Opcodes.IFNONNULL, hot));
+        target.add(new InsnNode(Opcodes.POP));
+        target.add(new LdcInsnNode(mixinDotted));
+        target.add(new LdcInsnNode(fieldName));
+        target.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "de/lhns/mcdp/api/McdpProvider",
+                "resolveAutoBridgeImpl",
+                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                false));
+        target.add(new TypeInsnNode(Opcodes.CHECKCAST, bridgeInternal));
+        target.add(new InsnNode(Opcodes.DUP));
+        target.add(new FieldInsnNode(Opcodes.PUTSTATIC, cn.name, fieldName, bridgeDesc));
+        target.add(hot);
     }
 
     public static String logicFieldName(String targetInternalName) {
