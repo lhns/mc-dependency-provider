@@ -20,18 +20,21 @@ subprojects {
 
     // Toolchain JDK is 21 across the board (build runs on Java 21), but the bytecode
     // *target* differs per subproject so older Minecraft bands can consume the same
-    // shared library code on their lower JVMs. core/ and deps-lib/ target Java 17 — the
-    // lowest LTS Minecraft band (1.18 — 1.20.4) we want to support. Adapter subprojects
-    // (fabric/, neoforge/, multi/) target Java 21 because the only band currently shipped
-    // is MC 1.21.x (Java 21). Multi-band fan-out (additional fabric-1.20/, neoforge-1.20.6/
-    // etc. subprojects) will pick their own targetCompatibility per band.
+    // shared library code on their lower JVMs. core/ and deps-lib/ target Java 16 — the
+    // lowest LTS-ish Minecraft band (1.17, which ships with Java 16) we want to support.
+    // Java-17-only language features (sealed types, pattern-matching enhancements) aren't
+    // used in core/ or deps-lib/; records, switch expressions, StackWalker, and var are
+    // all stable at Java 16 or earlier. Adapter subprojects (fabric/, neoforge/, multi/)
+    // keep Java 21 because the currently-shipped band is MC 1.21.x. Multi-band fan-out
+    // (additional fabric-1.20/, neoforge-1.20.6/ etc. subprojects) picks its own target
+    // per band.
     extensions.configure<JavaPluginExtension> {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
     }
 
-    val javaTarget = if (name in setOf("core", "deps-lib")) 17 else 21
+    val javaTarget = if (name in setOf("core", "deps-lib")) 16 else 21
 
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
