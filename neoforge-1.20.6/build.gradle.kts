@@ -21,18 +21,11 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-// NeoForge 20.6.x SPI (8.0.x) diverges materially from 21.x (9.0.x) — most notably:
-//   - IModInfo lacks getLoader() (used in 21.x to filter our mods from the LoadingModList)
-//   - ModFileScanData lacks getAnnotatedBy(Class<?>, ElementType) (a 9.0.x convenience)
-// Cloning the 21.x source doesn't compile against 8.0.x; this band needs its own adapter
-// implementation when it gets focused attention. Source dir is empty for now; the
-// shadowJar bundles only core/+deps-lib so the artifact resolves but is non-functional.
-sourceSets {
-    main {
-        java.setSrcDirs(listOf<Any>())
-        resources.setSrcDirs(listOf<Any>())
-    }
-}
+// NeoForge 20.6.x SPI (8.0.x) — adapter ported from neoforge/ (21.x) with two
+// 8.0.x-specific tweaks documented inline in McdpLanguageLoader.java:
+//   1. info.getLoader().name() (9.0.x-only) → walk getOwningFile().getFile().getLoaders()
+//   2. ModFileScanData.getAnnotatedBy() (9.0.x-only) → filter getAnnotations() by descriptor
+// The default sourceSet config picks up neoforge-1.20.6/src/main/java/.
 
 val bundle by configurations.creating {
     isCanBeConsumed = false
