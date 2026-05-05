@@ -60,6 +60,56 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 - NeoForge adapters can't share source today, so per-band feature work doubles. Future SPI re-stabilization could let us merge `:neoforge-1.20.6` and `:neoforge-1.21` source trees if their surfaces re-converge.
 - Test-mod fixtures multiply: each band's CI smoke runs through Loom (Fabric), MDG (NeoForge), or ForgeGradle. Six bands × two-or-three loaders = up to 18 CI cells.
 
+## Operational findings (added during runtime verification)
+
+These are SPI-port details that surfaced when actually booting the per-band test mods. Each is a per-band quirk worth recording so future bands can apply (or skip) the workaround knowingly.
+
+### `ModContainer.contextExtension` is required pre-21.x
+
+NeoForge fancymodloader 3.0.x (MC 1.20.6) and Forge fmlcore 4.0/7.x (MC 1.18, 1.20) both expose `protected Supplier<?> contextExtension` on `ModContainer`. FML's `ModLoadingContext.setActiveContainer(...)` calls `container.contextExtension.get()` unconditionally during lifecycle transitions. Vanilla `FMLModContainer` initializes it from a package-private `FMLJavaModLoadingContext`; subclasses outside that package can't reach the same constructor. `FMLModContainer` discovers it has a non-null value because of how it's wired in its own constructor — there is no public init helper.
+
+NeoForge 4.0.x (MC 1.21) **dropped the field entirely**. So `McdpModContainer` worked unchanged on 1.21 but NPE'd on every earlier band the moment FML ran the lifecycle.
+
+**Decision.** On bands that have the field, set `this.contextExtension = () -> this;` in the McdpModContainer constructor. The supplier value is never inspected for our use case — FML only uses it to populate `ModLoadingContext`, which entry classes read via `FMLJavaModLoadingContext.get()`. Mods that call that helper won't see a real context, but mods that don't (which is the common case for mcdp-loaded mods — they receive their `ModContainer` directly via the constructor bag, ADR-0017) boot fine. Applied in `forge-1.18/.../McdpModContainer.java`, `forge-1.20/.../McdpModContainer.java`, `neoforge-1.20.6/.../McdpModContainer.java`. Skipped on the 1.21 canonical and on `neoforge-26.1` (same SPI line as 1.21, no field).
+
+### `FMLModType` per-band: LANGPROVIDER vs LIBRARY
+
+The aggregator jar's MANIFEST attribute that tells FML how to route the jar:
+
+| Band aggregator | `FMLModType` | Why |
+|---|---|---|
+| `mcdp-1.17` | *(unset)* | forge-1.17 adapter is still a stub; setting LANGPROVIDER would make FML try to load a service that throws. |
+| `mcdp-1.18` | `LANGPROVIDER` | Forge 4.0.x recognizes the explicit hint; LIBRARY routing pre-dates the cpw module-layer reshuffle. |
+| `mcdp-1.20` | `LANGPROVIDER` | Same as 1.18. |
+| `mcdp-1.20.6` | `LIBRARY` | NeoForge 8.0.x uses `cpw.mods.securejarhandler`'s PLUGIN module layer — LIBRARY routes the jar there, where service-load picks up `IModLanguageLoader` automatically. |
+| `mcdp-1.21` | `LIBRARY` | Same as 1.20.6 (NeoForge 4.0.x fancymodloader). |
+| `mcdp-26.1` | `LIBRARY` | Same SPI line as 1.21. |
+
+Getting the type wrong is silent: FML won't surface an error, the language provider just never gets discovered, and consumer mods fail with `Missing language mcdepprovider`. Recorded here so future band additions know to pick before runtime tells them.
+
+### Per-band `fabric.mod.json` overrides
+
+ADR-0023 above states "Fabric bands share source via `srcDirs(rootProject.file("fabric/src/main/java"))`". That share covers Java source only. Each Fabric band keeps its **own** `src/main/resources/fabric.mod.json` because the `depends.fabricloader` and `depends.java` floors diverge per band:
+
+```
+1.17    fabricloader >=0.14, java >=16
+1.18    fabricloader >=0.14, java >=17
+1.20    fabricloader >=0.15, java >=17
+1.20.6  fabricloader >=0.15, java >=21
+1.21    fabricloader >=0.16, java >=21    (canonical fabric/, unchanged)
+26.1    fabricloader >=0.16, java >=21
+```
+
+The shared `fabric/src/main/resources/fabric.mod.json` was originally consumed by every band via `resources.setSrcDirs(listOf(rootProject.file(...)))`. Its hard-pinned `fabricloader >=0.16.0` / `java >=21` made every pre-1.20.6 band fail at mod resolution: "Replace mod 'Fabric Loader' (fabricloader) 0.15.11 with version 0.16.0 or later". Per-band overrides fix it cleanly. This is the only file that's per-band rather than shared inside the Fabric source-set.
+
+### MDG ↔ NeoForge version pairing
+
+`net.neoforged:neoforge:20.6.119` (the originally-pinned 1.20.6 NeoForge) does not advertise the `neoforge-dependencies` capability that ModDevGradle 2.x looks for at variant resolution. Result: `Could not resolve net.neoforged:neoforge:20.6.119 — Unable to find a variant providing the requested capability 'net.neoforged:neoforge-dependencies'`. The capability landed in NeoForge 20.6.~135+; pinning `20.6.139` + MDG `2.0.141` resolves it. The lesson is more general: NeoForge patch numbers are not interchangeable when MDG's variant schema bumps. Pin MDG and NeoForge together, not independently.
+
+### CI coverage for these findings
+
+`mc-smoke.yml` adds a `runserver-smoke-bands` job (nightly only) that boots `fabric-example-1.17`, `1.18`, `1.20`, `1.20.6`, `neoforge-example-1.20.6`, and `forge-example-1.20`, asserting the `[mcdp-smoke] mod=… boot ok` marker. The 1.21 cell stays in the existing `runserver-smoke` (push + nightly) for fast PR signal. 26.1 and Forge 1.17/1.18 are excluded for the reasons above.
+
 ## Cross-references
 
 - ADR-0001 — per-mod URLClassLoaders (the underlying isolation model, version-agnostic)
