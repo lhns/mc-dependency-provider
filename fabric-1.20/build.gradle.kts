@@ -23,7 +23,7 @@ tasks.withType<JavaCompile>().configureEach {
 sourceSets {
     main {
         java.setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))
-        resources.setSrcDirs(listOf(rootProject.file("fabric/src/main/resources")))
+        resources.setSrcDirs(listOf("src/main/resources"))
     }
 }
 

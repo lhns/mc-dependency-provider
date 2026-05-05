@@ -9,7 +9,7 @@
     "main": [{ "adapter": "mcdepprovider", "value": "com.example.fabric261.FabricExampleMod" }]
   },
   "depends": {
-    "fabric-loader": ">=0.16",
+    "fabricloader": ">=0.16",
     "mcdepprovider": "*",
     "minecraft": "~26.1"
   }

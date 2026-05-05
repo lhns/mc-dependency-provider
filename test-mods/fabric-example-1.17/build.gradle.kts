@@ -19,7 +19,7 @@ java { toolchain { languageVersion.set(JavaLanguageVersion.of(16)) } }
 
 val minecraftVersion = "1.17.1"
 val yarnMappings = "1.17.1+build.65"
-val loaderVersion = "0.12.12"
+val loaderVersion = "0.14.21"
 
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
