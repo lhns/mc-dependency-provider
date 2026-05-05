@@ -40,4 +40,22 @@ include("forge-1.17")
 include("forge-1.18")
 include("forge-1.20")
 
+// Fabric per-band subprojects — share source with fabric/ (the 1.21 band) via srcDirs;
+// only the bytecode target differs (1.17 = Java 16; 1.18, 1.20 = Java 17). The Fabric
+// LanguageAdapter + PreLaunchEntrypoint surface is stable across fabric-loader 0.14+.
+include("fabric-1.17")
+include("fabric-1.18")
+include("fabric-1.20")
+
+// Multi-loader aggregators per band — bundle the band's fabric-X + (forge-X | neoforge-X)
+// shadowJars into one runtime artifact published as `de.lhns.mcdp:mcdp-X`. Bands without
+// NeoForge (≤ 1.20.4) bundle Fabric + Forge. NeoForge bands (1.20.6+) bundle Fabric +
+// NeoForge (Forge is forked off as NeoForge starting 1.20.5).
+include("mcdp-1.17")
+project(":mcdp-1.17").projectDir = file("multi-1.17")
+include("mcdp-1.18")
+project(":mcdp-1.18").projectDir = file("multi-1.18")
+include("mcdp-1.20")
+project(":mcdp-1.20").projectDir = file("multi-1.20")
+
 include("cli")
