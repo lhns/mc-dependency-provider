@@ -55,6 +55,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 
 **Negative.**
 
+- **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
 - Eight subprojects per band (fabric-X, neoforge-X or forge-X, multi-X) × six bands = a lot of `build.gradle.kts` files. Maintenance overhead per refactor.
 - NeoForge adapters can't share source today, so per-band feature work doubles. Future SPI re-stabilization could let us merge `:neoforge-1.20.6` and `:neoforge-1.21` source trees if their surfaces re-converge.
 - Test-mod fixtures multiply: each band's CI smoke runs through Loom (Fabric), MDG (NeoForge), or ForgeGradle. Six bands × two-or-three loaders = up to 18 CI cells.

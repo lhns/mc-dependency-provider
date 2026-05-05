@@ -2,7 +2,7 @@ plugins {
     `java-library`
     // Loom version pinned for MC 26.1.x. Latest Loom (~1.10/2.x) handles the new
     // calendar-versioning scheme. Adjust if a more current Loom release is published.
-    id("fabric-loom") version "1.10-SNAPSHOT"
+    id("fabric-loom") version "1.9-SNAPSHOT"
     id("de.lhns.mcdp")
 }
 

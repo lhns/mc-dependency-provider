@@ -1,7 +1,7 @@
 plugins {
     `java-library`
     // Loom 1.4.x is the recommended pin for MC 1.20.1 (Java 17 era).
-    id("fabric-loom") version "1.4-SNAPSHOT"
+    id("fabric-loom") version "1.9-SNAPSHOT"
     id("de.lhns.mcdp")
 }
 

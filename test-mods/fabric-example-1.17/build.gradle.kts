@@ -2,7 +2,7 @@ plugins {
     `java-library`
     // Loom 0.10.x is the recommended pin for MC 1.17.x (Java 16 era).
     // Loom 0.10 may require Gradle 7.x — set the wrapper accordingly per subproject.
-    id("fabric-loom") version "0.10-SNAPSHOT"
+    id("fabric-loom") version "1.9-SNAPSHOT"
     id("de.lhns.mcdp")
 }
 

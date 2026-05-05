@@ -1,7 +1,7 @@
 plugins {
     `java-library`
     // Loom 1.0.x for MC 1.18.2 (Java 17 era).
-    id("fabric-loom") version "1.0-SNAPSHOT"
+    id("fabric-loom") version "1.9-SNAPSHOT"
     id("de.lhns.mcdp")
 }
 
