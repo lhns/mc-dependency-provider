@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "fabric_example_261",
+  "version": "${version}",
+  "name": "mcdp Fabric 26.1 example",
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [{ "adapter": "mcdepprovider", "value": "com.example.fabric261.FabricExampleMod" }]
+  },
+  "depends": {
+    "fabric-loader": ">=0.16",
+    "mcdepprovider": "*",
+    "minecraft": "~26.1"
+  }
+}
