@@ -4,7 +4,7 @@ If your mod's `build.gradle(.kts)` configures `mixinBridges { ... }`, or if your
 
 ## What changed and why
 
-mcdp's bridge codegen used to be mixin-specific. ADR-0021 generalized it to seed on any class-level annotation (mixins, NeoForge `@EventBusSubscriber`, custom registry annotations), so the "mixin" prefix in user-facing names became misleading. The rename keeps everything consistent before v0.1.0 ships.
+mcdp's bridge codegen used to be mixin-specific. ADR-0021 generalized it to seed on any class-level annotation (mixins, NeoForge `@EventBusSubscriber`, custom registry annotations), so the "mixin" prefix in user-facing names became misleading. The rename landed before v0.1.0 shipped, so anyone consuming a published mcdp release already sees the post-rename names — this doc is for projects that pinned a pre-rename `0.1.0-SNAPSHOT`.
 
 ## Side-by-side
 

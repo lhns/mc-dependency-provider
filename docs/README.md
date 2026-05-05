@@ -41,9 +41,13 @@ mcdepprovider/
     ModClassLoader / LoaderCoordinator / EntrypointAdapter + Java/Scala/Kotlin impls
   gradle-plugin/                    # build-time helper for mod authors
     Vendors deps-lib. Thin wrapper that reads Gradle's resolved runtimeClasspath
-    and emits a manifest. Future sbt/Maven/CLI siblings follow the same pattern.
+    and emits a manifest. Future sbt/Maven siblings follow the same pattern.
   fabric/                           # Fabric LanguageAdapter + PreLaunchEntrypoint
   neoforge/                         # NeoForge IModLanguageLoader
+  multi/                            # :mcdp aggregator — bundles fabric/ + neoforge/
+                                    # shadowJars into one unified runtime jar (ADR-0016)
+  cli/                              # mcdepprovider-prefetch — offline cache pre-population
+                                    # for modpack authors shipping bundles
 ```
 
 Target footprint: provider jar under 300 KB. The heavy lifting (Maven resolution via Aether) is in the Gradle plugin, never in the runtime.
@@ -107,7 +111,7 @@ The adapter is the only language-specific code. Everything else is shared. See [
 ## Known limitations
 
 - **Mixin usable via bridge pattern.** Mixin classes must be Java (or avoid direct Scala references) and call into Scala/Kotlin impls via an interface; the impl lives in the per-mod classloader. Shared interfaces go under a manifest-declared `shared_packages` prefix so they're the same `Class` across loaders. See [ADR-0008](adr/0008-mixin-via-bridge-pattern.md).
-- **First launch requires network.** The provider downloads per the manifest. A companion `mcdepprovider-prefetch` CLI (future) pre-populates the cache from a mod set, for modpack authors shipping offline bundles.
+- **First launch requires network.** The provider downloads per the manifest. The companion [`mcdepprovider-prefetch`](../cli/) CLI pre-populates the cache from a mod set, for modpack authors shipping offline bundles.
 - **Scala stdlib duplication.** If N mods pin slightly different stdlib versions (`3.5.2` vs `3.5.3`), each gets its own copy. If they pin the same SHA, the classloader is coalesced (see [ADR-0006](adr/0006-sha-keyed-classloader-coalescing.md)).
 - **Cross-mod APIs passing Scala types.** Mod A's `List[String]` and Mod B's `List[String]` are different `Class` objects if each mod has its own Scala stdlib. Cross-mod APIs should use Java-native types or explicit serialization.
 
@@ -117,12 +121,4 @@ See [ADR-0009](adr/0009-reject-alternatives.md) for the full rejection record. S
 
 ## ADR index
 
-- [ADR-0001](adr/0001-per-mod-urlclassloaders.md) — Per-mod URLClassLoaders for dependency isolation
-- [ADR-0002](adr/0002-avoid-jpms-via-unnamed-modules.md) — Avoid JPMS keyword-package validation via unnamed modules
-- [ADR-0003](adr/0003-build-time-dep-resolution.md) — Build-time dependency resolution with SHA-pinned manifests
-- [ADR-0004](adr/0004-shared-deps-lib.md) — Shared `deps-lib` library, build-tool-agnostic
-- [ADR-0005](adr/0005-pluggable-entrypoint-adapter.md) — Pluggable `EntrypointAdapter` for Java, Scala, Kotlin
-- [ADR-0006](adr/0006-sha-keyed-classloader-coalescing.md) — SHA-keyed classloader coalescing as the only optimization
-- [ADR-0007](adr/0007-dev-mode-parity.md) — Dev-mode runs through the production dep-loading path
-- [ADR-0008](adr/0008-mixin-via-bridge-pattern.md) — Mixin supported via a Java-interface bridge pattern
-- [ADR-0009](adr/0009-reject-alternatives.md) — Rejected alternatives record
+The full canonical list (with status notes for supersessions and refinements) lives in [`adr/README.md`](adr/README.md). Decisions are added there as new ADRs land; this document doesn't mirror them.
