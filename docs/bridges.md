@@ -84,6 +84,107 @@ When the scanner sees one of these opcodes, the build emits a warning that point
 1. Add the package to `mcdepprovider.sharedPackages` so `T` is loaded by the game-layer loader (parent-first delegation). Suitable when `T` has no transitive mod-private dependencies that would also need to follow.
 2. Restructure the mixin so the cast/check/array-construction lives in mod code, accessed through a bridge method that takes/returns a non-mod-private type (e.g., `Object` or a shared interface).
 
+## Sharing the right packages — the two footguns
+
+`sharedPackages` granularity is load-bearing. Both directions misfire. mcdp's `:validateSharedPackages` task (wired into `:check`) catches both at build time — see ADR-0024 for the rationale.
+
+### Footgun A — sharing too coarse
+
+Symptom at runtime: `NoClassDefFoundError: scala/Option` (or similar stdlib type) inside what looks like ordinary mod code. Cause: a class with stdlib references is in a `sharedPackages` entry, so the per-mod loader delegates parent-first and the platform classloader (which has no scala/kotlin/etc. on its URLs) tries to load it.
+
+Failing case:
+
+```kotlin
+mcdepprovider {
+    sharedPackages.add("com.example.mod.block.")  // too coarse
+}
+```
+
+```scala
+package com.example.mod.block
+
+trait MovableBlockEntityProvider { def isMovable: Boolean }   // intended target
+
+class CellBlock extends Block {                                // collateral damage
+  val variants: List[String] = scala.collection.immutable.List("a", "b")
+}
+```
+
+`CellBlock` ends up on the platform classloader where `scala.collection.immutable.List` is invisible. Validator A catches this:
+
+```
+mcdepprovider: shared-package class com.example.mod.block.CellBlock references types
+not visible to the platform classloader:
+  - scala.collection.immutable.List
+Sharing this class moves it onto the platform/parent classloader, where the mod's
+per-mod ModClassLoader URLs are not reachable. ...
+Fix: narrow sharedPackages to a sibling package containing only the bridge type, or
+move the offending class out of the shared package.
+```
+
+Idiomatic fix: extract the bridge type into its own package.
+
+```scala
+package com.example.mod.iface
+trait MovableBlockEntityProvider { def isMovable: Boolean }
+```
+
+```kotlin
+mcdepprovider {
+    sharedPackages.add("com.example.mod.iface.")  // narrow
+}
+```
+
+`CellBlock` stays in `…block` on the per-mod loader with full Scala stdlib access; the bridge type alone is shared.
+
+### Footgun B — sharing too narrow
+
+Symptom at runtime: `ClassCastException: X cannot be cast to X` where both class names are identical. Cause: mod code casts to a Mixin-injected accessor whose package isn't in `sharedPackages`, so the cast site (per-mod loader) and the Mixin-merged target (game-layer loader) resolve to two different `Class` objects.
+
+Failing case:
+
+```scala
+package com.example.mod.util
+import com.example.mod.mixin.BlockEntityAccessor
+
+object WorldUtil {
+  def setPos(entity: BlockEntity, pos: BlockPos): Unit = {
+    entity.asInstanceOf[BlockEntityAccessor].setWorldPosition(pos.immutable)
+  }
+}
+```
+
+with no `sharedPackages.add('com.example.mod.mixin.')`. Validator B catches this:
+
+```
+mcdepprovider: com.example.mod.util.WorldUtil references cross-loader-injected type(s)
+whose package is not in sharedPackages:
+  - com.example.mod.mixin.BlockEntityAccessor
+
+At runtime, com.example.mod.util.WorldUtil's per-mod ModClassLoader and the
+Mixin-merged accessor on the game-layer loader will resolve to two different
+Class objects with the same name, producing ClassCastException at the cast site.
+
+Fix: in build.gradle's mcdepprovider {} block, add
+  sharedPackages.add('com.example.mod.mixin.')
+```
+
+This pattern is mcdp's `CHECKCAST`/`INSTANCEOF` rewrite limit (above) seen from the *other side*: rather than the mixin body referencing mod-private types, mod code references mixin-defined types. Same fix in both directions: share the affected package.
+
+### Customizing cross-loader annotation detection
+
+By default, validator B treats only `@org.spongepowered.asm.mixin.Mixin` as a cross-loader marker. Users with custom code-generation frameworks (Architectury `@ExpectPlatform`, in-house annotation processors that merge code into other classloaders) can extend the list:
+
+```kotlin
+mcdepprovider {
+    bridges {
+        crossLoaderAnnotations.add("com.example.MyAnnotation")
+    }
+}
+```
+
+Distinct from `bridges.bridgedAnnotations` (which seeds bridge codegen — `@EventBusSubscriber` belongs there but NOT in `crossLoaderAnnotations`, since NeoForge's event bus invokes static handlers without merging the class into another loader).
+
 ## Track 2 (advanced): hand-written bridge
 
 For users who want explicit control (no codegen, no bytecode rewriting): keep the original `@McdpMixin` pattern from ADR-0008. Disable codegen with one line and write the interface, impl, and trampolines yourself.
