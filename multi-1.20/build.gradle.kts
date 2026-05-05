@@ -41,7 +41,8 @@ tasks.named<ShadowJar>("shadowJar") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes(
-            "Automatic-Module-Name" to "mcdepprovider"
+            "Automatic-Module-Name" to "mcdepprovider",
+            "FMLModType" to "LANGPROVIDER"
         )
     }
 }

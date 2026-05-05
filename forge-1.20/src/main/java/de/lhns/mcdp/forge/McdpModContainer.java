@@ -18,7 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Forge 1.18 {@code ModContainer} subclass for mcdp-loaded mods. Constructed by
+ * Forge 1.20 {@code ModContainer} subclass for mcdp-loaded mods. Constructed by
  * {@link McdpLanguageProvider.McdpModLanguageLoader#loadMod} once per mod that declares
  * {@code modLoader = "mcdepprovider"} in its {@code mods.toml}.
  *
@@ -29,7 +29,7 @@ import java.util.List;
  *
  * <p><b>Status: not yet runtime-verified.</b> Compiles green; first runServer pass against
  * the {@code forge-example-1.18} test mod will surface any API mismatches between this
- * code's expectations and Forge 1.18's actual behavior.
+ * code's expectations and Forge 1.20.s actual behavior.
  */
 public final class McdpModContainer extends ModContainer {
 
@@ -50,7 +50,7 @@ public final class McdpModContainer extends ModContainer {
         // ModLoadingContext.setActiveContainer.get()s during lifecycle transitions.
         // FMLModContainer wires it to FMLJavaModLoadingContext; that ctor is package-
         // private so we use a non-null sentinel — entry classes calling
-        // FMLJavaModLoadingContext.get() won't work through mcdp on Forge 1.18, but
+        // FMLJavaModLoadingContext.get() won't work through mcdp on Forge 1.20, but
         // mods that don't call it boot fine.
         this.contextExtension = () -> this;
         this.entryFqn = entryFqn;

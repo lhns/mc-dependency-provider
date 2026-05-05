@@ -27,8 +27,13 @@ dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
-    // 1.20 SPI surface only — fmlcore not pulled until per-band adapter implementation lands.
+    // Forge SPI 7.x — Forge 1.20.x.
     compileOnly(libs.forge.spi.mc120)
+    // fmlcore for Forge 1.20.1 — supplies net.minecraftforge.fml.ModContainer + lifecycle.
+    compileOnly(libs.forge.fmlcore.mc120)
+    compileOnly("net.minecraftforge:eventbus:6.0.5")
+    compileOnly(libs.asm)
+    compileOnly("org.apache.maven:maven-artifact:3.8.5")
 
     bundle(project(":core"))
     bundle(project(":deps-lib"))
@@ -36,6 +41,7 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testCompileOnly(libs.forge.spi.mc120)
+    testCompileOnly(libs.forge.fmlcore.mc120)
 }
 
 tasks.named<Jar>("jar") {
