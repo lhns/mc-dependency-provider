@@ -1,7 +1,7 @@
 plugins {
     `java-library`
     // ModDevGradle 2.0.x supports NeoForge 20.6.x.
-    id("net.neoforged.moddev") version "2.0.78"
+    id("net.neoforged.moddev") version "2.0.141"
     id("de.lhns.mcdp")
 }
 
@@ -17,8 +17,8 @@ version = "0.1.0"
 java { toolchain { languageVersion.set(JavaLanguageVersion.of(21)) } }
 
 neoForge {
-    // NeoForge 20.6.x for MC 1.20.6.
-    version = "20.6.119"
+    // NeoForge 20.6.x for MC 1.20.6 (latest patch in the 20.6 line).
+    version = "20.6.139"
 
     runs {
         create("server") { server() }

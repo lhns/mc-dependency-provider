@@ -47,6 +47,13 @@ public final class McdpModContainer extends ModContainer {
         this.entryClass = entryClass;
         this.lang = lang;
         this.scanResults = scanResults;
+        // NeoForge 20.6.x's ModContainer requires contextExtension to be non-null; FML's
+        // parallel mod construction calls container.contextExtension.get() unconditionally.
+        // 21.x dropped the field entirely. We don't expose a real ModLoadingContext (the
+        // FMLJavaModLoadingContext ctor is package-private), so this is a non-null
+        // sentinel — entry classes that call FMLJavaModLoadingContext.get() won't work
+        // through mcdp on 20.6, but mods that don't call it boot fine.
+        this.contextExtension = () -> this;
     }
 
     @Override

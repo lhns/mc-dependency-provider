@@ -9,6 +9,7 @@ neoforge-spi = "9.0.2"            # NeoForge 21.x (MC 1.21.x)
 neoforge-spi-mc1206 = "8.0.4"     # NeoForge 20.6.x (MC 1.20.6)
 neoforge-spi-mc261 = "9.0.2"      # NeoForge 26.1.x (MC 26.1) — same SPI line as 21.x for now
 neoforge-fml-loader = "4.0.42"
+neoforge-fml-loader-mc1206 = "3.0.45"   # NeoForge 20.6.x ships FML loader 3.0.x
 neoforge-bus = "8.0.5"
 # Forge 1.18.2 — forgespi 4.0.x is the SPI surface (IModLanguageProvider,
 # ModFileScanData, IModInfo, etc.). Pinned to 4.0.11 (latest 4.0.x at time of writing).
@@ -35,6 +36,7 @@ neoforge-spi = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-s
 neoforge-spi-mc1206 = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi-mc1206" }
 neoforge-spi-mc261 = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi-mc261" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
+neoforge-fml-loader-mc1206 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc1206" }
 neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
 forge-spi-mc117 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc117" }
 forge-spi-mc118 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc118" }

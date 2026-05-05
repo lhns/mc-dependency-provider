@@ -40,7 +40,7 @@ dependencies {
     // LoadingModList, etc.). Pin to a 20.6.x-compatible fancymodloader version when 20.6.x
     // adapter implementation actually iterates against runServer.
     compileOnly(libs.neoforge.spi.mc1206)
-    compileOnly(libs.neoforge.fml.loader)   // TODO: pin a 20.6-compatible FML loader version
+    compileOnly(libs.neoforge.fml.loader.mc1206)
     compileOnly(libs.neoforge.bus)
 
     bundle(project(":core"))
