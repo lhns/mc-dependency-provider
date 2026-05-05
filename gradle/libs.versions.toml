@@ -15,6 +15,9 @@ neoforge-bus = "8.0.5"
 forge-spi-mc117 = "3.2.3"
 forge-spi-mc118 = "4.0.11"
 forge-spi-mc120 = "7.1.6"
+forge-fmlcore-mc117 = "1.17.1-37.1.2"
+forge-fmlcore-mc118 = "1.18.2-40.3.12"
+forge-fmlcore-mc120 = "1.20.1-47.4.20"
 asm = "9.7.1"
 vanniktech-maven-publish = "0.32.0"
 
@@ -36,6 +39,9 @@ neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
 forge-spi-mc117 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc117" }
 forge-spi-mc118 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc118" }
 forge-spi-mc120 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc120" }
+forge-fmlcore-mc117 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc117" }
+forge-fmlcore-mc118 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc118" }
+forge-fmlcore-mc120 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc120" }
 
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
