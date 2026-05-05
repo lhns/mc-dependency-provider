@@ -30,4 +30,9 @@ include("neoforge-1.21")
 project(":neoforge-1.21").projectDir = file("neoforge")
 include("mcdp-1.21")
 project(":mcdp-1.21").projectDir = file("multi")
+
+// Forge 1.18 — scaffold (Java 17 target, forgespi 4.0.x). Adapter body not yet
+// implemented; see forge-1.18/src/.../McdpLanguageProvider.java.
+include("forge-1.18")
+
 include("cli")
