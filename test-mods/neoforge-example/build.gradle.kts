@@ -44,7 +44,7 @@ dependencies {
     // jar manifest. The `fabric.mod.json` that ships in the same jar is invisible
     // to FML — it doesn't scan that path. (`additionalRuntimeClasspath` is for
     // non-mod libs FML would otherwise mis-scan — not for actual mod jars.)
-    implementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcdepImplementation: opt-in bucket served through the per-mod ModClassLoader.

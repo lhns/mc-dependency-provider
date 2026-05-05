@@ -48,7 +48,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
-    archiveBaseName.set("mcdp-neoforge")
+    archiveBaseName.set("mcdp-neoforge-1.21")
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

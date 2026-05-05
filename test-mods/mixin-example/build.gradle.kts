@@ -30,7 +30,7 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
     // The unified mcdpprovider jar — composite-substituted to :mcdp.
-    modImplementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
 
     // One representative mcdep so the manifest pipeline isn't a no-op. The Scala stdlib
     // anchors the per-mod loader (the Scala entrypoint adapter needs it at runtime).

@@ -37,7 +37,7 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
     // The unified mcdpprovider jar (ADR-0016). Composite-substituted to :dist.
-    modImplementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
 
     mcdepImplementation("org.scala-lang:scala3-library_3:3.5.2")
     // Deliberately different cats version from fabric-example so the two mods' cats

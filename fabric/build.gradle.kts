@@ -42,7 +42,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
-    archiveBaseName.set("mcdp-fabric")
+    archiveBaseName.set("mcdp-fabric-1.21")
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

@@ -4,7 +4,7 @@ A JVM-language mod provider for **Fabric** and **NeoForge** (Minecraft 1.21.1+, 
 
 First-class support for **Java, Scala, Kotlin** — one provider, one pipeline, pluggable entry points.
 
-**Status:** v0.1.2 published to Maven Central (`de.lhns.mcdp:mcdp` runtime jar + `de.lhns.mcdp:gradle-plugin`). Fabric and NeoForge in-game smokes are green on 1.21.1; mixin-bridge codegen verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
+**Status:** v0.1.2 published to Maven Central (`de.lhns.mcdp:mcdp` runtime jar + `de.lhns.mcdp:gradle-plugin`); the next release publishes per-MC-band as `de.lhns.mcdp:mcdp-1.21` (and siblings `mcdp-1.20.6`, `mcdp-1.20`, `mcdp-1.18`, `mcdp-1.17`, `mcdp-26.1` as bands land). Fabric and NeoForge in-game smokes are green on 1.21.1; mixin-bridge codegen verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
 
 ## Why
 
@@ -77,8 +77,10 @@ core/                ModClassLoader, LoaderCoordinator, EntrypointAdapter + impl
 gradle-plugin/       manifest generation, dev-cache pre-warm, bridge codegen, run-task classpath patch
 fabric/              LanguageAdapter + PreLaunchEntrypoint
 neoforge/            IModLanguageLoader
-multi/               :mcdp aggregator — bundles fabric/ + neoforge/ shadowJars into one
-                     unified runtime jar published as de.lhns.mcdp:mcdp (ADR-0016)
+multi/               :mcdp-1.21 aggregator — bundles fabric/ + neoforge/ shadowJars into
+                     one unified runtime jar published as de.lhns.mcdp:mcdp-1.21 (ADR-0016).
+                     Each per-MC-band aggregator lives in a sibling directory named after
+                     the band; only the 1.21 band is fully implemented at the time of writing.
 cli/                 mcdepprovider-prefetch — offline cache pre-population for modpack authors
 test-mods/           real-world test projects exercising the full stack via composite build
 docs/                end-to-end "how it works" walkthrough + ADRs (decision history)

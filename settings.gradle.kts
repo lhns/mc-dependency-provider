@@ -20,11 +20,14 @@ dependencyResolutionManagement {
 include("deps-lib")
 include("core")
 include("gradle-plugin")
-include("fabric")
-include("neoforge")
-include("mcdp")
-// Project path stays `:mcdp` so composite-build auto-substitution maps `de.lhns.mcdp:mcdp:VERSION`
-// to it (the project name must match the artifactId). On disk the merged-jar module lives under
-// `multi/` to describe its purpose (multi-loader bundle of fabric+neoforge).
-project(":mcdp").projectDir = file("multi")
+// Per-MC-band adapter subprojects. The project name encodes the band (e.g. `:fabric-1.21`)
+// because the composite-build auto-substitution maps `de.lhns.mcdp:<artifactId>:VERSION` to
+// the project whose name matches `<artifactId>`. Each band publishes as `mcdp-<band>` so
+// consumers pin the band they target.
+include("fabric-1.21")
+project(":fabric-1.21").projectDir = file("fabric")
+include("neoforge-1.21")
+project(":neoforge-1.21").projectDir = file("neoforge")
+include("mcdp-1.21")
+project(":mcdp-1.21").projectDir = file("multi")
 include("cli")
