@@ -17,6 +17,21 @@ This provider loads each mod through its own `URLClassLoader`. Dep jars stay in 
 
 See [`docs/`](docs/) for the full architecture and the [ADRs](docs/adr/) for the decisions behind it.
 
+## Supported Minecraft versions
+
+mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod's target MC version:
+
+| Artifact | MC versions | JDK | Loaders | Status |
+|---|---|---|---|---|
+| `de.lhns.mcdp:mcdp-1.17` | 1.17.x | 16 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.18` | 1.18.x | 17 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.21` | 1.21.1 | 21 | Fabric + NeoForge | **Shipped (v0.1.x as `mcdp:VERSION`; v0.2+ as `mcdp-1.21:VERSION`)** |
+| `de.lhns.mcdp:mcdp-26.1` | 26.1.x | 21+ | Fabric + NeoForge | Scaffold (adapter pending) |
+
+See [ADR-0023](docs/adr/0023-multi-mc-band-publication.md) for the band-selection rationale and what's deliberately out of scope (1.15.2, 1.16.x — Java 8 + Mixin 0.7 era).
+
 ## Quick start — mod author
 
 Apply the Gradle plugin and declare deps like you would in any JVM project:
