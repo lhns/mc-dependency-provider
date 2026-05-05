@@ -1,7 +1,9 @@
 plugins {
     `java-library`
-    // Loom 1.7.x for MC 1.20.6 (Java 21 era).
-    id("fabric-loom") version "1.7-SNAPSHOT"
+    // Loom 1.10-SNAPSHOT (latest at time of writing). Loom is forward-compatible —
+    // newer Loom can target older MC. The 1.7-SNAPSHOT pin had a Gradle internal API
+    // mismatch (Problems.forNamespace) on our Gradle 8.11.
+    id("fabric-loom") version "1.10-SNAPSHOT"
     id("de.lhns.mcdp")
 }
 

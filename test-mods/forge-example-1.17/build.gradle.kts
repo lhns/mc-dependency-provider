@@ -11,7 +11,7 @@ buildscript {
 
 plugins {
     `java-library`
-    id("de.lhns.mcdp")
+    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
 }
 
 apply(plugin = "net.minecraftforge.gradle")

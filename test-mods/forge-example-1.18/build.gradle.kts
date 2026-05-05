@@ -19,7 +19,10 @@ buildscript {
 
 plugins {
     `java-library`
-    id("de.lhns.mcdp")
+    // Without composite-include we need an explicit version. The mcdp gradle-plugin
+    // is published via the parent's `:gradle-plugin:publishToMavenLocal` to match this
+    // pin, OR resolved from Sonatype snapshots for un-modified branches.
+    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
 }
 
 apply(plugin = "net.minecraftforge.gradle")
