@@ -58,4 +58,16 @@ project(":mcdp-1.18").projectDir = file("multi-1.18")
 include("mcdp-1.20")
 project(":mcdp-1.20").projectDir = file("multi-1.20")
 
+// 1.20.6 band — first JPMS-era NeoForge. Fabric + NeoForge.
+include("fabric-1.20.6")
+include("neoforge-1.20.6")
+include("mcdp-1.20.6")
+project(":mcdp-1.20.6").projectDir = file("multi-1.20.6")
+
+// 26.1 band — Mojang calendar versioning era. Latest MC release.
+include("fabric-26.1")
+include("neoforge-26.1")
+include("mcdp-26.1")
+project(":mcdp-26.1").projectDir = file("multi-26.1")
+
 include("cli")
