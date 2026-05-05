@@ -24,14 +24,8 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-// 26.1's NeoForge SPI may diverge from 21.x; treat as its own source tree when the
-// adapter lands. Scaffold has empty src for now.
-sourceSets {
-    main {
-        java.setSrcDirs(listOf<Any>())
-        resources.setSrcDirs(listOf<Any>())
-    }
-}
+// 26.1's NeoForge SPI may diverge from 21.x. Clone the 21.x source, adapt as needed.
+// Default sourceSet config picks up neoforge-26.1/src/main/java/.
 
 val bundle by configurations.creating {
     isCanBeConsumed = false
@@ -42,7 +36,10 @@ dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
-    compileOnly(libs.neoforge.spi.mc261)
+    // fancymodloader:loader 4.0.42 ships the modernized IModLanguageLoader; standalone
+    // neoforgespi:9.0.x has an outdated inner-class form. Mirror neoforge/'s pin (1.21 band)
+    // until NeoForge 26.x publishes a non-beta SPI line that warrants per-band divergence.
+    compileOnly(libs.neoforge.fml.loader)
     compileOnly(libs.neoforge.bus)
 
     bundle(project(":core"))

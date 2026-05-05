@@ -10,25 +10,29 @@ import java.util.function.Supplier;
 /**
  * Forge {@link IModLanguageProvider} for mcdp on MC 1.20.x (forgespi 7.x).
  *
- * <p><b>STATUS: SCAFFOLD ONLY.</b> See {@code forge-1.18/.../McdpLanguageProvider} for the
- * full Javadoc roadmap. The 7.x SPI's {@code IModLanguageProvider} top-level is identical
- * to 4.0.x; the divergence is in {@code locating} (ForgeFeature, ModFileFactory) and the
- * supporting {@code IModInfo}/{@code IModFileInfo} surfaces — relevant when filling in
- * the discovery side, not for this scaffold.</p>
+ * <p><b>STATUS: STUB.</b> Forge 7.x diverges from 4.0.x in the {@code locating} package
+ * (ForgeFeature, ModFileFactory) and the supporting {@code IModInfo}/{@code IModFileInfo}
+ * surfaces, plus the {@code IModLanguageLoader} loadMod signature subtly differs. Direct
+ * source share with {@code forge-1.18/} doesn't compile.
+ *
+ * <p>Implementing 1.20 is a separate focused effort. The 1.18 adapter is a structural
+ * reference; once 1.18 is runtime-verified against a test mod, we copy + tweak the source
+ * for 7.x SPI shifts.</p>
  */
 public final class McdpLanguageProvider implements IModLanguageProvider {
 
-    private static final String NAME = "mcdepprovider";
+    public static final String LANGUAGE_ID = "mcdepprovider";
 
     @Override
     public String name() {
-        return NAME;
+        return LANGUAGE_ID;
     }
 
     @Override
     public Consumer<ModFileScanData> getFileVisitor() {
         throw new UnsupportedOperationException(
-                "mcdp Forge 1.20 adapter scaffold: getFileVisitor not yet implemented.");
+                "mcdp Forge 1.20 adapter not yet implemented. forge-1.18 is the reference;"
+                        + " 1.20's forgespi 7.x has API drift that requires per-band source.");
     }
 
     @Override

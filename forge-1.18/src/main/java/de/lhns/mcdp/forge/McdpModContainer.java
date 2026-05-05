@@ -1,52 +1,100 @@
 package de.lhns.mcdp.forge;
 
+import de.lhns.mcdp.api.McdpProvider;
+import de.lhns.mcdp.core.EntrypointAdapter;
+import de.lhns.mcdp.core.LoaderCoordinator;
+import de.lhns.mcdp.core.ModClassLoader;
+import de.lhns.mcdp.deps.LibraryCache;
+import de.lhns.mcdp.deps.Manifest;
+import de.lhns.mcdp.deps.ManifestConsumer;
+import de.lhns.mcdp.deps.ManifestIo;
 import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.forgespi.language.IModInfo;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Forge 1.18 {@code ModContainer} subclass for mcdp-loaded mods. Constructed by
  * {@link McdpLanguageProvider.McdpModLanguageLoader#loadMod} once per mod that declares
  * {@code modLoader = "mcdepprovider"} in its {@code mods.toml}.
  *
- * <p><b>STATUS: PARTIAL.</b> Compiles against {@code net.minecraftforge:fmlcore:1.18.2-40.x}
- * and matches the abstract surface of {@code net.minecraftforge.fml.ModContainer}. The
- * {@link #getMod()} return is a placeholder — the next step is to read the mod's
- * {@code META-INF/mcdepprovider.toml}, download libraries via {@code deps-lib}'s
- * {@code ManifestConsumer}, build a {@code de.lhns.mcdp.core.ModClassLoader}, and
- * instantiate the {@code @Mod}-annotated entry class through it.
+ * <p>The constructor runs the per-mod registration: read manifest, download libraries,
+ * build the per-mod {@link ModClassLoader}, register with {@link McdpProvider}, and
+ * instantiate the {@code @Mod}-annotated entry class. Failures throw {@link IllegalStateException}
+ * with the mod ID in the message; FML surfaces these in the loading-screen error sheet.
  *
- * <p>Roadmap for the remaining work (cribs from {@code McdpLanguageLoader} on the NeoForge
- * 21.x branch — same pattern, different SPIs):
- * <ol>
- *   <li>In the constructor, locate {@code META-INF/mcdepprovider.toml} via
- *       {@code modInfo.getOwningFile().getFile().findResource(...)}; fail loud if missing.</li>
- *   <li>Parse with {@code de.lhns.mcdp.deps.ManifestIo}.</li>
- *   <li>Resolve libraries via a static {@code ManifestConsumer} (one per JVM, mirrored from
- *       NeoForge's {@code McdpLanguageLoader#CONSUMER}).</li>
- *   <li>Build the {@code ModClassLoader} via {@code LoaderCoordinator.register(modId,
- *       manifest, modPaths, libs, libParent)} and stash the result.</li>
- *   <li>Load the entry class through the per-mod loader, instantiate via the appropriate
- *       {@code EntrypointAdapter} (Java/Scala/Kotlin per the manifest's {@code lang}).</li>
- *   <li>Wire {@code @EventBusSubscriber} via Forge's {@code AutomaticEventSubscriber.inject}
- *       (located at {@code net.minecraftforge.fml.javafmlmod.AutomaticEventSubscriber} in
- *       Forge 1.18, with a different signature than NeoForge's).</li>
- * </ol>
- *
- * <p>Forge's lifecycle (ModLoadingStage transitions, IExtensionPoint, IModBusEvent dispatch)
- * is also wired here when ready. The simplest first cut keeps the mod object opaque to FML
- * — register it with {@link #setMod(Object)} or similar — and lets FML drive the standard
- * {@code @SubscribeEvent}-based event delivery, which works as long as the mod's classes
- * are reachable from the per-mod ModClassLoader.</p>
+ * <p><b>Status: not yet runtime-verified.</b> Compiles green; first runServer pass against
+ * the {@code forge-example-1.18} test mod will surface any API mismatches between this
+ * code's expectations and Forge 1.18's actual behavior.
  */
 public final class McdpModContainer extends ModContainer {
 
+    private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
+
+    private static final LoaderCoordinator COORDINATOR =
+            new LoaderCoordinator(McdpModContainer.class.getClassLoader());
+    private static final LibraryCache CACHE = LibraryCache.defaultCache();
+    private static final ManifestConsumer CONSUMER = new ManifestConsumer(CACHE);
+
     private final String entryFqn;
-    private Object mod;
+    private final ModClassLoader modLoader;
+    private final Object mod;
 
     McdpModContainer(IModInfo info, String entryFqn) {
         super(info);
         this.entryFqn = entryFqn;
-        this.mod = new Object();   // placeholder until the entry instantiation lands
+        try {
+            // Read manifest from the mod jar.
+            Path manifestPath = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+            if (manifestPath == null || !Files.isRegularFile(manifestPath)) {
+                throw new IllegalStateException("mcdepprovider: " + info.getModId()
+                        + " declares modLoader=mcdepprovider but has no " + MANIFEST_PATH);
+            }
+            Manifest manifest;
+            try (InputStream in = Files.newInputStream(manifestPath)) {
+                manifest = ManifestIo.read(in);
+            }
+
+            // Resolve libraries (download missing, SHA-verify, return on-disk paths).
+            List<Path> libs = CONSUMER.resolveAll(manifest);
+
+            // Build the per-mod ModClassLoader. modPaths defaults to the mod jar; in dev
+            // it's the source-set output dirs from manifest.devRoots() (filtered for
+            // existence on the consumer's filesystem).
+            Path modFile = info.getOwningFile().getFile().getFilePath();
+            List<Path> manifestDevRoots = manifest.devRoots().stream()
+                    .map(Path::of)
+                    .filter(Files::isDirectory)
+                    .toList();
+            List<Path> modPaths = manifestDevRoots.isEmpty()
+                    ? List.of(modFile)
+                    : manifestDevRoots;
+
+            this.modLoader = COORDINATOR.register(
+                    info.getModId(), manifest, modPaths, libs,
+                    McdpModContainer.class.getClassLoader());
+            McdpProvider.registerMod(info.getModId(), modLoader);
+
+            // Bridge manifest registration (ADR-0019). Skip silently if absent (mod has no
+            // mixins or didn't generate any cross-classloader bridges).
+            Path bridgeToml = info.getOwningFile().getFile()
+                    .findResource("META-INF/mcdp-bridges.toml");
+            if (bridgeToml != null && Files.isRegularFile(bridgeToml)) {
+                McdpProvider.registerAutoBridgeManifestToml(modLoader, bridgeToml);
+            }
+
+            // Instantiate the entry class via the appropriate language adapter.
+            Class<?> entryClass = Class.forName(entryFqn, true, modLoader);
+            EntrypointAdapter adapter = EntrypointAdapter.forLang(manifest.lang());
+            this.mod = adapter.construct(entryClass);
+        } catch (IOException | ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                    "mcdepprovider: failed to load mod " + info.getModId() + ": " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -59,15 +107,11 @@ public final class McdpModContainer extends ModContainer {
         return mod;
     }
 
-    /**
-     * Stash the entry instance once the construct step lands. Public so a future
-     * register-the-mod hook can install the real entry without exposing the field.
-     */
-    public void setMod(Object newMod) {
-        this.mod = newMod;
-    }
-
     public String getEntryFqn() {
         return entryFqn;
+    }
+
+    public ModClassLoader getModLoader() {
+        return modLoader;
     }
 }

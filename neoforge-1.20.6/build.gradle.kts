@@ -21,10 +21,12 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-// NeoForge 20.6.x SPI uses different class names (e.g. ModContainer is at a different path)
-// than the 21.x line we have in neoforge/. Source for this band is its own copy when the
-// adapter lands; for the scaffold, the subproject is empty and the shadowJar bundles only
-// core/+deps-lib so consumers can verify the artifact resolves end-to-end.
+// NeoForge 20.6.x SPI (8.0.x) diverges materially from 21.x (9.0.x) — most notably:
+//   - IModInfo lacks getLoader() (used in 21.x to filter our mods from the LoadingModList)
+//   - ModFileScanData lacks getAnnotatedBy(Class<?>, ElementType) (a 9.0.x convenience)
+// Cloning the 21.x source doesn't compile against 8.0.x; this band needs its own adapter
+// implementation when it gets focused attention. Source dir is empty for now; the
+// shadowJar bundles only core/+deps-lib so the artifact resolves but is non-functional.
 sourceSets {
     main {
         java.setSrcDirs(listOf<Any>())
@@ -41,9 +43,11 @@ dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
-    // NeoForge 20.6.x SPI line. SPI surface for IModLanguageLoader, ModFileScanData, IModInfo
-    // matches the 21.x line for the methods mcdp depends on.
+    // NeoForge 20.6.x SPI line + matching FML loader (provides ModContainer, LogUtils,
+    // LoadingModList, etc.). Pin to a 20.6.x-compatible fancymodloader version when 20.6.x
+    // adapter implementation actually iterates against runServer.
     compileOnly(libs.neoforge.spi.mc1206)
+    compileOnly(libs.neoforge.fml.loader)   // TODO: pin a 20.6-compatible FML loader version
     compileOnly(libs.neoforge.bus)
 
     bundle(project(":core"))

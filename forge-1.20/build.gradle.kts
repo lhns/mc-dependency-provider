@@ -27,7 +27,7 @@ dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
-    // Forge SPI 7.x — Forge 1.20.1.
+    // 1.20 SPI surface only — fmlcore not pulled until per-band adapter implementation lands.
     compileOnly(libs.forge.spi.mc120)
 
     bundle(project(":core"))
