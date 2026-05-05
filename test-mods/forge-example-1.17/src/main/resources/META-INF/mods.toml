@@ -1,0 +1,22 @@
+modLoader = "mcdepprovider"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "forge_example_117"
+version = "0.1.0"
+displayName = "mcdp Forge 1.17 example"
+
+[[dependencies.forge_example_117]]
+modId = "forge"
+mandatory = true
+versionRange = "[37,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.forge_example_117]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.17.1,1.18)"
+ordering = "NONE"
+side = "BOTH"
