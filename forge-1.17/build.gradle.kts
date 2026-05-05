@@ -1,0 +1,66 @@
+plugins {
+    `java-library`
+    alias(libs.plugins.shadow)
+}
+
+repositories {
+    maven("https://maven.minecraftforge.net/")
+}
+
+// Forge 1.17 ships Java 16. Build JDK is still 21; we just compile down.
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(16)
+}
+
+val bundle by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+dependencies {
+    compileOnly(project(":core"))
+    compileOnly(project(":deps-lib"))
+    compileOnly(libs.jetbrains.annotations)
+    // Forge SPI 3.2.x — Forge 1.17.x.
+    compileOnly(libs.forge.spi.mc117)
+
+    bundle(project(":core"))
+    bundle(project(":deps-lib"))
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testCompileOnly(libs.forge.spi.mc117)
+}
+
+tasks.named<Jar>("jar") {
+    enabled = false
+}
+
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    archiveClassifier.set("")
+    archiveBaseName.set("mcdp-forge-1.17")
+    configurations = listOf(bundle)
+    mergeServiceFiles()
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named("assemble") {
+    dependsOn(tasks.named("shadowJar"))
+}
+
+configurations.apply {
+    named("apiElements").configure {
+        outgoing.artifacts.clear()
+        outgoing.artifact(tasks.named("shadowJar"))
+    }
+    named("runtimeElements").configure {
+        outgoing.artifacts.clear()
+        outgoing.artifact(tasks.named("shadowJar"))
+    }
+}

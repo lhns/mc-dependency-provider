@@ -10,7 +10,9 @@ neoforge-fml-loader = "4.0.42"
 neoforge-bus = "8.0.5"
 # Forge 1.18.2 — forgespi 4.0.x is the SPI surface (IModLanguageProvider,
 # ModFileScanData, IModInfo, etc.). Pinned to 4.0.11 (latest 4.0.x at time of writing).
+forge-spi-mc117 = "3.2.3"
 forge-spi-mc118 = "4.0.11"
+forge-spi-mc120 = "7.1.6"
 asm = "9.7.1"
 vanniktech-maven-publish = "0.32.0"
 
@@ -27,7 +29,9 @@ fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-l
 neoforge-spi = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
 neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
+forge-spi-mc117 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc117" }
 forge-spi-mc118 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc118" }
+forge-spi-mc120 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc120" }
 
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }

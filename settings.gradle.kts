@@ -31,8 +31,13 @@ project(":neoforge-1.21").projectDir = file("neoforge")
 include("mcdp-1.21")
 project(":mcdp-1.21").projectDir = file("multi")
 
-// Forge 1.18 — scaffold (Java 17 target, forgespi 4.0.x). Adapter body not yet
-// implemented; see forge-1.18/src/.../McdpLanguageProvider.java.
+// Forge bands — scaffold subprojects (adapter body not yet implemented in any of these;
+// see forge-1.18/src/.../McdpLanguageProvider.java for the roadmap).
+//   forge-1.17: Java 16, forgespi 3.2.x
+//   forge-1.18: Java 17, forgespi 4.0.x
+//   forge-1.20: Java 17, forgespi 7.x  (1.20.1)
+include("forge-1.17")
 include("forge-1.18")
+include("forge-1.20")
 
 include("cli")
