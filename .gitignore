@@ -11,3 +11,4 @@ logs/
 */logs/
 run/
 */run/
+*.hprof

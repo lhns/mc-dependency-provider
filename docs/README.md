@@ -44,8 +44,10 @@ mcdepprovider/
     and emits a manifest. Future sbt/Maven siblings follow the same pattern.
   fabric/                           # Fabric LanguageAdapter + PreLaunchEntrypoint
   neoforge/                         # NeoForge IModLanguageLoader
-  multi/                            # :mcdp aggregator — bundles fabric/ + neoforge/
-                                    # shadowJars into one unified runtime jar (ADR-0016)
+  multi/                            # :mcdp-1.21 aggregator — bundles fabric/ + neoforge/
+                                    # shadowJars into one unified runtime jar (ADR-0016).
+                                    # Per-MC-band aggregators (1.20.6, 1.20, 26.1, ...) sit
+                                    # in sibling directories as new bands are added.
   cli/                              # mcdepprovider-prefetch — offline cache pre-population
                                     # for modpack authors shipping bundles
 ```

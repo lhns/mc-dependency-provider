@@ -123,6 +123,22 @@ existing bridge plumbing rewrites the subscriber's body so cross-classloader
 calls go through bridges resolved by `ModClassLoader`. No mod-author action
 needed beyond applying the plugin.
 
+### `NoClassDefFoundError` under a `sharedPackages` class
+
+**Symptom.** A mod registers normally, then crashes mid-startup with `NoClassDefFoundError: scala/Option` (or any stdlib type) inside a class the mod itself ships — typically a Scala/Kotlin block, item, or registry helper.
+
+**Root cause.** That class lives in a package the user added to `mcdepprovider.sharedPackages`. Sharing moves the class onto the platform classloader, where the mod's per-mod loader URLs (scala-library, kotlin-stdlib, etc.) are not reachable.
+
+**Fix.** Narrow `sharedPackages` to a sibling package containing only the cross-loader-visible bridge type — extract the interface or trait into its own package — and stop sharing the package that contains heavy stdlib-using code. The build-time validator described in ADR-0024 catches this before runtime; if you saw the runtime crash, you're on a pre-validator build. See `docs/bridges.md` "Footgun A — sharing too coarse".
+
+### `ClassCastException: X cannot be cast to X` (cross-loader cast)
+
+**Symptom.** Mod code casts to a Mixin-injected accessor (e.g. `entity.asInstanceOf[BlockEntityAccessor]`) and crashes with `ClassCastException` where the source and target type names look identical.
+
+**Root cause.** `BlockEntityAccessor` is `@Mixin(BlockEntity.class)` — Mixin merges the interface into vanilla `BlockEntity` on the game-layer classloader. The cast site is in mod code on the per-mod `ModClassLoader`, which loads its own copy of `BlockEntityAccessor.class` from the mod jar. JVM Class identity is `(name, defining loader)`; two loaders means two distinct `Class` objects, and the cast fails.
+
+**Fix.** `mcdepprovider { sharedPackages.add('com.example.mod.mixin.') }`. The build-time validator described in ADR-0024 generates the exact line for you; if you saw the runtime crash, you're on a pre-validator build. See `docs/bridges.md` "Footgun B — sharing too narrow".
+
 ## Caching
 
 ### Loom's `.gradle/loom-cache` holds the remapped adapter indefinitely

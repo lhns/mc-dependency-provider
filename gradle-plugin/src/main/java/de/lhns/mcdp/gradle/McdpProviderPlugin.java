@@ -1,6 +1,7 @@
 package de.lhns.mcdp.gradle;
 
 import de.lhns.mcdp.gradle.mixinbridges.BridgeCodegenTask;
+import de.lhns.mcdp.gradle.validate.ValidateSharedPackagesTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
@@ -70,6 +71,12 @@ public final class McdpProviderPlugin implements Plugin<Project> {
         ext.getBridges().getBridgedAnnotations().convention(List.of(
                 "org.spongepowered.asm.mixin.Mixin",
                 "net.neoforged.bus.api.EventBusSubscriber"
+        ));
+        // Cross-loader-injected annotations (ADR-0024). Default = just @Mixin: NeoForge's
+        // @EventBusSubscriber doesn't merge the class into another loader's namespace, so it
+        // does NOT belong on this list even though it shares bridgedAnnotations membership.
+        ext.getBridges().getCrossLoaderAnnotations().convention(List.of(
+                "org.spongepowered.asm.mixin.Mixin"
         ));
 
         // Auto-register the bridge package on sharedPackages so the per-mod ModClassLoader
@@ -234,6 +241,23 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     });
 
             RunTaskClasspathPatch.apply(project, generate, ext.getPatchRunTasks());
+
+            // Wire :validateSharedPackages as a :check dependency (ADR-0024). Runs both the
+            // over-share validator (classes IN sharedPackages referencing types not visible
+            // to the platform classloader) and the under-share validator (classes NOT in
+            // crossLoaderAnnotations referencing cross-loader-injected types whose package
+            // isn't shared). Build fails on any diagnostic.
+            var validate = project.getTasks().register(
+                    "validateSharedPackages", ValidateSharedPackagesTask.class, t -> {
+                        t.setGroup("verification");
+                        t.setDescription("Validates sharedPackages content (ADR-0024).");
+                        t.dependsOn(bridgeTask);
+                        t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
+                        t.getCompiledClassesDirs().from(bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
+                        t.getSharedPackages().set(ext.getSharedPackages());
+                        t.getCrossLoaderAnnotations().set(ext.getBridges().getCrossLoaderAnnotations());
+                    });
+            project.getTasks().named("check").configure(c -> c.dependsOn(validate));
         });
     }
 

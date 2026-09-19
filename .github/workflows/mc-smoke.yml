@@ -175,6 +175,130 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Per-band runServer smoke (ADR-0023).
+  #
+  # The multi-MC-band restructure ships six bands of Fabric/NeoForge/Forge adapters.
+  # `runserver-smoke` above only covers MC 1.21.1; a regression in any per-band SPI
+  # port (Forge 4.0 vs 7.x, NeoForge 8.0.x vs 9.0.x, fabric-loader 0.14 vs 0.15) would
+  # not surface until release. This job boots one test mod per (loader × band) cell.
+  #
+  # Excluded from coverage:
+  #   - 26.1 (fabric + neoforge): MC 26.1.x is scaffold-only — Mojang has not shipped
+  #     real artifacts; Loom errors "26.1.2 requires Java 25 but Gradle is using 21".
+  #   - Forge 1.17 / 1.18: ForgeGradle 5.1 forces Gradle 7 (Java ≤19), but mcdp's
+  #     gradle-plugin compiles to Java 21 bytecode. The plugin path is unusable on
+  #     these bands; runtime mcdp via mavenLocal works but is not exercised by the
+  #     test-mod scaffolds. Documented in ADR-0023.
+  #   - Forge 1.17 also has a stub adapter (forgespi 3.2.x has loadMod predating
+  #     ModuleLayer; IModFileInfo.getFile() missing). Real port is a follow-up.
+  #
+  # Triggers: nightly only (no push). Per-band cells are 5–10 min each × 8 cells ×
+  # 2 OSes ≈ 100 min worst-case nightly cost; we don't pay this on every PR.
+  # The base 1.21 smoke above stays on push so PRs still get end-to-end signal.
+  runserver-smoke-bands:
+    if: github.event_name != 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        cell:
+          # Each cell: dir = test mod root; modid = expected [mcdp-smoke] mod ID;
+          # cache_key = MC version key; loader = fabric|neoforge|forge (which cache
+          # paths to populate); needs_eula = forge-only (FML stops at the EULA gate).
+          - { name: fabric-1.17,    dir: test-mods/fabric-example-1.17,    modid: fabric_example_117,    cache_key: 1.17.1, loader: fabric,   needs_eula: false }
+          - { name: fabric-1.18,    dir: test-mods/fabric-example-1.18,    modid: fabric_example_118,    cache_key: 1.18.2, loader: fabric,   needs_eula: false }
+          - { name: fabric-1.20,    dir: test-mods/fabric-example-1.20,    modid: fabric_example_120,    cache_key: 1.20.1, loader: fabric,   needs_eula: false }
+          - { name: fabric-1.20.6,  dir: test-mods/fabric-example-1.20.6,  modid: fabric_example_1206,   cache_key: 1.20.6, loader: fabric,   needs_eula: false }
+          - { name: neoforge-1.20.6,dir: test-mods/neoforge-example-1.20.6,modid: neoforge_example_1206, cache_key: 1.20.6, loader: neoforge, needs_eula: false }
+          - { name: forge-1.20,     dir: test-mods/forge-example-1.20,     modid: forge_example_120,     cache_key: 1.20.1, loader: forge,    needs_eula: true  }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'build.gradle.kts', 'settings.gradle.kts', '*/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Cache Minecraft assets (${{ matrix.cell.loader }} ${{ matrix.cell.cache_key }})
+        uses: actions/cache@v4
+        with:
+          # Loom (fabric) → ~/.gradle/caches/fabric-loom
+          # ModDevGradle (neoforge) → ~/.neoforge
+          # ForgeGradle (forge) → ~/.gradle/caches/forge_gradle
+          path: |
+            ~/.gradle/caches/fabric-loom
+            ~/.gradle/caches/forge_gradle
+            ~/.neoforge
+          key: mc-assets-${{ runner.os }}-${{ matrix.cell.loader }}-${{ matrix.cell.cache_key }}
+          restore-keys: |
+            mc-assets-${{ runner.os }}-${{ matrix.cell.loader }}-
+
+      - name: Publish mcdp aggregator + plugin to mavenLocal
+        # The non-1.21 test mods consume mcdp-X via either composite-include
+        # (fabric, neoforge bands) or mavenLocal (forge bands — see ADR-0023 for why).
+        # Either way, publishing all aggregators + the gradle-plugin to mavenLocal first
+        # is the simplest universal preflight.
+        run: ./gradlew publishToMavenLocal --no-daemon --stacktrace
+        shell: bash
+
+      - name: Accept EULA (Forge bands only)
+        if: matrix.cell.needs_eula
+        shell: bash
+        run: |
+          mkdir -p ${{ matrix.cell.dir }}/run
+          echo "eula=true" > ${{ matrix.cell.dir }}/run/eula.txt
+
+      - name: runServer (${{ matrix.cell.name }})
+        working-directory: ${{ matrix.cell.dir }}
+        shell: bash
+        # We don't reuse mc_smoke.py here: that script asserts manifest-driven cats/circe
+        # contents which the slimmer per-band test mods don't ship. Plain runServer with
+        # a timeout is enough — the [mcdp-smoke] grep below is the success criterion.
+        run: |
+          set -e
+          # Gradle wrapper path: 1.20 forge subproject lacks its own wrapper, uses parent.
+          if [ -f gradlew ]; then GW=./gradlew; else GW=../../gradlew; fi
+          $GW runServer --no-daemon --stacktrace 2>&1 | tee ../../smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+
+      - name: Assert smoke marker fired
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          grep -q "\[mcdp-smoke\] mod=${{ matrix.cell.modid }} boot ok" "$LOG" || {
+            echo "ERROR: smoke marker for ${{ matrix.cell.modid }} not in log"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-bands-${{ matrix.cell.name }}-${{ runner.os }}
+          path: |
+            smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+            ${{ matrix.cell.dir }}/run/logs/**
+            ${{ matrix.cell.dir }}/run/crash-reports/**
+            ${{ matrix.cell.dir }}/build/reports/**
+          if-no-files-found: ignore
+
   # Version-isolation smoke (task #22 / ADR-0001).
   #
   # Two fabric mods pin different cats-core SHAs (fabric-example → 2.13.0,

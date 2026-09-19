@@ -44,3 +44,4 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted |
 | [0021](0021-generalized-bridge-codegen.md) | Generalized bridge codegen — arbitrary annotation seeding + lambda-site coverage | Accepted; refines 0008/0018 |
 | [0022](0022-devroots-source-set-output-contract.md) | `dev_roots` is the plugin's contract for the per-mod ModClassLoader's URL list | Accepted; refines 0007 |
+| [0023](0023-multi-mc-band-publication.md) | Multi-Minecraft-band publication model (`mcdp-1.17` … `mcdp-26.1`) | Accepted; supersedes 0016's single-artifact assumption |

@@ -1,0 +1,23 @@
+modLoader = "mcdepprovider"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "neoforge_example_1206"
+version = "${version}"
+displayName = "mcdp NeoForge 1.20.6 example"
+description = "Minimal mod that exercises the mcdp NeoForge 1.20.6 adapter."
+
+[[dependencies.neoforge_example_1206]]
+modId = "neoforge"
+type = "required"
+versionRange = "[20.6,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.neoforge_example_1206]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.20.6,1.21)"
+ordering = "NONE"
+side = "BOTH"

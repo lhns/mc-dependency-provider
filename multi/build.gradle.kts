@@ -35,8 +35,8 @@ dependencies {
     // so this `bundle` configuration receives those shaded jars and not the
     // raw source-set `jar` outputs. Each shaded jar already contains `:core`
     // and `:deps-lib`; shadow's EXCLUDE strategy below drops the duplicates.
-    bundle(project(":fabric"))
-    bundle(project(":neoforge"))
+    bundle(project(":fabric-1.21"))
+    bundle(project(":neoforge-1.21"))
 }
 
 tasks.named<Jar>("jar") {
@@ -45,7 +45,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
-    archiveBaseName.set("mcdp")
+    archiveBaseName.set("mcdp-1.21")
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -90,7 +90,7 @@ mavenPublishing {
     // requires snapshot-publishing enabled on the namespace via the Portal UI).
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
     signAllPublications()
-    coordinates("de.lhns.mcdp", "mcdp", project.version.toString())
+    coordinates("de.lhns.mcdp", "mcdp-1.21", project.version.toString())
     pom {
         name.set("mcdp")
         description.set("Multi-loader (Fabric + NeoForge) JVM-language mod provider with per-mod Maven dependency isolation.")

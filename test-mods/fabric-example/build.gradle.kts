@@ -32,7 +32,7 @@ dependencies {
     // that fabric_example depends on at runtime. Composite-substituted to :dist.
     // The jar carries a `fabric.mod.json` at the root (Fabric reads it) plus a
     // `META-INF/neoforge.mods.toml` shape that Fabric ignores.
-    modImplementation("de.lhns.mcdp:mcdp:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
 
     // Representative Scala-ecosystem deps — the motivating case for mcdepprovider.
     // mcdepImplementation is the opt-in bucket: deps placed here are emitted into

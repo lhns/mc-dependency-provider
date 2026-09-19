@@ -1,0 +1,23 @@
+modLoader = "mcdepprovider"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "forge_example_118"
+version = "0.1.0"
+displayName = "mcdp Forge 1.18 example"
+description = "Minimal mod that exercises the mcdp Forge 1.18 adapter."
+
+[[dependencies.forge_example_118]]
+modId = "forge"
+mandatory = true
+versionRange = "[40,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.forge_example_118]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.18.2,1.19)"
+ordering = "NONE"
+side = "BOTH"

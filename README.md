@@ -4,7 +4,7 @@ A JVM-language mod provider for **Fabric** and **NeoForge** (Minecraft 1.21.1+, 
 
 First-class support for **Java, Scala, Kotlin** — one provider, one pipeline, pluggable entry points.
 
-**Status:** v0.1.2 published to Maven Central (`de.lhns.mcdp:mcdp` runtime jar + `de.lhns.mcdp:gradle-plugin`). Fabric and NeoForge in-game smokes are green on 1.21.1; mixin-bridge codegen verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
+**Status:** v0.1.2 published to Maven Central (`de.lhns.mcdp:mcdp` runtime jar + `de.lhns.mcdp:gradle-plugin`); the next release publishes per-MC-band as `de.lhns.mcdp:mcdp-1.21` (and siblings `mcdp-1.20.6`, `mcdp-1.20`, `mcdp-1.18`, `mcdp-1.17`, `mcdp-26.1` as bands land). Fabric and NeoForge in-game smokes are green on 1.21.1; mixin-bridge codegen verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
 
 ## Why
 
@@ -16,6 +16,21 @@ Two problems, one solution:
 This provider loads each mod through its own `URLClassLoader`. Dep jars stay in the loader's **unnamed module** (so the JPMS keyword check never fires) and each mod sees its own copy of every dep (so version conflicts vanish). No bytecode rewriting, no library forks.
 
 See [`docs/`](docs/) for the full architecture and the [ADRs](docs/adr/) for the decisions behind it.
+
+## Supported Minecraft versions
+
+mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod's target MC version:
+
+| Artifact | MC versions | JDK | Loaders | Status |
+|---|---|---|---|---|
+| `de.lhns.mcdp:mcdp-1.17` | 1.17.x | 16 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.18` | 1.18.x | 17 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | Scaffold (adapter pending) |
+| `de.lhns.mcdp:mcdp-1.21` | 1.21.1 | 21 | Fabric + NeoForge | **Shipped (v0.1.x as `mcdp:VERSION`; v0.2+ as `mcdp-1.21:VERSION`)** |
+| `de.lhns.mcdp:mcdp-26.1` | 26.1.x | 21+ | Fabric + NeoForge | Scaffold (adapter pending) |
+
+See [ADR-0023](docs/adr/0023-multi-mc-band-publication.md) for the band-selection rationale and what's deliberately out of scope (1.15.2, 1.16.x — Java 8 + Mixin 0.7 era).
 
 ## Quick start — mod author
 
@@ -77,8 +92,10 @@ core/                ModClassLoader, LoaderCoordinator, EntrypointAdapter + impl
 gradle-plugin/       manifest generation, dev-cache pre-warm, bridge codegen, run-task classpath patch
 fabric/              LanguageAdapter + PreLaunchEntrypoint
 neoforge/            IModLanguageLoader
-multi/               :mcdp aggregator — bundles fabric/ + neoforge/ shadowJars into one
-                     unified runtime jar published as de.lhns.mcdp:mcdp (ADR-0016)
+multi/               :mcdp-1.21 aggregator — bundles fabric/ + neoforge/ shadowJars into
+                     one unified runtime jar published as de.lhns.mcdp:mcdp-1.21 (ADR-0016).
+                     Each per-MC-band aggregator lives in a sibling directory named after
+                     the band; only the 1.21 band is fully implemented at the time of writing.
 cli/                 mcdepprovider-prefetch — offline cache pre-population for modpack authors
 test-mods/           real-world test projects exercising the full stack via composite build
 docs/                end-to-end "how it works" walkthrough + ADRs (decision history)
