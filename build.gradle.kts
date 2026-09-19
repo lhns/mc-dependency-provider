@@ -1,10 +1,13 @@
 plugins {
     `java-library`
-    // Loaded at root so the plugin's classes share one classloader across :mcdp and
-    // :gradle-plugin (vanniktech's SonatypeRepositoryBuildService is otherwise loaded twice
-    // and Gradle rejects the cross-classloader build-service handoff).
-    alias(libs.plugins.vanniktech.maven.publish) apply false
 }
+
+// The shadow and vanniktech-maven-publish plugins are pulled in by buildSrc (see
+// buildSrc/build.gradle.kts) and are therefore already on every build script's classpath in
+// a single classloader. That matters for vanniktech: its SonatypeRepositoryBuildService is
+// otherwise loaded twice and Gradle rejects the cross-classloader build-service handoff.
+// Consequence: scripts must request them *without* a version — `id("com.gradleup.shadow")`,
+// not `alias(libs.plugins.shadow)` — or Gradle refuses the already-on-classpath request.
 
 allprojects {
     group = "de.lhns.mcdp"

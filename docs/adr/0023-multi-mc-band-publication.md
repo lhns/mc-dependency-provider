@@ -34,7 +34,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 
 - `core/` and `deps-lib/`: target Java 16. Single source tree, all bands consume.
 - `fabric/` (renamed `:fabric-1.21`): canonical Fabric adapter source. Other Fabric bands (`fabric-1.17/`, `fabric-1.18/`, `fabric-1.20/`, `fabric-1.20.6/`, `fabric-26.1/`) share this source via `sourceSets.main.java.srcDirs(rootProject.file("fabric/src/main/java"))` and only differ in their `targetCompatibility`. The Fabric `LanguageAdapter` + `PreLaunchEntrypoint` SPI surface is stable across fabric-loader 0.14+.
-- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` or `:neoforge-26.1` — the NeoForge SPI diverged between 8.0.x (1.20.6), 9.0.x (1.21), and presumably a future 10.x for the 26.x line. Each NeoForge band gets its own source tree when the adapter implementation lands.
+- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). It *is* shared with `:neoforge-26.1` via `srcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.
 - `forge-1.17/`, `forge-1.18/`, `forge-1.20/`: each has its own minimal source tree (currently a stub `McdpLanguageProvider`). Forge `IModLanguageProvider`'s top-level shape is stable across forgespi 3.2 (1.17), 4.0 (1.18), 7.x (1.20), so once one band's adapter is implemented the others mostly clone it.
 - `multi-<band>/` (Gradle path `:mcdp-<band>`): aggregator subproject. Bundles the band's adapters' shadowJars into one runtime artifact. Vanniktech maven-publish wired with `automaticRelease=true` per ADR-0020.
 
@@ -56,7 +56,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 **Negative.**
 
 - **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
-- Eight subprojects per band (fabric-X, neoforge-X or forge-X, multi-X) × six bands = a lot of `build.gradle.kts` files. Maintenance overhead per refactor.
+- Eight subprojects per band (fabric-X, neoforge-X or forge-X, multi-X) × six bands = a lot of `build.gradle.kts` files. Mitigated by the `buildSrc` convention plugins (`mcdp.shaded-jar`, `mcdp.band-adapter`, `mcdp.band-aggregator`), which own the shadow/`bundle`/`apiElements` recipe and the publishing POM; a band file now carries only its repositories, its SPI pins, and an `mcdpBand { }` block of genuinely per-band values.
 - NeoForge adapters can't share source today, so per-band feature work doubles. Future SPI re-stabilization could let us merge `:neoforge-1.20.6` and `:neoforge-1.21` source trees if their surfaces re-converge.
 - Test-mod fixtures multiply: each band's CI smoke runs through Loom (Fabric), MDG (NeoForge), or ForgeGradle. Six bands × two-or-three loaders = up to 18 CI cells.
 

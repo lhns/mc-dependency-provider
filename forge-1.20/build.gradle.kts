@@ -1,35 +1,22 @@
 plugins {
-    `java-library`
-    alias(libs.plugins.shadow)
+    id("mcdp.band-adapter")
 }
 
 repositories {
     maven("https://maven.minecraftforge.net/")
 }
 
-// Forge 1.20.1 ships Java 17.
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
+// Forge for MC 1.20.x (1.20.1). Adapter source is shared with the 1.18 band (identical
+// forgespi usage); this file only pins the 7.x forgespi coordinates.
+mcdpBand {
+    javaRelease.set(17)
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.release.set(17)
-}
-
-// Adapter source is shared with the 1.18 band (identical forgespi usage); this
-// build.gradle.kts pins the 7.x forgespi coordinates for MC 1.20.x.
 sourceSets {
     main {
         java.setSrcDirs(listOf(rootProject.file("forge-1.18/src/main/java")))
         resources.setSrcDirs(listOf("src/main/resources"))
     }
-}
-
-val bundle by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
 }
 
 dependencies {
@@ -44,38 +31,8 @@ dependencies {
     compileOnly(libs.asm)
     compileOnly("org.apache.maven:maven-artifact:3.8.5")
 
-    bundle(project(":core"))
-    bundle(project(":deps-lib"))
-
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testCompileOnly(libs.forge.spi.mc120)
     testCompileOnly(libs.forge.fmlcore.mc120)
-}
-
-tasks.named<Jar>("jar") {
-    enabled = false
-}
-
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveClassifier.set("")
-    archiveBaseName.set("mcdp-forge-1.20")
-    configurations = listOf(bundle)
-    mergeServiceFiles()
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.named("assemble") {
-    dependsOn(tasks.named("shadowJar"))
-}
-
-configurations.apply {
-    named("apiElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-    named("runtimeElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
 }

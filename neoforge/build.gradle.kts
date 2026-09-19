@@ -1,8 +1,5 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
-    `java-library`
-    alias(libs.plugins.shadow)
+    id("mcdp.band-adapter")
 }
 
 repositories {
@@ -11,9 +8,11 @@ repositories {
     maven("https://libraries.minecraft.net/")
 }
 
-val bundle by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
+// NeoForge for MC 1.21.x. This band owns the shared NeoForge adapter source; neoforge-26.1
+// points its srcDirs here.
+mcdpBand {
+    javaRelease.set(21)
+    fmlModType.set("LIBRARY")
 }
 
 dependencies {
@@ -27,9 +26,6 @@ dependencies {
     compileOnly(libs.neoforge.fml.loader)
     compileOnly(libs.neoforge.bus)
 
-    bundle(project(":core"))
-    bundle(project(":deps-lib"))
-
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(project(":core"))
@@ -38,50 +34,7 @@ dependencies {
     testImplementation(libs.neoforge.bus)
 }
 
-// ADR-0012 resolution: mirror :fabric's shadow-plugin recipe. Produce a single
-// classifier-less jar bundling :core + :deps-lib + tomlj alongside the NeoForge
-// adapter classes. Published to mavenLocal for test-mods/neoforge-example's
-// additionalRuntimeClasspath wiring.
-tasks.named<Jar>("jar") {
-    enabled = false
-}
-
-tasks.named<ShadowJar>("shadowJar") {
-    archiveClassifier.set("")
-    archiveBaseName.set("mcdp-neoforge-1.21")
-    configurations = listOf(bundle)
-    mergeServiceFiles()
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    // FML 4.0.x (NeoForge 21.1.x) routes jars with FMLModType=LIBRARY into the
-    // PLUGIN module layer, which is where it ServiceLoader-scans IModLanguageLoader.
-    // LANGPROVIDER is not a valid value in this FML version; valid enum values are
-    // MOD, LIBRARY, GAMELIBRARY (IModFile.Type). Without LIBRARY the jar is treated
-    // as a regular mod and never reaches the plugin layer.
-    manifest {
-        attributes(
-            "FMLModType" to "LIBRARY",
-            "Automatic-Module-Name" to "mcdepprovider"
-        )
-    }
-}
-
-tasks.named("assemble") {
-    dependsOn(tasks.named("shadowJar"))
-}
-
-configurations.apply {
-    named("apiElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-    named("runtimeElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-}
-
 // This subproject (`:neoforge-1.21`) is not published on its own. The band
 // aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
 // fabric and neoforge adapters. The shadowJar here remains produced for
-// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration
-// through apiElements/runtimeElements above.
+// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration.

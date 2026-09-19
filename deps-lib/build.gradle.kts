@@ -55,6 +55,5 @@ val fullTest by tasks.registering(Test::class) {
     group = "verification"
     testClassesDirs = sourceSets["fullTest"].output.classesDirs
     classpath = sourceSets["fullTest"].runtimeClasspath
-    useJUnitPlatform()
     // Opt-in only; `./gradlew check` doesn't depend on this.
 }

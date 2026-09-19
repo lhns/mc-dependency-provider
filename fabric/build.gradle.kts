@@ -1,17 +1,15 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
-    `java-library`
-    alias(libs.plugins.shadow)
+    id("mcdp.band-adapter")
 }
 
 repositories {
     maven("https://maven.fabricmc.net/")
 }
 
-val bundle by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
+// Fabric for MC 1.21.x. This is the band that owns the shared Fabric adapter source; the
+// other fabric-* bands point their srcDirs here.
+mcdpBand {
+    javaRelease.set(21)
 }
 
 dependencies {
@@ -23,49 +21,12 @@ dependencies {
     // import LoggerFactory in our pre-launch hook.
     compileOnly("org.slf4j:slf4j-api:2.0.9")
 
-    bundle(project(":core"))
-    bundle(project(":deps-lib"))
-
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testCompileOnly(libs.fabric.loader)
 }
 
-// ADR-0012 resolution: produce a single shaded jar containing this subproject's
-// classes plus :core and :deps-lib. (tomlj used to be shaded in here too; it was
-// replaced by the in-tree MiniToml parser in ADR-0015.) That's both the production
-// deliverable (one "mcdepprovider" jar) and the unblocker for Fabric's dev-mode
-// ClasspathModCandidateFinder, which refuses to expose sibling composite-build
-// jars to the mcdepprovider mod id.
-tasks.named<Jar>("jar") {
-    enabled = false
-}
-
-tasks.named<ShadowJar>("shadowJar") {
-    archiveClassifier.set("")
-    archiveBaseName.set("mcdp-fabric-1.21")
-    configurations = listOf(bundle)
-    mergeServiceFiles()
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.named("assemble") {
-    dependsOn(tasks.named("shadowJar"))
-}
-
-configurations.apply {
-    named("apiElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-    named("runtimeElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-}
-
 // This subproject (`:fabric-1.21`) is not published on its own. The band
 // aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
 // fabric and neoforge adapters. The shadowJar here remains produced for
-// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration
-// through apiElements/runtimeElements above.
+// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration.

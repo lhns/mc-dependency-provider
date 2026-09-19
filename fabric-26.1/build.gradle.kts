@@ -1,23 +1,16 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
-    `java-library`
-    alias(libs.plugins.shadow)
+    id("mcdp.band-adapter")
 }
 
 repositories {
     maven("https://maven.fabricmc.net/")
 }
 
-// Fabric for MC 26.1.x (Mojang's calendar versioning). JVM is Java 21+.
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.release.set(21)
+// Fabric for MC 26.1.x (Mojang calendar versioning). Source is shared with fabric/ (the 1.21 band) — the Fabric
+// LanguageAdapter + PreLaunchEntrypoint surface is stable across all fabric-loader 0.14+
+// versions, so only the bytecode target differs per band.
+mcdpBand {
+    javaRelease.set(21)
 }
 
 sourceSets {
@@ -27,45 +20,10 @@ sourceSets {
     }
 }
 
-val bundle by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-
 dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
     compileOnly(libs.jetbrains.annotations)
     compileOnly(libs.fabric.loader)
     compileOnly("org.slf4j:slf4j-api:2.0.9")
-
-    bundle(project(":core"))
-    bundle(project(":deps-lib"))
-}
-
-tasks.named<Jar>("jar") {
-    enabled = false
-}
-
-tasks.named<ShadowJar>("shadowJar") {
-    archiveClassifier.set("")
-    archiveBaseName.set("mcdp-fabric-26.1")
-    configurations = listOf(bundle)
-    mergeServiceFiles()
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.named("assemble") {
-    dependsOn(tasks.named("shadowJar"))
-}
-
-configurations.apply {
-    named("apiElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
-    named("runtimeElements").configure {
-        outgoing.artifacts.clear()
-        outgoing.artifact(tasks.named("shadowJar"))
-    }
 }
