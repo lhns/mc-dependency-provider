@@ -24,8 +24,16 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-// 26.1's NeoForge SPI may diverge from 21.x. Clone the 21.x source, adapt as needed.
-// Default sourceSet config picks up neoforge-26.1/src/main/java/.
+// The NeoForge SPI has not in fact diverged between 21.x and 26.1, so the adapter
+// source is shared with the 21.x band (neoforge/). Only this band's resources —
+// the META-INF service file — live here. When the SPI does diverge, split the
+// source tree back out into neoforge-26.1/src/main/java/.
+sourceSets {
+    main {
+        java.setSrcDirs(listOf(rootProject.file("neoforge/src/main/java")))
+        resources.setSrcDirs(listOf("src/main/resources"))
+    }
+}
 
 val bundle by configurations.creating {
     isCanBeConsumed = false

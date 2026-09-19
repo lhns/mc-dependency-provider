@@ -18,6 +18,15 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
 }
 
+// Adapter source is shared with the 1.18 band (identical forgespi usage); this
+// build.gradle.kts pins the 7.x forgespi coordinates for MC 1.20.x.
+sourceSets {
+    main {
+        java.setSrcDirs(listOf(rootProject.file("forge-1.18/src/main/java")))
+        resources.setSrcDirs(listOf("src/main/resources"))
+    }
+}
+
 val bundle by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true

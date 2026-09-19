@@ -8,15 +8,20 @@ import java.util.Objects;
  * unless we can prove it's safe — its FQN starts with a known platform prefix, lives in the
  * user's {@code sharedPackages}, or lives in the codegen's own bridge package.
  *
- * <p>Mirrors {@code de.lhns.mcdp.core.ModClassLoader}'s {@code PLATFORM_PREFIXES}. Kept inline
- * so the gradle-plugin module doesn't pull a runtime dependency on {@code core}.</p>
+ * <p>The prefix list is {@code de.lhns.mcdp.core.ModClassLoader}'s {@code PLATFORM_PREFIXES}
+ * <em>plus</em> the Mixin runtime prefix ({@code org.spongepowered.asm.mixin.}), which the
+ * codegen needs treated as parent-first even though the runtime loader doesn't list it. It is
+ * duplicated inline because {@code :gradle-plugin} deliberately has no dependency on
+ * {@code :core} — a Gradle plugin must not drag the runtime (and its Minecraft-facing
+ * classpath) into the build classpath. {@code BridgePolicyPrefixParityTest} guards the
+ * duplication against drift.</p>
  *
  * <p>FQNs are accepted in either dotted ({@code com.example.Foo}) or JVM-internal
  * ({@code com/example/Foo}) form; both are normalized internally.</p>
  */
 public final class BridgePolicy {
 
-    /** Mirror of {@code ModClassLoader.PLATFORM_PREFIXES} (kept in dotted form). */
+    /** {@code ModClassLoader.PLATFORM_PREFIXES} plus the Mixin runtime prefix (dotted form). */
     public static final List<String> PLATFORM_PREFIXES = List.of(
             "java.",
             "javax.",
@@ -34,8 +39,7 @@ public final class BridgePolicy {
             "org.apache.logging.log4j.",
             "de.lhns.mcdp.api.",
             "de.lhns.mcdp.core.",
-            "org.spongepowered.asm.mixin.",
-            "org.spongepowered.asm.mixin.injection."
+            "org.spongepowered.asm.mixin."
     );
 
     private final List<String> sharedPackages;

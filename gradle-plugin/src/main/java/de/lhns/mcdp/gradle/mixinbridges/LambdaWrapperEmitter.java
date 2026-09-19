@@ -5,7 +5,6 @@ import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -222,17 +221,5 @@ public final class LambdaWrapperEmitter {
 
     public static String logicFieldName(String containerSimpleName, int siteIndex) {
         return "LAMBDA_" + containerSimpleName.replace('$', '_') + "_" + siteIndex;
-    }
-
-    public String bridgeIfaceFqn(String containerInternal, int siteIndex) {
-        String simple = MixinRewriter.simpleName(containerInternal);
-        return BridgePolicy.toDotted(bridgePackageInternal) + "."
-                + simple + "$Lambda" + siteIndex + "Bridge";
-    }
-
-    public String bridgeImplFqn(String containerInternal, int siteIndex) {
-        String simple = MixinRewriter.simpleName(containerInternal);
-        return BridgePolicy.toDotted(implPackageInternal) + "."
-                + simple + "$Lambda" + siteIndex + "BridgeImpl";
     }
 }

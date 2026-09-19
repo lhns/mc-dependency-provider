@@ -2,7 +2,6 @@ package de.lhns.mcdp.gradle.validate;
 
 import de.lhns.mcdp.gradle.mixinbridges.BridgePolicy;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;

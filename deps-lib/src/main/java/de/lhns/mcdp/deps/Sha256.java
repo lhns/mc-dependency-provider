@@ -17,7 +17,7 @@ public final class Sha256 {
         return toHex(md.digest(data));
     }
 
-    public static String toHex(byte[] digest) {
+    private static String toHex(byte[] digest) {
         StringBuilder sb = new StringBuilder(digest.length * 2);
         for (byte b : digest) {
             sb.append(Character.forDigit((b >> 4) & 0xF, 16));

@@ -22,9 +22,14 @@ public final class LibraryCache {
         this.root = Objects.requireNonNull(root, "root");
     }
 
-    /** Default cache location. Respects {@code MC_LIB_PROVIDER_CACHE} env var; falls back to OS conventions. */
+    /** Default cache location. Respects {@code MCDEPPROVIDER_CACHE} env var; falls back to OS conventions. */
     public static LibraryCache defaultCache() {
-        String override = System.getenv("MC_LIB_PROVIDER_CACHE");
+        String override = System.getenv("MCDEPPROVIDER_CACHE");
+        if (override == null || override.isBlank()) {
+            // Compatibility shim: MC_LIB_PROVIDER_CACHE is the pre-rename name, still honoured so
+            // existing setups don't silently fall back to the OS-default location.
+            override = System.getenv("MC_LIB_PROVIDER_CACHE");
+        }
         if (override != null && !override.isBlank()) {
             return new LibraryCache(Path.of(override));
         }

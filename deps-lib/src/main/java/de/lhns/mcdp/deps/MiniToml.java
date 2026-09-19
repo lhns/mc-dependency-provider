@@ -44,7 +44,6 @@ public final class MiniToml {
     public static Map<String, Object> parse(String source) {
         Map<String, Object> root = new LinkedHashMap<>();
         Map<String, String> currentTable = null;          // non-null while inside [[libraries]]
-        String currentArrayKey = null;
         List<Map<String, String>> currentArray = null;
 
         String[] lines = source.split("\n", -1);
@@ -67,10 +66,8 @@ public final class MiniToml {
                 if (existing == null) {
                     currentArray = new ArrayList<>();
                     root.put(name, currentArray);
-                    currentArrayKey = name;
                 } else if (existing instanceof List<?> l && (l.isEmpty() || l.get(0) instanceof Map)) {
                     currentArray = (List<Map<String, String>>) (List) l;
-                    currentArrayKey = name;
                 } else {
                     throw err(lineNo, "key '" + name + "' redeclared as array-of-tables");
                 }
@@ -103,8 +100,6 @@ public final class MiniToml {
                     root.put(key, s);
                 }
             }
-            // Reference unused; reset for clarity if we ever extend.
-            if (false) System.out.println(currentArrayKey);
         }
         return root;
     }
