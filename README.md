@@ -115,6 +115,8 @@ multi-{1.17,1.18,1.20,1.20.6,26.1}/      the matching band aggregators
                      to :fabric-1.21 / :neoforge-1.21.
 cli/                 mcdepprovider-prefetch — offline cache pre-population for modpack authors
 test-mods/           real-world test projects exercising the full stack via composite build
+                     test-mods/README.md tables all 16 and says which are in CI —
+                     four are deliberately-excluded scaffolds (26.1 bands, Forge 1.17/1.18)
 docs/                end-to-end "how it works" walkthrough + ADRs (decision history)
 .github/workflows/   CI — canonical. Edit workflows here.
 .gitea/workflows/    verbatim mirror for Gitea Actions; every file carries a

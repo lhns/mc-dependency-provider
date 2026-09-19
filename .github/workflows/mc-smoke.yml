@@ -181,7 +181,7 @@ jobs:
   # port (Forge 4.0 vs 7.x, NeoForge 8.0.x vs 9.0.x, fabric-loader 0.14 vs 0.15) would
   # not surface until release. This job boots one test mod per (loader × band) cell.
   #
-  # Excluded from coverage:
+  # Excluded from coverage (also documented per-mod in test-mods/README.md):
   #   - 26.1 (fabric + neoforge): MC 26.1.x is scaffold-only — Mojang has not shipped
   #     real artifacts; Loom errors "26.1.2 requires Java 25 but Gradle is using 21".
   #   - Forge 1.17 / 1.18: ForgeGradle 5.1 forces Gradle 7 (Java ≤19), but mcdp's
