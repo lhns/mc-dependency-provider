@@ -21,9 +21,9 @@ The pipeline runs as `:generateMcdpMixinBridges`, between `compileJava/compileSc
 3. **Emit one bridge interface per unique target** (`<bridgePackage>.<TargetSimpleName>Bridge`) as bytecode, holding one method per (member-name, descriptor) tuple. Static methods keep their descriptor; virtual methods get a leading receiver parameter; field reads become getter methods.
 4. **Emit one forwarding impl per bridge** as bytecode: stateless, public no-arg ctor, every method body is a one-line forward to the original.
 5. **Rewrite the mixin's bytecode** (`MixinRewriter`): add a synthetic `LOGIC_<TargetSimpleName>` static field per target, and replace each cross-classloader call site with a stack-juggle sequence (spill args to fresh locals, push the LOGIC field, reload locals, INVOKEINTERFACE the bridge). `LineNumberTable` is preserved by walking the existing `InsnList` rather than rebuilding the method.
-6. **Write a manifest** (`META-INF/mcdp-mixin-bridges/<mixinFqn>.txt`) listing each `(bridge, impl, field)` triple for runtime registration.
+6. **Write a manifest** listing each `(bridge, impl, field)` triple for runtime registration. *(As originally shipped: one `META-INF/mcdp-mixin-bridges/<mixinFqn>.txt` per mixin. Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md) — a single `META-INF/mcdp-bridges.toml` per mod.)*
 
-At runtime, `McdpProvider.registerMod(modId, ModClassLoader)` reads the manifest, instantiates each impl through the per-mod loader (`Class.forName(impl, true, modLoader).newInstance()`), and assigns it to the mixin's `LOGIC_*` field via reflection. The field's declared type is the bridge interface (parent-first via `sharedPackages`), so the JVM verifier is happy; the field's runtime value is from a child loader, but `invokeinterface` against an interface known to the verifier doesn't care which loader defined the impl — that's how cross-classloader interface dispatch works in any JVM.
+At runtime the impl is instantiated through the per-mod loader and assigned to the mixin's `LOGIC_*` field. *(As originally shipped this happened in `McdpProvider.registerMod`, by reflection; that crashes under real Sponge Mixin with `IllegalClassLoadError`. The shipped fix moved resolution into a synthesized `<clinit>` calling `McdpProvider.resolveAutoBridgeImpl(mixinFqn, fieldName)` — see [ADR-0019](0019-bridge-manifest-format-and-registration.md) for the current registration API. Impls are emitted into the sibling `<bridgePackage>_impl` package — see [ADR-0021](0021-generalized-bridge-codegen.md).)* The field's declared type is the bridge interface (parent-first via `sharedPackages`), so the JVM verifier is happy; the field's runtime value is from a child loader, but `invokeinterface` against an interface known to the verifier doesn't care which loader defined the impl — that's how cross-classloader interface dispatch works in any JVM.
 
 ### Why bytecode rewriting and not source-level
 
@@ -43,6 +43,16 @@ The detection policy is conservative: bridge anything that's not provably safe (
 
 Sponge Mixin's annotation processor runs during javac/scalac and emits a refmap from the unrewritten bytecode. The refmap describes references from the mixin to its *target class* (e.g., `FlowingFluid.tick`) — which the rewriter never touches, only mod-private references get rewritten. So the refmap remains valid against the post-rewrite class file. (A regression test at the integration-test level pins this; the unit-test pipeline has no refmap to compare against.)
 
+### Codegen input and output placement
+
+Two mechanics that the first cut got wrong and that are load-bearing for polyglot mods:
+
+- **Inputs.** Codegen scans every `SourceSet` output dir (`main.output.classesDirs` — java + scala + kotlin), not just `compileJava`'s: when a `.java` mixin lives under `src/main/scala/` (or `src/main/kotlin/`), the polyglot compiler writes its bytecode to its own output dir while `compileJava`'s stays empty. First match wins, in Gradle's source-set insertion order. Relatedly, `MixinRewriter` and `BridgeImplEmitter` write through `ClasspathAwareClassWriter`, which overrides `getClassLoader()` so ASM's `COMPUTE_FRAMES`/`getCommonSuperClass` resolves against a `URLClassLoader` built from the consumer's `compileClasspath` ∪ its class outputs rather than the gradle-plugin's own loader (which can't see Minecraft types; `mc-fluid-physics` hit this merging `FluidState`/`BlockState`/`Level` frames). Covered by `ClasspathAwareClassWriterTest`.
+
+- **Outputs.** Rewritten mixins are written back **in place** over `build/classes/<lang>/main/...`; only new classes (bridge interface, impl, lambda wrappers) go to the codegen's own `build/mcdp-bridges/classes/`. Layering the rewritten copy as an extra `main.output.dir(...)` failed because FabricLoader and MDG iterate `classesDirs` in declaration order and first-match resolved the *unrewritten* class, so Sponge applied the unrewritten injection body. The rejected alternatives were reordering `classesDirs` (fragile `setFrom` manipulation, and depends on every loader honoring declaration order) and deleting the originals (same write-to-another-task's-output footprint, plus it risks spurious recompiles). In-place mutation is tolerable because the rewriter is idempotent, compile tasks track *source* state for up-to-date checks, and Sponge's refmap remap and Loom's remapping tasks set the precedent.
+
+  In-place rewriting does interact badly with Gradle's up-to-date check, which cost mc-fluid-physics a shipped jar whose mixins called mod-private targets directly (`NoClassDefFoundError: scala/jdk/CollectionConverters$` mid-tick). An incremental `compileScala` rewrites *all* its outputs, wiping the in-place rewrite; the codegen task's recorded input fingerprint then matches the original bytecode again and its outputs are unchanged, so Gradle skips it. Idempotence doesn't help if the task never re-runs. Fix: `getOutputs().upToDateWhen(t -> false)` in `BridgeCodegenTask` — sub-second cost, and a no-op on already-rewritten input. Regression test: `McdpProviderPluginTest.bridgeTaskRerunsAfterUpstreamOverwrite`. If the layered-output design is ever revisited, that line goes away with it.
+
 ## Consequences
 
 **Positive:**
@@ -59,54 +69,11 @@ Sponge Mixin's annotation processor runs during javac/scalac and emits a refmap 
 - **One more thing that can break under future ASM/Mixin changes.** If Sponge ships a new `@At` mode or NeoForge ships a new `@WrapOperation`-flavoured annotation that the rewriter doesn't recognize, the rewrite still completes — the annotations are preserved verbatim — but a smoke test is the proof. Tier-2 CI on a real mod jar is the right place to detect this.
 - **`CHECKCAST`/`INSTANCEOF`/`ANEWARRAY` of mod-private types remain unbridgeable** — these are not "deferred", they are formal bridge-model limits documented in `docs/mixin-bridge.md`. A bridge interface cannot mention a mod-private type in any signature, and the surrounding bytecode's locals-typing references the type directly. The user's recourse is `sharedPackages.add(...)` or refactoring the operation into mod code. **The missing-share case is now caught at build time** by the validator described in ADR-0024 (`bridges.crossLoaderAnnotations`), which generates a precise `sharedPackages.add(...)` line based on which Mixin accessor the offending mod-side cast targets.
 
-## Affected files
-
-| Path | Change |
-|---|---|
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/MixinBridgesExtension.java` | NEW. DSL for `enabled`, `modPrivatePackages`, `bridgePackage`. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderExtension.java` | Added `getMixinBridges()` + `mixinBridges(Action)` for the nested DSL. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderPlugin.java` | Conventions for the new DSL; `:generateMcdpMixinBridges` registration; jar/processResources/main.output wiring. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgePolicy.java` | NEW. Default-bridge allow/deny logic. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeMember.java` | NEW. Identity for one bridge entry. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeMixinScanner.java` | NEW. ASM walk → cross-classloader-ref grouping. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/MixinRewriter.java` | NEW. ASM tree-mode rewrite of method bodies. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeInterfaceEmitter.java` | NEW. Emits the bridge interface as bytecode. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeImplEmitter.java` | NEW. Emits the forwarding impl as bytecode. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeCodegenTask.java` | NEW. Gradle task gluing the pipeline together. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/MixinScanResult.java` | NEW. Scanner output value type. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/MixinJson.java` | NEW. Local copy of `MiniJson` so the gradle-plugin module doesn't depend on `core`. |
-| `core/src/main/java/de/lhns/mcdp/api/McdpProvider.java` | Added `wireAutoMixinBridges` in `registerMod`: walks the per-mod jar's `META-INF/mcdp-mixin-bridges/*.txt`, instantiates impls, sets static `LOGIC_*` fields. |
-| `core/src/main/java/de/lhns/mcdp/core/ModClassLoader.java` | `loadClass` decorates a missing-class error with a tailored message when the FQN looks mod-private (Layer A). |
-| `docs/mixin-bridge.md` | NEW. Two-track docs (codegen + hand-written). |
-| `README.md` | "Mods with Mixins" callout swapped to lead with codegen. |
-| `docs/adr/0008-mixin-via-bridge-pattern.md` | "Refined by ADR-0018" cross-link. |
-
 ## Alternatives considered
 
 - **Hand-written `@McdpBridge` annotation processor.** Generates the bridge interface + impl from a Scala-side annotation. Considered for an earlier draft; subsumed by bytecode rewriting (no consumer-side annotations needed).
 - **`@McdpMixin` AP that validates the hand-written bridge at compile time.** Useful but optional; not worth the build-tool complexity once codegen is the default.
 - **Reflection-based `McdpProvider.invokeStatic("…", args)`.** Migration aid for SCF ports. Long-term API smell; revisit only if codegen leaves users stuck.
-
-## Errata: runtime wiring and manifest format
-
-> **Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md).**
-> The lazy `<clinit>`-driven registration shape and the on-disk bridge-manifest format are now specified there. Earlier sub-errata in this section (URL scan → directory scan → index file → unified TOML) are kept for historical context but no longer describe the live behaviour.
-
-The original wiring at §"At runtime, `McdpProvider.registerMod`…" did `Class.forName(mixinFqn, false, gameLoader)` and assigned the impl to the `LOGIC_*` field via reflection. That crashes under real Sponge Mixin with `IllegalClassLoadError`. The shipped fix moved impl resolution into a synthesized `<clinit>` on the rewritten mixin, calling `McdpProvider.resolveAutoBridgeImpl(mixinFqn, fieldName)` — see ADR-0019 for the current format and registration API.
-
-### Errata: input-dir resolution (post-v0.1.0)
-
-Codegen scans every `SourceSet` output dir (`main.output.classesDirs` — java + scala + kotlin), not just `compileJava`'s. Required for Scala/Kotlin joint compilation: when a `.java` mixin source lives under `src/main/scala/` (or `src/main/kotlin/`), the polyglot compiler writes the bytecode to its own output dir while `compileJava`'s stays empty. The scanner uses first-match in the FileCollection's iteration order, which is insertion order from Gradle's source-set wiring (java, scala, kotlin).
-
-### Errata: ASM `getCommonSuperClass` loader (post-v0.1.0)
-
-`MixinRewriter` and `BridgeImplEmitter` both write classes through `ClassWriter` with `COMPUTE_FRAMES`. ASM's default `getCommonSuperClass` resolves type lookups through whichever `ClassLoader` loaded `ClassWriter.class` — i.e. the gradle-plugin classloader, which can't see Minecraft (or any consumer-only) types. Mixins that push two MC reference types onto the operand stack across a branch join would otherwise CNF inside `getCommonSuperClass` (`mc-fluid-physics` was the first real-world repro: `FluidState`, `BlockState`, `Level`).
-
-Fix: `ClasspathAwareClassWriter` overrides `getClassLoader()` to return a caller-supplied loader. `BridgeCodegenTask` builds a `URLClassLoader` from the consumer's `compileClasspath` ∪ the project's own class outputs, parented at `getPlatformClassLoader()`, and passes it to both writer call sites. Test mods don't surface the bug (their bytecode never produces ambiguous merge frames between two consumer-only types) — covered by `ClasspathAwareClassWriterTest`.
-
-### Errata: manifest discovery and format
-
-Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md). The discovery iterations (URL scan → explicit directory scan → per-mixin index file) all pre-dated the move to a single `META-INF/mcdp-mixin-bridges.toml` file per mod. ADR-0019 has the full reasoning and the current API surface.
 
 ## Out of scope (revisit conditions)
 
@@ -114,40 +81,11 @@ Superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md). The d
 - **`CHECKCAST` / `INSTANCEOF` / `ANEWARRAY` of mod-private types** — formal bridge-model limit, see Consequences above. Not deferred work.
 - **Per-mod fluidphysics-style ports** — out of scope for this ADR; ports happen separately, this codegen is the substrate they'll run on.
 
-### Errata: rewrite in place vs. layered copy (post-fluidphysics)
+## Errata
 
-**Symptom.** In dev `runServer` (Loom on Fabric, MDG on NeoForge), the loader resolved the unrewritten class file from `build/classes/scala/main/...` instead of the rewritten copy under `build/mcdp-bridges/classes/...`. Sponge applied the unrewritten injection body and bypassed the bridge entirely. Multi-language source sets (Scala or Kotlin joint compilation of `.java` mixins) hit this; pure-Java test mods didn't because there's only one compile-task output dir on the classpath.
+**Runtime wiring and manifest format are superseded by [ADR-0019](0019-bridge-manifest-format-and-registration.md).** The registration shape and on-disk format went through four iterations (URL scan → directory scan → index file → unified TOML) before settling; ADR-0019 has the current format and API. The settled codegen-time corrections (input-dir resolution, ASM `getCommonSuperClass` loader, in-place rewrite, the up-to-date hole) are folded into the Decision above.
 
-**Root cause.** The pre-fix wiring registered the codegen output via `main.getOutput().dir(...)` *after* the standard compile outputs. `main.output.classesDirs` listed the codegen dir last; FabricLoader and MDG iterate the FileCollection in declaration order and use first-match.
-
-**Fix.** Write rewritten classes back over the input file in `build/classes/<lang>/main/...`. Single canonical copy on the dev classpath, no ordering dependency. New classes (bridge interface, impl, lambda wrappers) still go to `build/mcdp-bridges/classes/`, which is properly declared as the codegen task's output.
-
-**Alternatives considered:**
-
-- **Reorder `main.output.classesDirs` so the codegen dir comes first.** Cleanest from a Gradle "task owns its output" standpoint. Rejected: requires non-trivial `ConfigurableFileCollection.setFrom` manipulation that may surprise other plugins (Loom/MDG also wire into `classesDirs`), and depends on every loader honoring declaration order. FabricLoader does (per the maintainer's report); MDG behavior at the time of writing is unverified, and the rest of the loader ecosystem is even less certain.
-- **Delete originals after writing to the codegen dir.** Equivalent mutation footprint — deleting from compileScala's output is the same kind of write-to-another-task's-output as overwriting. Adds a risk: a future Gradle version (or stricter incremental-compile mode) might detect the missing declared output and re-run the compile task unnecessarily.
-
-**Why in-place rewrite is acceptable:**
-
-1. The rewriter is idempotent. Running it twice on the same bytecode is a no-op — `MixinRewriter.rewrite` checks for the synthetic `LOGIC_*` field and skips re-adding it (`MixinRewriter.java`, `<clinit>` injection block). So an incremental rebuild that re-runs the codegen on already-rewritten input produces identical output.
-2. Java/Scala/Kotlin compile tasks track source-file state for up-to-date checks, not output state. Mutating their output post-hoc doesn't trigger spurious recompiles.
-3. Precedent. Sponge mixin's refmap remap and Loom's remapping tasks mutate compile output in the same pattern. The mixin tooling ecosystem treats this as a known compromise.
-
-The mutation is undeclared but tolerated. If a future Gradle version enforces stricter task-output isolation, the migration path is to switch to the delete-originals variant or invest in the FileCollection-reorder approach.
-
-**Errata to the errata: incremental up-to-date hole (mc-fluid-physics 2026-05-02).**
-
-The "tolerated" framing above missed an interaction with Gradle's up-to-date check. Symptom: a production NeoForge build of mc-fluid-physics shipped a jar whose mixin handlers called mod-private targets directly (no `LOGIC_*` dispatch in the bytecode), crashing mid-tick under PrismLauncher with `NoClassDefFoundError: scala/jdk/CollectionConverters$`. On-disk evidence pinned it down: bridges and the manifest were from Build 1, but the mixin class had been rewritten by compileScala 15 minutes later in Build 2.
-
-**Mechanism.** Build 1 (clean): bridgeTask reads compileScala's ORIGINAL output, rewrites in place, writes outputs (mcdp-bridges + manifest + report). Gradle records bridgeTask's input fingerprint as ORIGINAL bytecode. The user edits an unrelated Scala source. Build 2 (incremental): compileScala re-runs to apply the changed source. **It refreshes its output dir, writing fresh ORIGINAL bytecode for every class — including those whose source didn't change.** Our in-place rewrite is wiped. bridgeTask is checked next: input fingerprint is now ORIGINAL again (matching what was recorded at the start of Build 1), and outputs (bridge dir + manifest + report) are unchanged on disk. Gradle declares bridgeTask UP-TO-DATE and skips it. The jar is then assembled from the (un-rewritten) compileScala output plus the (still-correct-but-uncalled) bridges from Build 1.
-
-The rewriter being idempotent isn't enough — Gradle simply never re-runs the task in this case. The tolerance argument was wrong.
-
-**Fix.** `getOutputs().upToDateWhen(t -> false)` in `BridgeCodegenTask`'s constructor. Force re-run every build. The cost is sub-second on a typical mixin set (pure ASM read + write); the rewriter's idempotence ensures re-running on already-rewritten input is a no-op. Regression test: `McdpProviderPluginTest.bridgeTaskRerunsAfterUpstreamOverwrite` simulates an upstream-overwrite condition with two TestKit invocations and asserts the rewrite persists.
-
-If we ever revisit the in-place design (e.g. by adopting the FileCollection-reorder approach so rewrites can live in a separate output dir), the `upToDateWhen { false }` line goes away with it. Until then, it's the only reliable answer.
-
-### Errata: rename `mcdp_mixin_bridges` → `mcdp_bridges` (post-ADR-0021)
+### Rename `mcdp_mixin_bridges` → `mcdp_bridges` (post-ADR-0021)
 
 Once ADR-0021 generalized the codegen to seed on arbitrary class-level annotations (subscribers, custom registry-driving annotations, …), the "mixin" prefix in the user-facing names was misleading. A cleanup pass renamed every consumer-visible identifier:
 
@@ -160,4 +98,4 @@ Once ADR-0021 generalized the codegen to seed on arbitrary class-level annotatio
 - Build dir `build/mcdp-mixin-bridges/` → `build/mcdp-bridges/`
 - Doc `docs/mixin-bridge.md` → `docs/bridges.md`
 
-Hard cut, no deprecated alias — pre-v0.1.0, no shipped consumer was depending on the old DSL. Migration guide at `docs/migrating-to-bridges-rename.md`.
+Hard cut, no deprecated alias — pre-v0.1.0, no shipped consumer was depending on the old DSL. The rename table below is the migration guide; the standalone migration doc was retired once the pre-rename snapshots aged out.

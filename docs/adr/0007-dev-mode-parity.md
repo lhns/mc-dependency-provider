@@ -1,6 +1,6 @@
 # ADR-0007 — Dev-mode runs through the production dep-loading path
 
-**Status:** Accepted
+**Status:** Accepted, with the headline default reversed — see [ADR-0025](0025-run-task-stripping-opt-in.md). Run-task classpath stripping (decision point 1 below) is now **opt-in and off by default** (`patchRunTasks` defaults to the empty list) because ModDevGradle 2.0.91+ routes mod classes onto FML's game layer regardless. Points 2 and 3 (cache pre-warm, untouched compile/test) still stand.
 
 ## Context
 

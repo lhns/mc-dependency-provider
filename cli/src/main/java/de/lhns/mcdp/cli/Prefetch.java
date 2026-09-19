@@ -17,7 +17,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Offline-prefetch CLI for modpack authors (task #33 / open-question #2).
+ * Offline-prefetch CLI for modpack authors.
  *
  * Given a set of mod-jar paths or directories, reads each mod's
  * {@code META-INF/mcdepprovider.toml} and pre-populates the shared library cache so

@@ -3,6 +3,8 @@
 **Status:** Accepted — refined by [ADR-0018](0018-automatic-mixin-bridge-codegen.md) and [ADR-0021](0021-generalized-bridge-codegen.md). The bridge-pattern runtime architecture in this ADR is unchanged; ADR-0018 layers a Gradle-side bytecode-rewriter on top so the mod author writes a normal Sponge-Common-style mixin and the bridge plumbing is generated for them, and ADR-0021 generalizes the rewriter to seed on arbitrary class-level annotations (so `@EventBusSubscriber` and similar FML side-loads are auto-bridged) and to rewrite `INVOKEDYNAMIC LambdaMetafactory` sites whose synthetic bodies leak Scala references through Sponge's mixin merge.
 **Supersedes:** the earlier draft "ADR-0008 — Mixin unsupported for Scala mod classes"
 
+> **API names.** This ADR is the canonical description of a live API surface, so the names below are the real ones: `@McdpMixin` (`core/.../api/McdpMixin.java`) and `McdpProvider.loadMixinImpl` (`core/.../api/McdpProvider.java`). They were spelled `@McLibMixin` / `McLibProvider.loadMixinImpl` before the `mc-lib-provider` → `mcdp` rename (see the README note on ADRs 0001–0013).
+
 ## Context
 
 [Mixin](https://github.com/SpongePowered/Mixin) — in the form of the FabricMC fork `net.fabricmc:sponge-mixin:0.16.5+mixin.0.8.7`, which both modern NeoForge (via FancyModLoader's `loader/build.gradle`) and Fabric Loader 1.21.1 ship — is the dominant bytecode-patching mechanism for modifying Minecraft internals. Historical guidance for this project was that Mixin would not apply to mod classes loaded through per-mod `ModClassLoader`s, so Scala/Kotlin/Java mods using mc-lib-provider couldn't use Mixin.
@@ -22,16 +24,16 @@ Use a **Java-interface + implementation bridge pattern**. The mixin class is Jav
 
 Two supporting pieces in `core/`:
 
-- **`@McLibMixin(impl = "fully.qualified.ImplClassName")`** — annotation placed on the mixin class. Declares which impl class to instantiate, resolved through the mod's per-mod classloader.
-- **`McLibProvider.loadMixinImpl(Class<I> iface)`** — static helper that walks the stack to find the calling mixin class, reads its `@McLibMixin`, looks up the mod's `ModClassLoader`, loads the impl, casts to `I`, returns. Result is cached per mixin class.
+- **`@McdpMixin(impl = "fully.qualified.ImplClassName")`** — annotation placed on the mixin class. Declares which impl class to instantiate, resolved through the mod's per-mod classloader.
+- **`McdpProvider.loadMixinImpl(Class<I> iface)`** — static helper that walks the stack to find the calling mixin class, reads its `@McdpMixin`, looks up the mod's `ModClassLoader`, loads the impl, casts to `I`, returns. Result is cached per mixin class.
 
 ### Owner resolution — three paths, checked in order
 
 `loadMixinImpl` must map the calling mixin class to the right `ModClassLoader`. The resolver tries three strategies in order:
 
-1. **Annotation `modId` (recommended).** If the mixin's `@McLibMixin(modId = "...")` is set, use it. **This is the recommended form** — Mixin merges the annotated method body into the target class (e.g. `MinecraftServer`), and when Mixin rewrites the `<clinit>` static-field init the runtime caller on the JVM stack is the target class, not the mixin. The stack walk in paths 2–3 may then miss. Setting `modId` explicitly sidesteps the ambiguity.
-2. **Pre-registered FQN map.** Platform adapters can call `McLibProvider.registerMixinOwner(fqn, modId)` during boot (typically after reading each mod's Mixin config) so the resolver can look up a mixin class's owning mod without a stack walk. Useful when the mod author didn't set `modId` but the adapter knows the mapping.
-3. **Stack walk + single-mod fallback.** Last resort: walk frames to find a class outside `McLibProvider` that carries `@McLibMixin`. If none is found and there's exactly one mod registered, that mod is assumed the owner. This is enough for single-mod dev boots; it's **not** enough under multi-mod configurations, which is why 1 and 2 exist.
+1. **Annotation `modId` (recommended).** If the mixin's `@McdpMixin(modId = "...")` is set, use it. **This is the recommended form** — Mixin merges the annotated method body into the target class (e.g. `MinecraftServer`), and when Mixin rewrites the `<clinit>` static-field init the runtime caller on the JVM stack is the target class, not the mixin. The stack walk in paths 2–3 may then miss. Setting `modId` explicitly sidesteps the ambiguity.
+2. **Pre-registered FQN map.** Platform adapters can call `McdpProvider.registerMixinOwner(fqn, modId)` during boot (typically after reading each mod's Mixin config) so the resolver can look up a mixin class's owning mod without a stack walk. Useful when the mod author didn't set `modId` but the adapter knows the mapping.
+3. **Stack walk + single-mod fallback.** Last resort: walk frames to find a class outside `McdpProvider` that carries `@McdpMixin`. If none is found and there's exactly one mod registered, that mod is assumed the owner. This is enough for single-mod dev boots; it's **not** enough under multi-mod configurations, which is why 1 and 2 exist.
 
 Mod authors should prefer path 1. Platform adapters may implement path 2 as a defense-in-depth fix for mods that forget to set `modId`.
 
@@ -53,10 +55,10 @@ public interface FlowableFluidLogic {
 ```java
 // The mixin class — Java, no Scala references
 @Mixin(FlowingFluid.class)
-@McLibMixin(impl = "de.lolhens.fluidphysics.mixin.FlowableFluidLogicScala")
+@McdpMixin(impl = "de.lolhens.fluidphysics.mixin.FlowableFluidLogicScala")
 public abstract class FlowableFluidMixin {
     private static final FlowableFluidLogic logic =
-        McLibProvider.loadMixinImpl(FlowableFluidLogic.class);
+        McdpProvider.loadMixinImpl(FlowableFluidLogic.class);
 
     @Inject(at = @At("HEAD"), method = "canSpreadTo", cancellable = true)
     protected void fp$canSpreadTo(BlockGetter bg, BlockPos fluidPos, /*...*/,
@@ -80,28 +82,18 @@ class FlowableFluidLogicScala extends FlowableFluidLogic {
 }
 ```
 
-### Runtime dispatch walkthrough
+### Why this works, and its one prerequisite
 
-1. `FlowingFluid` is loaded by NeoForge's `TransformingClassLoader`. Mixin's `ILaunchPluginService` hooks the load and inlines code from `FlowableFluidMixin` into `FlowingFluid.canSpreadTo`.
-2. Inlined code reads the static field `logic`. Its declared type is `FlowableFluidLogic` — a Java interface. `FlowableFluidLogic.class` is in the mod jar, which is on NeoForge's game layer, so NeoForge's loader resolves the interface.
-3. The `logic` field was initialized by `McLibProvider.loadMixinImpl(...)`. That helper found `@McLibMixin(impl = "...")` on the mixin class, located the mod's `ModClassLoader`, loaded `FlowableFluidLogicScala` through it, instantiated, and cached the result.
-4. `logic.canSpreadTo(...)` is an `invokeinterface`. JVM dispatches by looking at the *receiver's* class — `FlowableFluidLogicScala`, defined by the per-mod classloader. The method body runs in that loader's context, where Scala stdlib and cats and anything else the mod needs are visible.
-5. The method returns; control returns to Minecraft code.
+Sponge inlines the mixin body into `FlowingFluid`, so the inlined code reads `logic` through NeoForge's loader; `logic.canSpreadTo(...)` is an `invokeinterface`, and the JVM dispatches on the *receiver's* class — the per-mod-loaded `FlowableFluidLogicScala` — so the body runs where Scala stdlib and cats are visible. No thread-context trickery, no bytecode rewriting, no global Scala stdlib.
 
-No special thread-context trickery, no bytecode rewriting on the mixin class, no global Scala stdlib.
-
-### Shared-package-prefix delegation (the subtle prerequisite)
-
-For this to work, `FlowableFluidLogic` (the interface) must be the *same `Class` object* in both NeoForge's loader and the per-mod `ModClassLoader`. Otherwise the per-mod-loaded impl can't be cast to an interface type from NeoForge's loader.
-
-ADR-0001 updated to include this: the per-mod `ModClassLoader` **parent-firsts** classes under any package prefix the mod declares in its manifest's `shared_packages` list. The convention is that the mod puts interfaces + mixin classes under an `api`-ish subpackage:
+The prerequisite: `FlowableFluidLogic` must be the *same `Class` object* on both loaders, or the per-mod impl can't be cast to it. ADR-0001's per-mod `ModClassLoader` parent-firsts any package prefix the mod declares in its manifest's `shared_packages`, so the mod puts the interface (and the mixin) under an `api`-ish subpackage and shares that prefix only:
 
 ```toml
 lang = "scala"
 shared_packages = ["de.lolhens.fluidphysics.api"]
 ```
 
-The per-mod loader sees `de.lolhens.fluidphysics.api.FlowableFluidLogic` in its parent-first list, delegates to NeoForge's loader, gets back the same `Class` NeoForge already has. Scala impls (under `de.lolhens.fluidphysics.mixin.*`) stay child-first — per-mod owned.
+Scala impls (under `de.lolhens.fluidphysics.mixin.*`) stay child-first — per-mod owned.
 
 ## Consequences
 
@@ -115,27 +107,21 @@ The per-mod loader sees `de.lolhens.fluidphysics.api.FlowableFluidLogic` in its 
 **Negative:**
 - **Boilerplate.** Every `@Inject` needs a matching interface method and a trampoline call. Scales linearly with mixin complexity. For a mod with 20 @Inject points, that's ~20 interface methods + ~20 trampoline methods on top of the Scala impl. Not enormous but real.
 - **Signature constraint.** The bridge interface's method signatures must use types resolvable from NeoForge's loader: JDK types, Minecraft types, Spongepowered mixin callback types, and the mod's own Java types. Scala collections like `List[T]` cannot appear on the interface.
-- **Declarative overhead.** Mod authors must declare `shared_packages` in the manifest and place shared types under those prefixes. Not hard but not invisible; covered in docs/README.md.
+- **Declarative overhead.** Mod authors must declare `shared_packages` in the manifest and place shared types under those prefixes. Not hard but not invisible; covered in the root `README.md`.
 
 ## Alternatives considered
 
 - **Require pure-Java mixins with no cross-language calls** (the old ADR-0008 stance). Workable but more restrictive: even a simple config check like `if (FluidPhysicsConfig.enabled)` forces splitting into a Java side-module. The bridge pattern is no worse and unlocks more.
 - **Inject Scala stdlib into the game layer** via `ITransformationService.beginScanning`. Scala stdlib has no keyword packages (unlike cats-kernel), so this would work cleanly at the JPMS level — but it only solves references to the stdlib, not to the mod's own Scala classes. Those still need the bridge. And it breaks per-mod stdlib isolation. Rejected for the same reason as SCF's approach: explicit design goal not to special-case stdlibs only for mixin.
-- **Automatic bytecode rewriting of mixin classes** (rewrite `invokestatic ScalaObject.foo()` → `invokestatic McLibBridge.callScala(...)` at Mixin-read time). Would let authors write mixins naturally. Rejected: complex, fragile against Mixin internals, returns can't carry Scala types across loaders anyway so the rewrite would still need to erase to `Object` and force casts.
+- **Automatic bytecode rewriting of mixin classes** (rewrite `invokestatic ScalaObject.foo()` → `invokestatic McdpBridge.callScala(...)` at Mixin-read time). Would let authors write mixins naturally. Rejected: complex, fragile against Mixin internals, returns can't carry Scala types across loaders anyway so the rewrite would still need to erase to `Object` and force casts.
 
 ### `java-mixin-stubber` — evaluated and set aside
 
-[`de.lolhens:java-mixin-stubber`](https://github.com/lhns/java-mixin-stubber) is a build-time source-level stripper (~90 LOC, Apache 2.0, JavaParser-based) that lets a mod ship Java mixin classes which reference Scala classes from the same codebase. Used in the FluidPhysics mod.
+[`de.lolhens:java-mixin-stubber`](https://github.com/lhns/java-mixin-stubber) (~90 LOC, Apache 2.0, JavaParser-based; used in the FluidPhysics mod) is a build-time source stripper: at `compileJava` time it emits Java stubs of the `@Mixin`-annotated classes under `src/main/scala/`, keeping only annotated members and `java.*`/`org.spongepowered.*`/`net.minecraft.*` imports, so Mixin's annotation processor can generate a refmap without choking on Scala-mangled names. The real mixin sources (with real Scala references) are compiled by scalac's joint compilation and shipped in the jar; the stubs are deleted afterwards.
 
-**What it does:** at `compileJava` time, runs `Stubber.MIXIN.stubDirectory(scalaSourceDir, tempStubDir)` which reads all Java source under `src/main/scala/` (where mixin classes co-live with Scala code for scalac joint compilation), emits Java stubs containing only `@Mixin`-annotated classes, annotated methods, and imports from `java.*` / `org.spongepowered.*` / `net.minecraft.*`. Everything else — Scala imports, non-mixin classes, method bodies — is stripped. The stubs feed into Mixin's annotation processor for refmap generation; the real Java mixin files (with real Scala references) are compiled separately by scalac's joint compilation and shipped in the jar. Stubs are deleted after `compileJava`.
+**Why mcdp doesn't need it:** the stubber fixes a build-time AP error, but the runtime pattern it enables — Java mixins with direct Scala references — requires the mod's Scala classes to be resolvable from NeoForge's `TransformingClassLoader`, i.e. global Scala stdlib and globally-visible mod classes, which mcdp explicitly doesn't do. Under the bridge pattern mixin classes have no Scala references at all, so the AP has nothing to choke on and no refmap workaround is needed.
 
-**Why the project existed:** Mixin's AP chokes when processing Java source files that reference Scala-mangled names (`$colon$colon`, `package$either$`, Scala companion object static forwarders, etc.). The stubber gives the AP a Scala-free view so refmap generation succeeds. At runtime, the real mixin classes (with real Scala references) work because SCF's global Scala stdlib + the mod's own Scala classes being visible to Forge/NeoForge's classloader means the references resolve.
-
-**Why mc-lib-provider doesn't need it:** the stubber solves a build-time AP error, but the *runtime* pattern it enables — Java mixins with direct Scala references — requires the mod's Scala classes to be resolvable from NeoForge's `TransformingClassLoader`. That means global Scala stdlib and globally-visible mod-classes, which mc-lib-provider explicitly doesn't do. The bridge pattern in this ADR replaces the runtime half: mixin classes have no Scala references at all, so Mixin's AP has nothing to choke on, so no refmap workaround is needed.
-
-**When the stubber is still a good tool:** for mods that use SCF (or any loader that globally shares Scala + mod classes on the classloader) and want the ergonomic benefit of writing terse Scala references inside Java mixins. Orthogonal to mc-lib-provider. If a mod author migrates a fluidphysics-style codebase to mc-lib-provider, they drop the stubber at the same time they refactor to the bridge pattern.
-
-**Extending it for Kotlin:** the `Stubber` constructor takes filter predicates; a `Stubber.KOTLIN` preset with different import/method filters (tolerating `$Companion`, `$WhenMappings`, `$default` overloads) would be ~10 LOC. Not relevant to this project, but noted in case it helps upstream.
+It remains a good tool for mods on SCF (or any loader that globally shares Scala + mod classes). A mod migrating to mcdp drops it at the same time it refactors to the bridge pattern. (Its `Stubber` ctor takes filter predicates, so a `Stubber.KOTLIN` preset tolerating `$Companion`/`$WhenMappings`/`$default` would be ~10 LOC — noted in case it helps upstream.)
 
 ## Revisit conditions
 

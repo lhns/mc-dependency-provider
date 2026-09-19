@@ -80,7 +80,8 @@ configurations.apply {
     }
 }
 
-// :neoforge is no longer published. Only :dist publishes (the unified `mcdp` jar
-// containing both fabric and neoforge adapters). The shadowJar here remains
-// produced for inspection/debugging and is consumed via :dist's `bundle`
-// configuration through apiElements/runtimeElements above.
+// This subproject (`:neoforge-1.21`) is not published on its own. The band
+// aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
+// fabric and neoforge adapters. The shadowJar here remains produced for
+// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration
+// through apiElements/runtimeElements above.

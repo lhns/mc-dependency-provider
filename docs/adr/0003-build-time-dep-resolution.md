@@ -1,6 +1,6 @@
 # ADR-0003 — Build-time dependency resolution with SHA-pinned manifests
 
-**Status:** Accepted
+**Status:** Accepted — the build-time-resolution decision stands, but the *mechanism* described below is superseded by [ADR-0014](0014-opt-in-mcdep-implementation.md) (the `runtimeClasspath` walk was replaced by the opt-in `mcdepImplementation`/`mcdepManifest` buckets) and by [ADR-0015](0015-in-tree-closed-schema-parsers.md) (`MiniToml` replaced `tomlj`). Aether/`ManifestProducer` is no longer on the Gradle path either — see the note below.
 
 ## Context
 
@@ -15,7 +15,7 @@ Minecraft itself uses the Z-X pattern: `version.json` carries a pre-resolved fla
 
 Build-time resolution. The mod's manifest (`META-INF/mclibprovider.toml`) lists every library including transitives, each entry carrying `coords`, `url`, and `sha256`. The runtime's `ManifestConsumer` only downloads listed URLs and verifies hashes. There is no Maven resolver code in the runtime.
 
-Resolution is delegated to the mod author's build tool via the shared `deps-lib` library (see ADR-0004). The Gradle plugin walks `configurations.runtimeClasspath` and hands coords + repos to `deps-lib`'s `ManifestProducer`, which uses Apache Maven Resolver (Aether) to compute the closure. The plugin writes the resulting manifest into the mod jar.
+Resolution is delegated to the mod author's build tool via the shared `deps-lib` library (see ADR-0004). ~~The Gradle plugin walks `configurations.runtimeClasspath` and hands coords + repos to `deps-lib`'s `ManifestProducer`, which uses Apache Maven Resolver (Aether) to compute the closure.~~ **Stale (ADR-0014).** The plugin now resolves the dedicated `mcdepManifest` configuration (extending only `mcdepImplementation`) and `GenerateMcdpManifestTask` derives URLs and SHAs itself over `java.net.http`; `ManifestProducer`/Aether survives only in `deps-lib/src/full/` and is not on the Gradle plugin's path. The plugin writes the resulting manifest into the mod jar.
 
 ## Consequences
 

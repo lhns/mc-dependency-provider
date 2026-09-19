@@ -17,6 +17,11 @@ This provider loads each mod through its own `URLClassLoader`. Dep jars stay in 
 
 See [`docs/`](docs/) for the full architecture and the [ADRs](docs/adr/) for the decisions behind it.
 
+### When to choose this loader
+
+- **Stick with the built-in loader** (`javafml` on NeoForge, the default on Fabric) when your mod needs no external Maven deps, or they're small enough to JiJ / shade.
+- **Use mcdp** when your mod needs external Maven libraries it would rather not bundle. That's the default situation for Scala and Kotlin mods (cats, circe, cats-effect, fs2, coroutines, ...) and often the right answer for Java mods pulling in large libraries such as Jackson, Protobuf, or Guava.
+
 ## Supported Minecraft versions
 
 mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod's target MC version:
@@ -56,9 +61,12 @@ dependencies {
 
 mcdepprovider {
     lang.set("scala")                      // "java" | "scala" | "kotlin"
-    sharedPackages.add("com.example.api")  // parent-first packages (Mixin bridge interfaces)
+    sharedPackages.add("com.example.api.") // parent-first packages (Mixin bridge interfaces)
 }
 ```
+
+(The trailing dot is load-bearing: entries are matched as raw name prefixes, so `"com.example.api"`
+would also capture unrelated siblings like `com.example.apiInternal`. Always end an entry with `.`.)
 
 At build time, the plugin:
 
@@ -82,7 +90,7 @@ Per-language details: **Scala** `object` resolves via `MODULE$`. **Kotlin** `obj
 
 Sponge Mixin is hosted by the game-layer classloader, but mod-private Scala/Kotlin classes live behind a per-mod `ModClassLoader` — so a mixin holding `import com.example.MyMod` throws `NoClassDefFoundError` at runtime. The same problem hits any class FML side-loads from class-level annotations: NeoForge's `@EventBusSubscriber` registrar calls `Class.forName(fqn)` against FML's loader, freezing the subscriber's defining loader at FML and locking it out of Scala/Kotlin stdlib too. mcdp closes both gaps automatically: the Gradle plugin scans seeded classes (mixins from `*.mixins.json` plus any class with a configured class-level annotation — defaults cover `@Mixin` and `@EventBusSubscriber`), emits a bridge interface plus a per-mod impl, rewrites method bodies and `INVOKEDYNAMIC LambdaMetafactory` sites to dispatch through bridges, and wires the impls in at mod load. You write plain Sponge-Common-style mixins or NeoForge-style subscribers with direct calls to your mod code — no annotations, no manual `sharedPackages` entries for ordinary call sites. Codegen is on by default; there is nothing to add to your build.
 
-For users who want explicit control there is an opt-out (`bridges { enabled.set(false) }`) and a hand-written `@McdpMixin` pattern. See [`docs/bridges.md`](docs/bridges.md), [`docs/migrating-to-bridges-rename.md`](docs/migrating-to-bridges-rename.md) (if upgrading from the pre-rename DSL), [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md), [ADR-0018](docs/adr/0018-automatic-mixin-bridge-codegen.md), and [ADR-0021](docs/adr/0021-generalized-bridge-codegen.md) for the full story (including the cases the codegen still defers to manual `sharedPackages` — interface injection, mod-private mixin superclasses, reflection on mod-private class names).
+For users who want explicit control there is an opt-out (`bridges { enabled.set(false) }`) and a hand-written `@McdpMixin` pattern. See [`docs/bridges.md`](docs/bridges.md), [ADR-0008](docs/adr/0008-mixin-via-bridge-pattern.md), [ADR-0018](docs/adr/0018-automatic-mixin-bridge-codegen.md), and [ADR-0021](docs/adr/0021-generalized-bridge-codegen.md) for the full story (including the cases the codegen still defers to manual `sharedPackages` — interface injection, mod-private mixin superclasses, reflection on mod-private class names).
 
 ## Repository layout
 
@@ -90,17 +98,30 @@ For users who want explicit control there is an opt-out (`bridges { enabled.set(
 deps-lib/            manifest schema, IO, HTTP/SHA consumer, Aether producer (build-time only)
 core/                ModClassLoader, LoaderCoordinator, EntrypointAdapter + impls, bridge API
 gradle-plugin/       manifest generation, dev-cache pre-warm, bridge codegen, run-task classpath patch
-fabric/              LanguageAdapter + PreLaunchEntrypoint
-neoforge/            IModLanguageLoader
-multi/               :mcdp-1.21 aggregator — bundles fabric/ + neoforge/ shadowJars into
-                     one unified runtime jar published as de.lhns.mcdp:mcdp-1.21 (ADR-0016).
-                     Each per-MC-band aggregator lives in a sibling directory named after
-                     the band; only the 1.21 band is fully implemented at the time of writing.
+fabric/              LanguageAdapter + PreLaunchEntrypoint          (1.21 band)
+neoforge/            IModLanguageLoader                             (1.21 band)
+multi/               band aggregator — bundles the band's fabric + neoforge/forge
+                     shadowJars into one runtime jar. Publication is per-band
+                     (ADR-0023), not a single unified artifact.
+fabric-{1.17,1.18,1.20,1.20.6,26.1}/     sibling adapters per MC band
+forge-{1.17,1.18,1.20}/                  Forge bands (<= 1.20.4; scaffolds)
+neoforge-{1.20.6,26.1}/                  NeoForge bands (1.20.5+)
+multi-{1.17,1.18,1.20,1.20.6,26.1}/      the matching band aggregators
+                     Directory names carry the band; Gradle project names carry the
+                     published artifactId, and the two differ for the aggregators:
+                     multi/ → :mcdp-1.21, multi-1.20/ → :mcdp-1.20, and so on
+                     (see the projectDir remappings in settings.gradle.kts). The
+                     unsuffixed fabric/ and neoforge/ dirs are the 1.21 band and map
+                     to :fabric-1.21 / :neoforge-1.21.
 cli/                 mcdepprovider-prefetch — offline cache pre-population for modpack authors
 test-mods/           real-world test projects exercising the full stack via composite build
 docs/                end-to-end "how it works" walkthrough + ADRs (decision history)
-.github/workflows/   CI (GitHub Actions; canonical for the publish workflow)
-.gitea/workflows/    CI mirror (Gitea Actions, GitHub-compatible YAML)
+.github/workflows/   CI — canonical. Edit workflows here.
+.gitea/workflows/    verbatim mirror for Gitea Actions; every file carries a
+                     "MIRROR — do not edit here" header. publish.yml is deliberately
+                     GitHub-only: Gitea Actions implements no `workflow_run` trigger
+                     and the release gate shells out to the `gh` CLI, so its absence
+                     from the mirror is intent, not drift.
 ```
 
 For a deep walkthrough of the build → boot → runtime pipeline (with bridge bytecode examples), read [`docs/how-it-works.md`](docs/how-it-works.md).
@@ -115,6 +136,23 @@ The first time a player launches a mod that uses `mcdp`, the adapter downloads a
   - **Fabric** — Fabric's `PreLaunchEntrypoint` runs *before* any in-game UI, so the splash never sees these events. The launcher window's stdout/stderr tail and `latest.log` are the feedback channels; the adapter prints one stderr banner at the start of the download phase to signal the wait.
 
 Subsequent launches hit the cache and skip the network entirely.
+
+### Restricting download sources (`MCDP_REPO_WHITELIST`)
+
+Every download is SHA-256 verified, but the URL itself comes from the mod's manifest. For supply-chain hardening, set `MCDP_REPO_WHITELIST` to a comma-separated list of allowed URL prefixes:
+
+```
+MCDP_REPO_WHITELIST=https://repo1.maven.org/maven2/,https://maven.example.org/releases/
+```
+
+Any library whose URL does not start with one of the prefixes is rejected **before** the request is sent, so a tampered manifest can't reach an attacker-controlled repo even though the SHA check would have caught the bytes later. Unset or blank means no enforcement — the default, so existing installs keep working. Useful for modpack authors and locked-down servers.
+
+## Known limitations
+
+- **Mixins go through the bridge pattern.** A mixin class can't reference mod-private Scala/Kotlin types directly; calls are routed through a bridge interface living in a `sharedPackages` prefix. mcdp generates the bridges for you, but a few shapes still need manual `sharedPackages` entries — see [`docs/bridges.md`](docs/bridges.md).
+- **First launch requires network.** Unless the cache is pre-populated with the [`mcdepprovider-prefetch`](cli/) CLI.
+- **Stdlib duplication.** Mods pinning slightly different Scala/Kotlin stdlib versions each get their own copy; identical SHAs are coalesced onto one loader ([ADR-0006](docs/adr/0006-sha-keyed-classloader-coalescing.md)).
+- **Cross-mod APIs must speak platform types.** Mod A's `List[String]` and Mod B's `List[String]` are different `Class` objects when each has its own stdlib. Use Java-native types or explicit serialization across mod boundaries.
 
 ## Building
 

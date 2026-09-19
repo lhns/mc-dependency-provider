@@ -1,6 +1,6 @@
 # ADR-0016: Unified `mcdp` jar bundling Fabric and NeoForge adapters
 
-**Status:** Accepted — shipped before v0.1.0.
+**Status:** Accepted — shipped before v0.1.0. Superseded in part by [ADR-0023](0023-multi-mc-band-publication.md): the single-artifact assumption is gone — the unified jar is now published once per Minecraft band, and every project/artifact name below carries a band suffix (`:mcdp` → `:mcdp-1.21` / `de.lhns.mcdp:mcdp` → `de.lhns.mcdp:mcdp-1.21`, `:fabric` → `:fabric-1.21`, `:neoforge` → `:neoforge-1.21`). The bundling mechanics described here are otherwise unchanged.
 
 ## Context
 

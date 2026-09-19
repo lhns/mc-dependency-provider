@@ -28,8 +28,8 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // The unified mcdpprovider jar (ADR-0016) — the mod with id "mcdepprovider"
-    // that fabric_example depends on at runtime. Composite-substituted to :dist.
+    // The 1.21-band mcdpprovider jar (ADR-0023) — the mod with id "mcdepprovider"
+    // that fabric_example depends on at runtime. Composite-substituted to :mcdp-1.21.
     // The jar carries a `fabric.mod.json` at the root (Fabric reads it) plus a
     // `META-INF/neoforge.mods.toml` shape that Fabric ignores.
     modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")

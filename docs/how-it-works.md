@@ -67,22 +67,30 @@ Each mcdp-tagged mod ships one file at `META-INF/mcdepprovider.toml`:
 
 ```toml
 lang = "scala"
-sharedPackages = ["com.example.api."]
+shared_packages = ["com.example.api."]
+dev_roots = [                                    # dev builds only
+  "/abs/path/build/resources/main",
+  "/abs/path/build/classes/scala/main",
+  "/abs/path/build/mcdp-bridges/classes",
+]
 
-[[library]]
+[[libraries]]
 coords = "org.scala-lang:scala3-library_3:3.3.4"
 url = "https://repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.3.4/scala3-library_3-3.3.4.jar"
 sha256 = "abc123..."
 
-[[library]]
+[[libraries]]
 coords = "org.typelevel:cats-core_3:2.13.0"
 url = "..."
 sha256 = "..."
 ```
 
+The key names are exactly as written — snake_case, and `libraries` is plural. `ManifestIo` ignores anything it doesn't recognise, so a misspelled key parses to an empty list rather than an error.
+
 - **`lang`**: language tag (`java`, `scala`, `kotlin`). Picked up by `EntrypointAdapter` to build the `@Mod` instance correctly (ADR-0005).
-- **`sharedPackages`**: package prefixes the per-mod `ModClassLoader` delegates parent-first instead of child-first. Bridge interface package is auto-added by the plugin; users add API namespaces they explicitly want shared.
-- **`[[library]]`**: one per Maven coordinate in the transitive closure, with the canonical URL (HEAD-probed) and SHA-256 (computed locally at build time). ADR-0003 is the rationale for build-time resolution.
+- **`shared_packages`**: package prefixes the per-mod `ModClassLoader` delegates parent-first instead of child-first. Bridge interface package is auto-added by the plugin; users add API namespaces they explicitly want shared.
+- **`dev_roots`**: source-set output dirs (`build/classes/<lang>/main`, `build/resources/main`, `build/mcdp-bridges/classes`) captured by the Gradle plugin at build time so dev-mode runs see the mod's own classes (ADR-0022). Omitted from publishable manifests; see §5.5.
+- **`[[libraries]]`**: one table per Maven coordinate in the transitive closure, with the canonical URL (HEAD-probed) and SHA-256 (computed locally at build time). ADR-0003 is the rationale for build-time resolution.
 
 ### 4.2 `mcdepImplementation` vs `implementation`
 
@@ -94,7 +102,7 @@ sha256 = "..."
 Linux:    ~/.cache/mcdepprovider/libs/<sha256>.jar
 macOS:    ~/Library/Caches/mcdepprovider/libs/<sha256>.jar
 Windows:  %LOCALAPPDATA%\mcdepprovider\libs\<sha256>.jar
-override: $MCDEPPROVIDER_CACHE
+override: $MCDEPPROVIDER_CACHE   (legacy $MC_LIB_PROVIDER_CACHE still honoured as a fallback)
 ```
 
 Keyed by SHA-256, so identical jars from any version of any mod coalesce on disk. `prepareMcdpDevCache` hard-links Gradle-cached jars in so dev runs never hit the network — the provider's runtime download path executes against the prepared cache.
@@ -172,11 +180,11 @@ So the impl lives in a *sibling* package: `<bridgePackage>_impl` (with underscor
 
 This was the bug behind the fluidphysics `scala.math.Ordering` CNF; see ADR-0021 errata for the full story.
 
-### 5.5 `expandDevRoots` — why dev needs help
+### 5.5 `dev_roots` — why dev needs help
 
 In production, `IModFile.getFilePath()` returns a single jar that contains every class. In dev, MDG/Loom hands FML one path — typically `build/resources/main`, where META-INF lives — but the actual `.class` files are in sibling directories: `build/classes/java/main`, `build/classes/scala/main`, `build/classes/kotlin/main`, plus the codegen output `build/mcdp-bridges/classes`. Without all of those on `ModClassLoader`'s URL list, mod-private classes fall through to FML's parent loader and lose isolation.
 
-`McdpLanguageLoader.expandDevRoots` walks up to the project's `build/` dir and adds every standard source-set output it finds. Production jars are unaffected (a jar has no sibling-dir siblings).
+The fix is a build-time contract rather than a runtime filesystem walk (ADR-0022): the Gradle plugin writes those dirs into the manifest's `dev_roots`, and each adapter — `McdpLanguageLoader` (NeoForge), `McdpPreLaunch` (Fabric), `McdpModContainer` (Forge) — reads `manifest.devRoots()`, keeps the entries that still exist as directories, and uses them as the `ModClassLoader`'s URL list. Production is unaffected: a published jar either has no `dev_roots` or carries absolute build-machine paths that fail the `isDirectory` filter, and the adapter falls back to the loader-reported mod file path.
 
 ## 6. Bridge codegen — the hardest part
 
@@ -337,7 +345,7 @@ Sequence on NeoForge from Sponge merge through Scala resolution:
 4. **`McdpProvider.resolveAutoBridgeImpl("com.example.mixin.BlockMixin", "LOGIC_MyMod")`** runs. The `AUTO_BRIDGE_REGISTRY` is empty (FML's `loadMod` hasn't fired yet — `Bootstrap.bootStrap` runs before it).
 5. **Lazy populator fires**: `McdpLanguageLoader`'s installed `Runnable` walks `LoadingModList`, runs `ensureRegistered(info)` for every mcdp-tagged mod. Each call reads the mod's `META-INF/mcdp-bridges.toml`, parses entries, and populates the registry.
 6. **Lookup retries.** Finds the entry: `impl = "com.example.mod.mcdp_bridges_impl.MyModBridgeImpl"`, `modLoader = <the ModClassLoader for com.example>`.
-7. **`Class.forName(implFqn, true, modLoader)`**. ModClassLoader.loadClass: not in `sharedPackages`, child-first → findClass → finds it in the codegen output dir (added to URL list by `expandDevRoots` in dev, included in the jar in prod). Defines it. The impl's defining loader is ModClassLoader.
+7. **`Class.forName(implFqn, true, modLoader)`**. ModClassLoader.loadClass: not in `sharedPackages`, child-first → findClass → finds it in the codegen output dir (on the URL list via the manifest's `dev_roots` in dev, included in the jar in prod). Defines it. The impl's defining loader is ModClassLoader.
 8. **Instantiate** via no-arg ctor. Cache by key. Return as `Object`.
 9. **`<clinit>` resumes**: CHECKCAST to `MyModBridge`. The interface is `Class`-identical on both loaders (sharedPackage parent-first), so the cast is verifier-clean. PUTSTATIC `LOGIC_MyMod`.
 10. **Original call site executes**: `GETSTATIC LOGIC_MyMod` → `INVOKEINTERFACE MyModBridge.shouldCancel`. JVM dispatches to `MyModBridgeImpl.shouldCancel` (its actual class). The impl's body's `INVOKESTATIC com/example/MyMod.shouldCancel` resolves `MyMod` via its defining loader (ModClassLoader) → finds it on the mod jar's URL list → defines `MyMod`. `MyMod`'s body references `String.startsWith` → resolves via JDK class — already loaded everywhere. Returns. Done.
@@ -414,4 +422,3 @@ mcdepprovider {
 - **ADRs**: `docs/adr/` — every architectural decision with the alternatives that were considered and rejected.
 - **Pitfalls**: `docs/pitfalls.md` — chronological list of failure modes seen during development, with root causes and fixes.
 - **Consumer guide**: `docs/bridges.md` — concise reference for mod authors (how to configure, what's auto, what to do when codegen reports an error).
-- **Migration**: `docs/migrating-to-bridges-rename.md` — for anyone upgrading from the pre-rename DSL.

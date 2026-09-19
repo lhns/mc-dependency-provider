@@ -32,7 +32,8 @@ dependencies {
 }
 
 // ADR-0012 resolution: produce a single shaded jar containing this subproject's
-// classes plus :core and :deps-lib (and tomlj). That's both the production
+// classes plus :core and :deps-lib. (tomlj used to be shaded in here too; it was
+// replaced by the in-tree MiniToml parser in ADR-0015.) That's both the production
 // deliverable (one "mcdepprovider" jar) and the unblocker for Fabric's dev-mode
 // ClasspathModCandidateFinder, which refuses to expose sibling composite-build
 // jars to the mcdepprovider mod id.
@@ -63,7 +64,8 @@ configurations.apply {
     }
 }
 
-// :fabric is no longer published. Only :dist publishes (the unified `mcdp` jar
-// containing both fabric and neoforge adapters). The shadowJar here remains
-// produced for inspection/debugging and is consumed via :dist's `bundle`
-// configuration through apiElements/runtimeElements above.
+// This subproject (`:fabric-1.21`) is not published on its own. The band
+// aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
+// fabric and neoforge adapters. The shadowJar here remains produced for
+// inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration
+// through apiElements/runtimeElements above.

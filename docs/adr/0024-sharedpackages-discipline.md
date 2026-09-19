@@ -6,21 +6,7 @@
 
 mcdp's per-mod URLClassLoader model (ADR-0001) coexists with Sponge Mixin's game-layer transformer. The seam between the two is `mcdepprovider.sharedPackages`: a list of package prefixes the per-mod loader delegates parent-first instead of child-first, so a class in one of those packages resolves to the same `Class` object on both sides of the loader boundary.
 
-The user's job is to declare the **right granularity** for that list. Two real incidents in late 2026 showed both directions are foot-guns:
-
-### "Share too coarse" — mc-game-of-life-3d
-
-`NoClassDefFoundError: scala/Option` during `RegisterEvent` dispatch. The user had set `sharedPackages.add('…gameoflife3d.block.')`. That package contained both a small bridge-interface trait AND heavy Scala-using block classes. Sharing the package pulled the Scala-using classes onto the platform classloader, which has no `scala.Option` on its URLs.
-
-The user's fix: extract the bridge interface into a sibling `…gameoflife3d.iface` package and share only that.
-
-### "Share too narrow" — mc-blockshifter
-
-`ClassCastException: TrappedChestBlockEntity ... cannot be cast to ... BlockEntityAccessor` from `WorldUtil.scala:28` (`entity.asInstanceOf[BlockEntityAccessor]`). `BlockEntityAccessor` is a `@Mixin(BlockEntity.class)` interface declaring `@Accessor` methods. Mixin merges it into the vanilla `BlockEntity` class on the game-layer transformer. The user's `WorldUtil` runs on the per-mod `ModClassLoader`, and the cast resolves `BlockEntityAccessor` against that loader's URLs, finding a fresh `Class` object — different identity from the merged one. CCE.
-
-The user's fix: `sharedPackages.add('…blockshifter.mixin.')`.
-
-Both fixes are correct and idiomatic. The question this ADR answers: should mcdp do something so the next mod hits a clear build-time error rather than a stack trace at world-load time?
+The user's job is to declare the **right granularity** for that list. Two real incidents in late 2026 showed both directions are foot-guns — dissected in full below. Both fixes are correct and idiomatic. The question this ADR answers: should mcdp do something so the next mod hits a clear build-time error rather than a stack trace at world-load time?
 
 ## Decision
 
@@ -32,11 +18,9 @@ Both fixes are correct and idiomatic. The question this ADR answers: should mcdp
 
 **Validate, don't auto-fix.** Auto-narrowing or auto-extracting would silently rewrite the user's package tree, producing a different debugging headache when the rewrite chooses wrong. Auto-sharing every `@Mixin` package by default would re-introduce the over-share footgun if a mixin package happens to have neighbours with stdlib-using code. The user's intent stays load-bearing; mcdp's job is to flag the mistake before runtime.
 
-### Why a separate ADR rather than appending to ADR-0018
-
-ADR-0018 (automatic mixin bridge codegen) is about what bytecode mcdp rewrites and what it doesn't. The `sharedPackages` discipline is orthogonal: it's about what classes get loaded by which classloader, and how the user expresses that intent. The two cross-reference (the validators run alongside the bridge codegen and share an ASM pipeline) but they're different decisions with independent rationales.
-
 ## The "share too coarse" footgun (validator A)
+
+**Incident — mc-game-of-life-3d.** `NoClassDefFoundError: scala/Option` during `RegisterEvent` dispatch. The user had set `sharedPackages.add('…gameoflife3d.block.')`; that package held both a small bridge-interface trait AND heavy Scala-using block classes, so sharing it pulled the Scala-using classes onto the platform classloader, which has no `scala.Option` on its URLs. The user's fix: extract the bridge interface into a sibling `…gameoflife3d.iface` package and share only that.
 
 Mechanism. When a class is in `sharedPackages`, the per-mod `ModClassLoader` delegates parent-first for the class lookup, meaning the class's bytecode comes from the platform/parent loader's URLs. The mod's per-mod-loader URLs (its Maven dep closure: scala-library, kotlin-stdlib, etc.) are not on the platform loader. So if a shared class has a `scala.Option` reference anywhere — descriptor, signature, opcode — the JVM throws `NoClassDefFoundError` the first time that reference is reached.
 
@@ -58,6 +42,8 @@ the offending class out of the shared package. See ADR-0024 / docs/bridges.md.
 Platform-visible set: `BridgePolicy.PLATFORM_PREFIXES` (mirror of `ModClassLoader.PLATFORM_PREFIXES`) plus the user's `sharedPackages` entries plus the codegen's auto-shared bridge package.
 
 ## The "share too narrow" footgun (validator B)
+
+**Incident — mc-blockshifter.** `ClassCastException: TrappedChestBlockEntity ... cannot be cast to ... BlockEntityAccessor` from `WorldUtil.scala:28` (`entity.asInstanceOf[BlockEntityAccessor]`), where `BlockEntityAccessor` is a `@Mixin(BlockEntity.class)` interface declaring `@Accessor` methods. The user's fix: `sharedPackages.add('…blockshifter.mixin.')`.
 
 Mechanism. Mixin merges `@Mixin`-annotated interfaces' `@Accessor`/`@Invoker` methods into the target class on the game-layer transformer. The merged target class is in the game-layer loader. Mod code casting `(BlockEntityAccessor) someBlockEntity` resolves `BlockEntityAccessor` against the cast site's classloader — the per-mod loader, which has its own `BlockEntityAccessor.class` from the mod jar. JVM Class identity is `(name, defining loader)`, so the per-mod-loader copy and the game-layer copy are distinct types. CCE.
 

@@ -1,9 +1,11 @@
 # Headless in-game MC boot — design for tasks #20 / #21
 
-Status: design, pre-execution. The last infrastructure piece before M5 verification
-(#22 / #23 / #24) and M5-7 publish (#32) unlock. Existing scaffolding
-(`mc_smoke.py`, `.gitea/workflows/mc-smoke.yml`, `test-mods/*-example`) was built
-with this design in mind and needs no structural change to execute it.
+Status: **shipped** — executed green and retained as a design record. The Fabric and
+NeoForge `runServer` smokes this document specifies are passing (see README status),
+so #20 / #21 are closed and the M5 verification tasks (#22 / #23 / #24) and M5-7
+publish (#32) they gated are unblocked. The scaffolding it describes
+(`scripts/mc_smoke.py`, `.github/workflows/mc-smoke.yml` — `.gitea/workflows/mc-smoke.yml`
+is a marked verbatim mirror — and `test-mods/*-example`) is the shape that actually runs.
 
 ## Goal
 
@@ -85,8 +87,13 @@ Fatal patterns (already wired):
 `./gradlew :runServer` under ModDevGradle, NeoForge 21.1.x:
 
 1. MDG assembles a `RunModel` with MC + NeoForge on the server classpath plus
-   our mod jar. `RunTaskClasspathPatch` (ADR-0007) strips manifest-listed deps
-   from that classpath so the `runServer` classpath matches production.
+   our mod jar. `RunTaskClasspathPatch` (ADR-0007) can strip manifest-listed deps
+   from that classpath for prod parity, but that default was reversed: the plugin
+   sets `patchRunTasks` to an empty list, so nothing is stripped unless the user
+   opts in per task (`mcdepprovider.patchRunTasks = ["runServer"]`). ModDevGradle
+   2.0.91+ puts mod classes on FML's GAME-layer transformer regardless of mcdp's
+   `ModClassLoader`, so they need their compile-time deps (Scala stdlib, etc.)
+   visible on that chain; stripping breaks early game-layer paths.
 2. NeoForge's bootstrap finds `IModLanguageLoader` via `ServiceLoader`; our
    `McdpLanguageLoader` registers for `modLoader = "mcdepprovider"`.
 3. For each mod declaring that loader in `neoforge.mods.toml`, `loadMod`
@@ -141,7 +148,7 @@ rm -rf ~/.cache/mcdepprovider
 rm -rf test-mods/fabric-example/run/world test-mods/neoforge-example/run/world
 
 # 2. First boot (cold).
-python3 .gitea/scripts/mc_smoke.py \
+python3 scripts/mc_smoke.py \
     --cwd test-mods/fabric-example \
     --task :runServer \
     --timeout 900 \
@@ -156,9 +163,9 @@ python3 .gitea/scripts/mc_smoke.py \
 # 4. Second boot (warm).
 #    On Linux: sudo ip link set <iface> down (requires sudo).
 #    On Windows: Disable-NetAdapter -Name Ethernet (PowerShell admin).
-#    On dev: `MCDP_HTTP_TIMEOUT_MS=1000` makes the consumer fail
-#    fast if it tries to download anything. Our runtime respects it.
-python3 .gitea/scripts/mc_smoke.py \
+#    (A short HTTP-timeout knob was contemplated here — NOT IMPLEMENTED;
+#     no such env var exists in the runtime. Cut the network instead.)
+python3 scripts/mc_smoke.py \
     --cwd test-mods/fabric-example \
     --task :runServer \
     --timeout 600 \
