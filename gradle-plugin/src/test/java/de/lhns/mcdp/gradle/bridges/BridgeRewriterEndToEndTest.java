@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import de.lhns.mcdp.api.McdpProvider;
 import org.junit.jupiter.api.AfterEach;
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * classloader, sets the LOGIC field, invokes the rewritten method, and asserts the result
  * matches the original target's return.
  */
-class MixinRewriterEndToEndTest {
+class BridgeRewriterEndToEndTest {
 
     private static final String BRIDGE_PKG = "mcdpbridges_test";
     private final BridgePolicy policy = new BridgePolicy(List.of(), BRIDGE_PKG);
@@ -40,11 +40,11 @@ class MixinRewriterEndToEndTest {
         // Mixin: public static int handler(int x) { return Target.doubleIt(x) + 1; }
         byte[] mixin = mixinClassCallingTargetStatic();
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixin);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, result.targets());
 
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
@@ -68,7 +68,7 @@ class MixinRewriterEndToEndTest {
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         assertTrue(ifaceClass.isInstance(bridgeInstance));
         McdpProvider.registerForTest("com.example.Mixin",
-                MixinRewriter.logicFieldName("com/example/Target"), bridgeInstance);
+                BridgeRewriter.logicFieldName("com/example/Target"), bridgeInstance);
 
         // Invoke handler.
         Method handler = mixinClass.getDeclaredMethod("handler", int.class);
@@ -81,11 +81,11 @@ class MixinRewriterEndToEndTest {
         byte[] target = targetClassWithStaticField();
         byte[] mixin = mixinClassReadingStaticField();
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixin);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, result.targets());
 
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
@@ -104,7 +104,7 @@ class MixinRewriterEndToEndTest {
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetF"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         McdpProvider.registerForTest("com.example.MixinF",
-                MixinRewriter.logicFieldName("com/example/TargetF"), bridgeInstance);
+                BridgeRewriter.logicFieldName("com/example/TargetF"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("readIt");
         Object out = handler.invoke(null);
@@ -114,8 +114,8 @@ class MixinRewriterEndToEndTest {
     @Test
     void rewrittenClassHasNoModPrivateReferences() {
         byte[] mixin = mixinClassCallingTargetStatic();
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, scanner.scan(mixin).targets());
 
         // A simple constant-pool scan: the rewritten class shouldn't contain "com/example/Target"
@@ -135,11 +135,11 @@ class MixinRewriterEndToEndTest {
         // Mixin: public static Object handler() { return new TargetC(); }
         byte[] mixin = mixinClassConstructingTarget("com/example/TargetC");
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixin);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, result.targets());
 
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
@@ -161,7 +161,7 @@ class MixinRewriterEndToEndTest {
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetC"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         McdpProvider.registerForTest("com.example.MixinC",
-                MixinRewriter.logicFieldName("com/example/TargetC"), bridgeInstance);
+                BridgeRewriter.logicFieldName("com/example/TargetC"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("handler");
         Object out = handler.invoke(null);
@@ -175,11 +175,11 @@ class MixinRewriterEndToEndTest {
         byte[] target = targetClassWithMutableStaticField("com/example/TargetS");
         byte[] mixin = mixinClassWritingThenReadingStatic("com/example/TargetS");
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixin);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, result.targets());
 
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
@@ -200,7 +200,7 @@ class MixinRewriterEndToEndTest {
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetS"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         McdpProvider.registerForTest("com.example.MixinS",
-                MixinRewriter.logicFieldName("com/example/TargetS"), bridgeInstance);
+                BridgeRewriter.logicFieldName("com/example/TargetS"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("writeAndRead", int.class);
         assertEquals(123, handler.invoke(null, 123));
@@ -211,11 +211,11 @@ class MixinRewriterEndToEndTest {
         byte[] target = simpleTargetClass("com/example/TargetL");
         byte[] mixin = mixinClassWithClassLiteral("com/example/TargetL");
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixin);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] rewritten = rewriter.rewrite(mixin, result.targets());
 
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
@@ -237,7 +237,7 @@ class MixinRewriterEndToEndTest {
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetL"));
         Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
         McdpProvider.registerForTest("com.example.MixinL",
-                MixinRewriter.logicFieldName("com/example/TargetL"), bridgeInstance);
+                BridgeRewriter.logicFieldName("com/example/TargetL"), bridgeInstance);
 
         Method handler = mixinClass.getDeclaredMethod("handler");
         Object out = handler.invoke(null);

@@ -20,7 +20,7 @@ Two orthogonal extensions to the ADR-0018 codegen:
 
 1. **Generalized seeding.** A new `bridgedAnnotations` `ListProperty<String>` on `BridgeCodegenExtension` lists class-level annotation FQNs to seed on, in addition to the existing `*.mixins.json` discovery. Defaults: `org.spongepowered.asm.mixin.Mixin` and `net.neoforged.bus.api.EventBusSubscriber`. The two seed paths union by FQN; the rest of the pipeline (scanner / rewriter / emitters / manifest) is annotation-agnostic and processes seeded classes uniformly.
 
-2. **Lambda-site coverage.** `BridgeMixinScanner` gains an `INVOKEDYNAMIC` branch that recognizes `LambdaMetafactory.metafactory` and `altMetafactory` bootstrap methods, recursively scans the synthetic body for cross-classloader references, and records a `LambdaSite` per indy. A new `LambdaWrapperEmitter` produces a per-site bridge interface + impl pair: the impl's `make(captures...) -> SAM` factory method uses its own `INVOKEDYNAMIC LambdaMetafactory` against an *embedded* synthetic on the impl class. The rewriter replaces the original indy with `spill captures + GETSTATIC LAMBDA_<simple>_<n> + reload captures + INVOKEINTERFACE bridge.make`.
+2. **Lambda-site coverage.** `BridgeScanner` gains an `INVOKEDYNAMIC` branch that recognizes `LambdaMetafactory.metafactory` and `altMetafactory` bootstrap methods, recursively scans the synthetic body for cross-classloader references, and records a `LambdaSite` per indy. A new `LambdaWrapperEmitter` produces a per-site bridge interface + impl pair: the impl's `make(captures...) -> SAM` factory method uses its own `INVOKEDYNAMIC LambdaMetafactory` against an *embedded* synthetic on the impl class. The rewriter replaces the original indy with `spill captures + GETSTATIC LAMBDA_<simple>_<n> + reload captures + INVOKEINTERFACE bridge.make`.
 
 The `LAMBDA_*` static fields and their `<clinit>` initialization use the same `McdpProvider.resolveAutoBridgeImpl` plumbing as ADR-0018 (no runtime API changes). The manifest schema (`META-INF/mcdp-bridges.toml`) is unchanged: lambda sites emit `[[bridge]]` entries with `mixin = container_fqn, field = LAMBDA_*, interface = ..., impl = ...` — the runtime can't tell them apart from regular bridges and doesn't need to.
 
@@ -48,7 +48,7 @@ Initial v1 kept JSON seeding alongside the annotation seed as belt-and-braces ag
 
 ### Lambda-site detection
 
-`BridgeMixinScanner.handleIndy` detects `INVOKEDYNAMIC` on `LambdaMetafactory.metafactory` / `altMetafactory`, extracts the implementation method handle (bsm arg index 1, identical position in both bsm shapes), and recursively scans the synthetic body via the regular `walkMethod` pass. Cross-classloader references inside the synthetic land in the regular `targets` map, so the existing rewriter routes them through bridges. The site is also recorded in `MixinScanResult.lambdaSites` for the rewriter to know which indys to replace.
+`BridgeScanner.handleIndy` detects `INVOKEDYNAMIC` on `LambdaMetafactory.metafactory` / `altMetafactory`, extracts the implementation method handle (bsm arg index 1, identical position in both bsm shapes), and recursively scans the synthetic body via the regular `walkMethod` pass. Cross-classloader references inside the synthetic land in the regular `targets` map, so the existing rewriter routes them through bridges. The site is also recorded in `BridgeScanResult.lambdaSites` for the rewriter to know which indys to replace.
 
 Per-class state lives on a `SiteContext`: a stable site index across the whole class (used in the per-site wrapper class name) and a recursion-guard set against re-walking a synthetic that's referenced from multiple indys.
 
@@ -69,7 +69,7 @@ Fix: impls (regular and per-lambda) are emitted into `<bridgePackage>_impl`, whi
 
 ### Rewriter integration
 
-`MixinRewriter.rewriteLambdaIndy` replaces each site's indy with a stack-juggle (spill captures, push the per-site `LAMBDA_*` static field, reload captures, INVOKEINTERFACE bridge.make). The `LAMBDA_*` field is added to the container alongside the existing `LOGIC_*` fields and initialized in the same merged `<clinit>` block via `McdpProvider.resolveAutoBridgeImpl`.
+`BridgeRewriter.rewriteLambdaIndy` replaces each site's indy with a stack-juggle (spill captures, push the per-site `LAMBDA_*` static field, reload captures, INVOKEINTERFACE bridge.make). The `LAMBDA_*` field is added to the container alongside the existing `LOGIC_*` fields and initialized in the same merged `<clinit>` block via `McdpProvider.resolveAutoBridgeImpl`.
 
 ### Configuration
 

@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
@@ -81,7 +81,7 @@ public final class LambdaWrapperEmitter {
     }
 
     public Artifacts emit(ClassNode containerCn, LambdaSite site, MethodNode synthetic) {
-        String simple = MixinRewriter.simpleName(containerCn.name);
+        String simple = BridgeRewriter.simpleName(containerCn.name);
         String suffix = "$Lambda" + site.siteIndex();
         String bridgeIfaceInternal = bridgePackageInternal + "/" + simple + suffix + "Bridge";
         String bridgeImplInternal = implPackageInternal + "/" + simple + suffix + "BridgeImpl";

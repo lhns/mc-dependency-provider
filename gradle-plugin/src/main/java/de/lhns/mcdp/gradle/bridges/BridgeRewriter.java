@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -39,17 +39,17 @@ import java.util.Set;
  * preserved because we walk the existing {@link InsnList} and only replace specific call
  * sites.</p>
  */
-public final class MixinRewriter {
+public final class BridgeRewriter {
 
     private final BridgePolicy policy;
     private final String bridgePackageInternal;
     private final ClassLoader frameLookup;
 
-    public MixinRewriter(BridgePolicy policy, String bridgePackage) {
+    public BridgeRewriter(BridgePolicy policy, String bridgePackage) {
         this(policy, bridgePackage, ClassLoader.getSystemClassLoader());
     }
 
-    public MixinRewriter(BridgePolicy policy, String bridgePackage, ClassLoader frameLookup) {
+    public BridgeRewriter(BridgePolicy policy, String bridgePackage, ClassLoader frameLookup) {
         this.policy = policy;
         this.bridgePackageInternal = BridgePolicy.toInternal(bridgePackage);
         this.frameLookup = frameLookup;
@@ -58,7 +58,7 @@ public final class MixinRewriter {
     /**
      * Apply the rewrite plan to the given class. {@code targets} maps target internal name to
      * the set of {@link BridgeMember}s that need a bridge entry — typically the output of
-     * {@link BridgeMixinScanner}.
+     * {@link BridgeScanner}.
      *
      * @return rewritten class bytes; the input is left untouched.
      */
@@ -68,7 +68,7 @@ public final class MixinRewriter {
 
     /**
      * Variant covering ADR-0021 lambda-site rewriting. {@code lambdaSites} is the per-site
-     * list from {@link BridgeMixinScanner}; {@code lambdaArtifactsBySite} maps each site's
+     * list from {@link BridgeScanner}; {@code lambdaArtifactsBySite} maps each site's
      * {@link LambdaSite#siteIndex()} to the bridge interface internal name + LOGIC field name
      * + make-method name and descriptor — produced by {@link LambdaWrapperEmitter}.
      */

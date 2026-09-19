@@ -80,6 +80,6 @@ Briefly shipped in `77545ce`. Walks each modPath up to find `build/`, appends `m
 - **ADR-0007** — dev-mode runs through the production manifest pipeline. ADR-0022 sharpens that pipeline's plugin-side contract.
 - **ADR-0018** / **ADR-0021** — mixin bridge codegen + generalized seeding. The bridge impl package is what falls off the URL list when `dev_roots` is wrong; ADR-0022 ensures it doesn't.
 - **`gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderPlugin.java`** — the registration code that enforces the contract.
-- **`gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeCodegenTask.java`** — `getOutputClassesDir` is the single source of truth for the bridge classes dir path.
+- **`gradle-plugin/src/main/java/de/lhns/mcdp/gradle/bridges/BridgeCodegenTask.java`** — `getOutputClassesDir` is the single source of truth for the bridge classes dir path.
 - **`deps-lib/src/main/java/de/lhns/mcdp/deps/Manifest.java`** / **`ManifestIo.java`** — `dev_roots` field shape.
 - **`fabric/src/main/java/de/lhns/mcdp/fabric/McdpPreLaunch.java`** / **`neoforge/src/main/java/de/lhns/mcdp/neoforge/McdpLanguageLoader.java`** — the consumers of `dev_roots`.

@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,12 +44,12 @@ class ClasspathAwareClassWriterTest {
         try (URLClassLoader cp = new URLClassLoader(
                 new URL[] { classesDir.toUri().toURL() }, ClassLoader.getPlatformClassLoader())) {
             byte[] mixinBytes = mixinForcingCommonSupertype(cp);
-            BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-            MixinScanResult result = scanner.scan(mixinBytes);
-            assertTrue(result.status() == MixinScanResult.Status.REWRITABLE,
+            BridgeScanner scanner = new BridgeScanner(policy);
+            BridgeScanResult result = scanner.scan(mixinBytes);
+            assertTrue(result.status() == BridgeScanResult.Status.REWRITABLE,
                     "scanner status: " + result.status());
 
-            MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG, cp);
+            BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG, cp);
             byte[] rewritten = rewriter.rewrite(mixinBytes, result.targets());
             assertNotNull(rewritten);
             assertTrue(rewritten.length > 0);
@@ -64,11 +64,11 @@ class ClasspathAwareClassWriterTest {
                 new URL[] { classesDir.toUri().toURL() }, ClassLoader.getPlatformClassLoader())) {
             mixinBytes = mixinForcingCommonSupertype(fixtureCp);
         }
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(mixinBytes);
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixinBytes);
         // Drive the rewriter with the system loader (pre-fix behavior). net/minecraft/A and
         // net/minecraft/B aren't there → CNF inside getCommonSuperClass.
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         Throwable t = assertThrows(Throwable.class,
                 () -> rewriter.rewrite(mixinBytes, result.targets()));
         boolean isCnf = false;

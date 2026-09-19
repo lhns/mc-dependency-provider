@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for ADR-0024 validator A — over-share detection. Synthetic ASM-built classes
- * mirror the {@link de.lhns.mcdp.gradle.mixinbridges.BridgeMixinScannerTest} pattern.
+ * mirror the {@link de.lhns.mcdp.gradle.bridges.BridgeScannerTest} pattern.
  */
 class SharedPackageContentValidatorTest {
 
