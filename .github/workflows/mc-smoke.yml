@@ -140,11 +140,10 @@ jobs:
       - name: Second boot — offline, cache-hit only
         working-directory: ${{ matrix.platform.dir }}
         shell: bash
-        env:
-          # Force offline-only HTTP client behavior in mcdepprovider by pointing it
-          # at an unreachable TLD. If the cache from the first boot is complete, no
-          # HTTP call should be made at all; this env var is defensive.
-          MCDP_HTTP_TIMEOUT_MS: "1000"
+        # NOTE: this step used to set MCDP_HTTP_TIMEOUT_MS as a "defensive" offline
+        # guard, but no such env var is read anywhere in the runtime -- it was a no-op.
+        # The real assertion is below: if the first boot's cache is complete, the second
+        # boot makes no HTTP call at all, which mc_smoke.py checks from the log.
         run: |
           python3 ../../scripts/mc_smoke.py \
             --cwd . \

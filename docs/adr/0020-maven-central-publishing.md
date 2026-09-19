@@ -62,7 +62,7 @@ The Gradle property names vanniktech reads (`mavenCentralUsername`, `signingInMe
 **Negative**
 
 - Vanniktech is community-maintained, not Sonatype-published. Mitigated by it being widely used (Square, Stripe, Coil, OkHttp ship via vanniktech) and small in surface. If the project goes unmaintained, `com.gradleup.nmcp` is a drop-in narrower alternative.
-- The `apply false` + per-subproject apply pattern is non-obvious. Code comment in `build.gradle.kts` calls out the classloader-sharing reason.
+- Vanniktech has to be loaded exactly once, or its `SonatypeRepositoryBuildService` handoff fails across classloaders. That is now handled by declaring the plugin on `buildSrc`'s classpath (it is applied by the `mcdp.band-aggregator` convention plugin), which puts it on every build script's classpath in one classloader. The non-obvious consequence: scripts must request it *without* a version — `id("com.vanniktech.maven.publish")`, not `alias(libs.plugins.vanniktech.maven.publish)` — or Gradle rejects the already-on-classpath request. Called out in a comment in the root `build.gradle.kts`.
 
 ## Alternatives
 

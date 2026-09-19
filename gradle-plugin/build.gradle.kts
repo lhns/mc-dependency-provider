@@ -4,8 +4,9 @@ import org.gradle.plugin.devel.tasks.PluginUnderTestMetadata
 
 plugins {
     `java-gradle-plugin`
-    alias(libs.plugins.shadow)
-    alias(libs.plugins.vanniktech.maven.publish)
+    // Versions come from buildSrc's classpath; see the note in the root build.gradle.kts.
+    id("com.gradleup.shadow")
+    id("com.vanniktech.maven.publish")
 }
 
 // vanniktech-maven-publish auto-configures sources + javadoc jars; do not call
