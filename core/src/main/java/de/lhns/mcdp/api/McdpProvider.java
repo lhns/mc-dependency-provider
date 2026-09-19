@@ -104,17 +104,6 @@ public final class McdpProvider {
     }
 
     /**
-     * Resolve and instantiate the bridge impl for an auto-codegen mixin's {@code LOGIC_*}
-     * field. Called from the mixin's {@code <clinit>} (emitted by the gradle plugin). Returns
-     * {@code Object} so the call site lives entirely on the game-layer classloader; the
-     * caller {@code CHECKCAST}s to the bridge interface (which is in the mod's bridge package
-     * and auto-added to {@code sharedPackages}).
-     *
-     * <p>Result is cached per {@code (mixinFqn, fieldName)} — second-and-later GETSTATIC of
-     * the LOGIC field never reaches this method (the field hangs onto the impl), but a class
-     * reload during tests can hit it again, and we want stable identity then.
-     */
-    /**
      * Lazy populator. Set by the platform adapter at its earliest possible lifecycle hook
      * (NeoForge: {@link #installLazyPopulator(Runnable)} called during static init of
      * McdpLanguageLoader). Invoked on the first registry miss in {@link #resolveAutoBridgeImpl}
@@ -128,10 +117,22 @@ public final class McdpProvider {
     private static volatile Runnable lazyPopulator;
     private static volatile boolean lazyPopulatorRan;
 
+    /** Install the platform adapter's eager-populate hook; see {@link #lazyPopulator}. */
     public static void installLazyPopulator(Runnable populator) {
         lazyPopulator = populator;
     }
 
+    /**
+     * Resolve and instantiate the bridge impl for an auto-codegen mixin's {@code LOGIC_*}
+     * field. Called from the mixin's {@code <clinit>} (emitted by the gradle plugin). Returns
+     * {@code Object} so the call site lives entirely on the game-layer classloader; the
+     * caller {@code CHECKCAST}s to the bridge interface (which is in the mod's bridge package
+     * and auto-added to {@code sharedPackages}).
+     *
+     * <p>Result is cached per {@code (mixinFqn, fieldName)} — second-and-later GETSTATIC of
+     * the LOGIC field never reaches this method (the field hangs onto the impl), but a class
+     * reload during tests can hit it again, and we want stable identity then.
+     */
     public static Object resolveAutoBridgeImpl(String mixinFqn, String fieldName) {
         String key = mixinFqn + "#" + fieldName;
         Object cached = AUTO_BRIDGE_IMPL_CACHE.get(key);

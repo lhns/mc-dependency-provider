@@ -31,8 +31,9 @@ project(":neoforge-1.21").projectDir = file("neoforge")
 include("mcdp-1.21")
 project(":mcdp-1.21").projectDir = file("multi")
 
-// Forge bands — scaffold subprojects (adapter body not yet implemented in any of these;
-// see forge-1.18/src/.../McdpLanguageProvider.java for the roadmap).
+// Forge bands. forge-1.18 carries the real adapter (McdpLanguageProvider +
+// McdpModContainer); forge-1.20 shares that source via srcDirs and only pins its own
+// forgespi coordinates. forge-1.17 is still a stub (getFileVisitor() throws).
 //   forge-1.17: Java 16, forgespi 3.2.x
 //   forge-1.18: Java 17, forgespi 4.0.x
 //   forge-1.20: Java 17, forgespi 7.x  (1.20.1)

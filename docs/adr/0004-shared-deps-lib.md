@@ -1,6 +1,6 @@
 # ADR-0004 — Shared `deps-lib` library, build-tool-agnostic
 
-**Status:** Accepted
+**Status:** Accepted — the shared-library decision stands. The TOML parser named below is superseded by [ADR-0015](0015-in-tree-closed-schema-parsers.md): `tomlj` is gone and `ManifestIo` parses via the in-tree `MiniToml`.
 
 ## Context
 
@@ -16,13 +16,13 @@ These are two halves of the same concern: **the manifest format and the logic th
 A single `deps-lib/` module, build-tool-agnostic and loader-agnostic, written in plain Java. It contains:
 
 - `Manifest` — POJO schema for `META-INF/mclibprovider.toml`.
-- `ManifestIo` — TOML parse/write via `tomlj`.
+- `ManifestIo` — TOML parse/write. (Originally via `tomlj`; now via the in-tree `MiniToml` — ADR-0015.)
 - `ManifestConsumer` — downloads listed URLs, verifies SHA256s, caches to `~/.cache/mc-lib-provider/libs/<sha256>.jar`. No resolver logic.
 - `ManifestProducer` — given `(coords, repos)`, runs Apache Maven Resolver (Aether) to compute the transitive closure, extracts URLs and SHAs, emits a `Manifest`.
 - `LibraryCache` — disk layout helpers.
 
 The build emits two flavors:
-- **`deps-lib-consumer`** — just Manifest + ManifestIo + ManifestConsumer + LibraryCache. Tiny (~50 KB minus tomlj). Used by the runtime.
+- **`deps-lib-consumer`** — just Manifest + ManifestIo + ManifestConsumer + LibraryCache. Tiny (~50 KB; originally quoted "minus tomlj", now self-contained — ADR-0015). Used by the runtime.
 - **`deps-lib-full`** — the above plus ManifestProducer + vendored Aether (~2 MB). Used by the Gradle plugin and any future sbt/Maven/CLI frontend.
 
 The Gradle plugin vendors (shades) `deps-lib-full` under `io.github.mclibprovider.shaded.deps.*` for self-containment.

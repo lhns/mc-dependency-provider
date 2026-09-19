@@ -45,6 +45,10 @@ fell through to Knot, which had the class on its classpath.
 the ModClassLoader's URL list. `LoaderCoordinator.register` gained a
 `List<Path> modPaths` overload.
 
+> **Superseded.** `expandDevRoots` no longer exists: the dirs are now captured
+> at build time into the manifest's `dev_roots` key and read back via
+> `manifest.devRoots()` (ADR-0022).
+
 ### Off-by-one in the `build/classes/*/main` walk
 
 **Symptom.** First implementation of `expandDevRoots` silently added nothing,
@@ -56,6 +60,9 @@ so v1's entry class still resolved through Knot.
 `<project>/build`, one step up, not two.
 
 **Fix.** Use `grand.resolve("classes")` where `grand = parent.getParent()`.
+
+> **Superseded.** The walk itself is gone — `dev_roots` in the manifest replaced
+> the runtime heuristic entirely (ADR-0022).
 
 ### Mixin bridge fails with two mods; works with one
 
@@ -369,7 +376,8 @@ powershell -NoProfile -Command 'Get-NetTCPConnection -LocalPort 25565 \
 
 ### `cd <dir> && <cmd>` then starting a background process inherits the wrong CWD
 
-**Symptom.** Repeatedly: "python: can't open file '.../.gitea/scripts/mc_smoke.py'".
+**Symptom.** Repeatedly: "python: can't open file '.../scripts/mc_smoke.py'" (the script lived under
+`.gitea/scripts/` at the time; it is `scripts/mc_smoke.py` today).
 
 **Root cause.** Bash chains that start with `cd test-mods/<mod> &&` leave
 the working directory there for the rest of the chain. Running a

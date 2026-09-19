@@ -36,7 +36,7 @@ dependencies {
     mappings("net.fabricmc:yarn:$yarnMappings:v2")
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
-    // The unified mcdpprovider jar (ADR-0016). Composite-substituted to :dist.
+    // The 1.21-band mcdpprovider jar (ADR-0023). Composite-substituted to :mcdp-1.21.
     modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
 
     mcdepImplementation("org.scala-lang:scala3-library_3:3.5.2")

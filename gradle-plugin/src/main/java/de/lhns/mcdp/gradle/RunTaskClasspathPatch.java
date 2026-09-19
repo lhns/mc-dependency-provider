@@ -26,8 +26,9 @@ import java.util.stream.Collectors;
  * <p>
  * We intentionally do not depend on ModDevGradle or Loom APIs. The hook is:
  * <ol>
- *   <li>Opt-in via {@code mcdepprovider.patchRunTasks} (default: {@code runClient},
- *       {@code runServer}, {@code runGameTestServer}, {@code runData}).</li>
+ *   <li>Opt-in via {@code mcdepprovider.patchRunTasks}, which defaults to an <em>empty</em>
+ *       list — no task is patched unless the user names one. See ADR-0025 for why the
+ *       original strip-by-default behaviour was reversed.</li>
  *   <li>For each matching {@link JavaExec} task, a {@code doFirst} action reads the generated
  *       manifest, hashes every file on the current classpath, and installs a filtered replacement.</li>
  * </ol>

@@ -58,7 +58,7 @@ Anything in the platform-side closure that's *not* also in the mclib-side closur
 
 - **Breaking change** for any consumer who used `excludeGroup`. Pre-publish, only the test-mods in this repo were affected; they were migrated in the same commit.
 - **One more concept** for mod authors to learn (`mcdepImplementation` vs `implementation`). The Loom precedent (`modImplementation`) makes it familiar to Fabric authors at least.
-- **The implicit `implementation extendsFrom mcdepImplementation` configuration** is non-obvious. A mod author reading `dependencies { mcdepImplementation("X") }` might wonder how `X` gets onto compile classpath; the plugin docs (README + `docs/README.md`) explain it.
+- **The implicit `implementation extendsFrom mcdepImplementation` configuration** is non-obvious. A mod author reading `dependencies { mcdepImplementation("X") }` might wonder how `X` gets onto compile classpath; the plugin docs (root `README.md`) explain it.
 
 ## Alternatives considered
 
@@ -66,16 +66,7 @@ Anything in the platform-side closure that's *not* also in the mclib-side closur
 - **Walk a fixed groupId allowlist** (only emit `org.typelevel:*`, `io.circe:*`, …). Brittle — every new mod-author-favorite library would need manual addition. The bucket approach is exactly equivalent to a per-mod allowlist without enumerating it.
 - **Auto-detect "what's NOT on the parent classloader" at runtime.** Considered and rejected for dev-mode parity reasons (ADR-0007): in dev, Loom + MDG put more on the parent CL than ships in production, so a runtime auto-detect would silently skip downloads dev needs vs prod doesn't. The build-time set-difference doesn't have that asymmetry — `runtimeClasspath` in Gradle ≈ what production sees, and platform-served deps are stable across the two.
 
-## Affected files
-
-| Path | Role |
-|---|---|
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderPlugin.java` | Defines the three configs + set-difference resolver. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderExtension.java` | DSL retired `excludeGroup`/`exclude`. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/GenerateMcdpManifestTask.java` | Glob-pattern exclusion logic deleted; manifest emits `mcdepManifest \ platformProvidedKeys`. |
-| `test-mods/*/build.gradle.kts` | All `implementation(scala/cats/circe/...)` lines moved to `mcdepImplementation(...)`; `excludeGroup` calls removed. |
-
 ## Relationship to other ADRs
 
-- Operates within **ADR-0003** (build-time dep resolution). What changed is *which* configuration we resolve; the producer pipeline (Aether → SHA-pinned manifest) is unchanged.
+- Operates within **ADR-0003** (build-time dep resolution). What changed is *which* configuration we resolve; the SHA-pinned-manifest output contract is unchanged. (ADR-0003's Aether-based producer has since been retired from this path: `GenerateMcdpManifestTask` resolves via Gradle and HEAD-probes URLs with `java.net.http`; the Aether `ManifestProducer` survives only in `deps-lib`'s `full` source set.)
 - Refines **ADR-0007** (dev-mode parity). The opt-in bucket makes the "what stays on Knot/MDG vs what gets stripped by `RunTaskClasspathPatch`" boundary clear at declaration time.

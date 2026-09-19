@@ -37,7 +37,7 @@ neoForge {
 }
 
 dependencies {
-    // The unified mcdpprovider jar (ADR-0016). Composite-substituted to :dist.
+    // The 1.21-band mcdpprovider jar (ADR-0023). Composite-substituted to :mcdp-1.21.
     // Lands on the sourceSet runtimeClasspath which MDG 2.0.78 feeds to
     // runServer/runClient; FML discovers the language provider via the bundled
     // META-INF/services/IModLanguageLoader entry plus FMLModType=LIBRARY in the

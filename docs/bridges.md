@@ -86,90 +86,26 @@ When the scanner sees one of these opcodes, the build emits a warning that point
 
 ## Sharing the right packages — the two footguns
 
-`sharedPackages` granularity is load-bearing. Both directions misfire. mcdp's `:validateSharedPackages` task (wired into `:check`) catches both at build time — see ADR-0024 for the rationale.
+`sharedPackages` granularity is load-bearing, and it misfires in both directions. mcdp's
+`:validateSharedPackages` task (wired into `:check`) catches both at build time and prints the
+concrete fix. **[ADR-0024](adr/0024-sharedpackages-discipline.md) is the canonical treatment** —
+mechanism, validator design, full diagnostic text. The short version:
 
-### Footgun A — sharing too coarse
+- **Footgun A — sharing too coarse.** Symptom: `NoClassDefFoundError: scala/Option` (or another
+  stdlib type) inside ordinary-looking mod code. A shared package is delegated parent-first, so
+  its classes load from the platform loader, which has none of the mod's Maven deps on its URLs.
+  Fix: narrow the entry to a package containing only the cross-loader type — typically by
+  extracting the bridge interface into its own `.iface` package — rather than sharing a package
+  that also holds stdlib-using classes.
 
-Symptom at runtime: `NoClassDefFoundError: scala/Option` (or similar stdlib type) inside what looks like ordinary mod code. Cause: a class with stdlib references is in a `sharedPackages` entry, so the per-mod loader delegates parent-first and the platform classloader (which has no scala/kotlin/etc. on its URLs) tries to load it.
+- **Footgun B — sharing too narrow.** Symptom: `ClassCastException: X cannot be cast to X`, same
+  name on both sides. Mod code casts to a Mixin-injected accessor whose package isn't shared, so
+  the cast site (per-mod loader) and the Mixin-merged target (game-layer loader) are two different
+  `Class` objects. Fix: add that package to `sharedPackages`. This is the `CHECKCAST`/`INSTANCEOF`
+  limit above seen from the other side, and it cannot be auto-rewritten for the same reason.
 
-Failing case:
-
-```kotlin
-mcdepprovider {
-    sharedPackages.add("com.example.mod.block.")  // too coarse
-}
-```
-
-```scala
-package com.example.mod.block
-
-trait MovableBlockEntityProvider { def isMovable: Boolean }   // intended target
-
-class CellBlock extends Block {                                // collateral damage
-  val variants: List[String] = scala.collection.immutable.List("a", "b")
-}
-```
-
-`CellBlock` ends up on the platform classloader where `scala.collection.immutable.List` is invisible. Validator A catches this:
-
-```
-mcdepprovider: shared-package class com.example.mod.block.CellBlock references types
-not visible to the platform classloader:
-  - scala.collection.immutable.List
-Sharing this class moves it onto the platform/parent classloader, where the mod's
-per-mod ModClassLoader URLs are not reachable. ...
-Fix: narrow sharedPackages to a sibling package containing only the bridge type, or
-move the offending class out of the shared package.
-```
-
-Idiomatic fix: extract the bridge type into its own package.
-
-```scala
-package com.example.mod.iface
-trait MovableBlockEntityProvider { def isMovable: Boolean }
-```
-
-```kotlin
-mcdepprovider {
-    sharedPackages.add("com.example.mod.iface.")  // narrow
-}
-```
-
-`CellBlock` stays in `…block` on the per-mod loader with full Scala stdlib access; the bridge type alone is shared.
-
-### Footgun B — sharing too narrow
-
-Symptom at runtime: `ClassCastException: X cannot be cast to X` where both class names are identical. Cause: mod code casts to a Mixin-injected accessor whose package isn't in `sharedPackages`, so the cast site (per-mod loader) and the Mixin-merged target (game-layer loader) resolve to two different `Class` objects.
-
-Failing case:
-
-```scala
-package com.example.mod.util
-import com.example.mod.mixin.BlockEntityAccessor
-
-object WorldUtil {
-  def setPos(entity: BlockEntity, pos: BlockPos): Unit = {
-    entity.asInstanceOf[BlockEntityAccessor].setWorldPosition(pos.immutable)
-  }
-}
-```
-
-with no `sharedPackages.add('com.example.mod.mixin.')`. Validator B catches this:
-
-```
-mcdepprovider: com.example.mod.util.WorldUtil references cross-loader-injected type(s)
-whose package is not in sharedPackages:
-  - com.example.mod.mixin.BlockEntityAccessor
-
-At runtime, com.example.mod.util.WorldUtil's per-mod ModClassLoader and the
-Mixin-merged accessor on the game-layer loader will resolve to two different
-Class objects with the same name, producing ClassCastException at the cast site.
-
-Fix: in build.gradle's mcdepprovider {} block, add
-  sharedPackages.add('com.example.mod.mixin.')
-```
-
-This pattern is mcdp's `CHECKCAST`/`INSTANCEOF` rewrite limit (above) seen from the *other side*: rather than the mixin body referencing mod-private types, mod code references mixin-defined types. Same fix in both directions: share the affected package.
+Both entries must end with a trailing dot (`sharedPackages.add("com.example.mod.iface.")`) —
+matching is a raw name-prefix test, so a dotless entry silently captures sibling packages.
 
 ### Customizing cross-loader annotation detection
 

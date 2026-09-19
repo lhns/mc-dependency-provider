@@ -7,22 +7,22 @@ plugins {
     alias(libs.plugins.vanniktech.maven.publish)
 }
 
-// This subproject (Gradle path `:mcdp`, on-disk dir `multi/`) is the only
-// runtime artifact published as `de.lhns.mcdp:mcdp`. It bundles `:fabric` and
-// `:neoforge`'s shadowJars (which already contain `:core` + `:deps-lib`) into
-// one multi-loader jar. Both metadata files coexist: `fabric.mod.json` at the
-// jar root (Fabric reads it); the NeoForge side uses
-// `META-INF/services/IModLanguageLoader` + `FMLModType=LIBRARY` for discovery
-// (no `neoforge.mods.toml` since this is a LIBRARY-type provider, not a mod).
-// Each loader ignores the other's metadata, and the unused entry classes
-// (referencing platform-specific APIs the other loader doesn't ship) never
-// link because no live code path references them on the wrong platform.
+// The 1.21-band aggregator: Gradle path `:mcdp-1.21`, on-disk dir `multi/`,
+// published as `de.lhns.mcdp:mcdp-1.21`. One of several sibling band aggregators
+// (`multi-1.17/` .. `multi-26.1/`); publication is per-band, see ADR-0023.
 //
-// The Gradle project *name* (`:mcdp`) matches the published artifactId so
-// composite-build auto-substitution from consumer test-mods works without
-// explicit dependencySubstitution rules. The on-disk *directory* is `multi/`,
-// set via `project(":mcdp").projectDir = file("multi")` in
-// settings.gradle.kts, to describe what the module does (multi-loader bundle).
+// It bundles `:fabric-1.21` and `:neoforge-1.21`'s shadowJars (which already
+// contain `:core` + `:deps-lib`) into one multi-loader jar. Both metadata files
+// coexist: `fabric.mod.json` at the jar root (Fabric reads it); the NeoForge side
+// uses `META-INF/services/IModLanguageLoader` + `FMLModType=LIBRARY` for discovery
+// (no `neoforge.mods.toml` since this is a LIBRARY-type provider, not a mod). Each
+// loader ignores the other's metadata, and the unused entry classes never link
+// because no live code path references them on the wrong platform.
+//
+// The project *name* matches the published artifactId so composite-build auto-
+// substitution from consumer test-mods works without explicit dependencySubstitution
+// rules; the *directory* is named for what the module does. settings.gradle.kts
+// maps one to the other.
 
 val bundle by configurations.creating {
     isCanBeConsumed = false
@@ -30,7 +30,7 @@ val bundle by configurations.creating {
 }
 
 dependencies {
-    // `:fabric` and `:neoforge` rewire their `apiElements`/`runtimeElements`
+    // `:fabric-1.21` and `:neoforge-1.21` rewire their `apiElements`/`runtimeElements`
     // outgoing artifacts to point at their respective shadowJars (see ADR-0012),
     // so this `bundle` configuration receives those shaded jars and not the
     // raw source-set `jar` outputs. Each shaded jar already contains `:core`

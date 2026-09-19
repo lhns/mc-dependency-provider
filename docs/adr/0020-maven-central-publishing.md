@@ -1,6 +1,6 @@
 # ADR-0020: Maven Central publishing strategy
 
-**Status:** Accepted — pre-v0.1.0 release-readiness work.
+**Status:** Accepted — pre-v0.1.0 release-readiness work. The *publishing mechanism* (vanniktech + Central Portal) is unchanged; the "only two artifacts" constraint below is superseded by [ADR-0023](0023-multi-mc-band-publication.md), which publishes one aggregator per Minecraft band (six today: `mcdp-1.17`, `-1.18`, `-1.20`, `-1.20.6`, `-1.21`, `-26.1`) alongside `:gradle-plugin`.
 
 ## Context
 

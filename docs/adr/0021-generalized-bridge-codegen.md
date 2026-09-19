@@ -26,15 +26,11 @@ The `LAMBDA_*` static fields and their `<clinit>` initialization use the same `M
 
 ### Why bytecode rewriting and not a runtime hook
 
-The user's intuitive question — "can't we mixin into FML's `@EventBusSubscriber` registrar and redirect `Class.forName` to our `ModClassLoader`?" — works for leak (2) but not for leak (1). The JVM rule is:
+Mixing into FML's `@EventBusSubscriber` registrar to redirect `Class.forName` at our `ModClassLoader` would fix leak (2), but cannot fix leak (1). The JVM rule:
 
 > Class references in bytecode are resolved using the **defining loader of the class containing that bytecode**.
 
-After Sponge merges a mixin's synthetic into MC's target class, the synthetic's bytecode is *part of MC's class*. JVM resolves its class names via MC's defining loader (FML's). Redirecting how the *original* mixin source class was loaded doesn't change anything — the merged code's loader has nothing to do with the mixin source class anymore.
-
-The only way to make MC's defining loader successfully resolve a symbol from a merged mixin body is to ensure that body never names a mod-private/Scala class directly. That's the bridge pattern. Lambda wrappers extend it to the case where the reference lives inside a synthetic that gets merged along with the mixin body.
-
-For symmetry, leak (2) (subscriber side-load) could be fixed by either runtime hook or build-time codegen. We chose codegen because: (a) the same mechanism already covers leak (1); (b) no NeoForge version-fragility (the registrar's class/method shape can rename freely without affecting us); (c) one set of docs.
+Once Sponge merges a mixin's synthetic into MC's target class, that bytecode *is* MC's class; how the original mixin source class was loaded is irrelevant. The only fix is for the merged body never to name a mod-private/Scala class directly — the bridge pattern. We use codegen for leak (2) as well because (a) the same mechanism already covers leak (1), (b) it carries no NeoForge version fragility, and (c) one set of docs.
 
 ### Why a separate bridge per lambda site, not a single shared one
 
@@ -64,6 +60,12 @@ For each site, `LambdaWrapperEmitter` produces:
 
 - **Bridge interface** at `${bridgePackage}.${ContainerSimple}$Lambda<n>Bridge` — single abstract method `make(captures...) -> SAM`.
 - **Bridge impl** at `${bridgePackage}.${ContainerSimple}$Lambda<n>BridgeImpl` — implements the interface; `make` body does its own `INVOKEDYNAMIC LambdaMetafactory` pointing at an *embedded* private-static synthetic. The synthetic is a verbatim copy of the original (same name, same desc). Because the impl class is loaded by `ModClassLoader` at runtime (per ADR-0019 manifest registration), the embedded synthetic's mod-private references resolve correctly.
+
+### Bridge impls live in a sibling `_impl` package
+
+Emitting the bridge interface and its impl in the same auto-shared `bridgePackage` is wrong, and mc-fluid-physics proved it: `ClassNotFoundException: scala.math.Ordering` during chunk generation, with `SpringBlockFeatureBridgeImpl.generate` calling into a mod-private Scala class and `cpw.mods.cl.ModuleClassLoader` resolving Scala stdlib. A `sharedPackages` prefix makes `ModClassLoader` delegate parent-first, so `Class.forName(implFqn, true, modClassLoader)` let FML define the impl — and the JVM then resolved the impl body's Scala references through FML's loader, which cannot see Scala. It stayed hidden until then because the existing test mods routed bridge calls into Java helpers, so no impl body named anything FML couldn't resolve.
+
+Fix: impls (regular and per-lambda) are emitted into `<bridgePackage>_impl`, which does not match the auto-shared `<bridgePackage>.` prefix (trailing dot), so `ModClassLoader.findClass` child-loads them from the codegen output on the mod's URL list (`expandDevRoots`) and the impl body resolves Scala via the mod loader's parent chain. The bridge *interface* stays in `<bridgePackage>` so MC's merged-in mixin code and the mod see the same `Class`. Implemented in `BridgeImplEmitter`, `LambdaWrapperEmitter` and `BridgeCodegenTask`; verified against mc-fluid-physics `runServer` booting clean through chunk generation.
 
 ### Rewriter integration
 
@@ -101,31 +103,9 @@ Default covers Sponge-Mixin and NeoForge 1.21.x's automatic event subscriber reg
 - **Dead synthetic methods on rewritten classes.** The original synthetic on the container is left as dead code (no caller after rewrite). Sponge tolerates dead synthetics; the bytes-on-disk cost is small.
 - **One more thing to break under future Sponge / `LambdaMetafactory` changes.** A new bsm shape (Scala 3 macros emitting hand-rolled MHs, etc.) would be uncovered. Tier-2 CI on a real mod jar is the right place to catch this.
 
-## Affected files
-
-| Path | Change |
-|---|---|
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/BridgeCodegenExtension.java` | Added `getBridgedAnnotations()`. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/McdpProviderPlugin.java` | Convention default for `bridgedAnnotations` (covers Mixin + EventBusSubscriber). |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/AnnotationSeedScanner.java` | NEW — ASM walk to seed by class-level annotation. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/LambdaSite.java` | NEW — per-indy site descriptor. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/LambdaWrapperEmitter.java` | NEW — emits per-site bridge interface + impl with embedded synthetic. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeCodegenTask.java` | Wires annotation seed; emits lambda artifacts; lambda manifest entries. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/BridgeMixinScanner.java` | INVOKEDYNAMIC branch + recursive synthetic walk + LambdaSite emission. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/MixinScanResult.java` | Added `lambdaSites()`. |
-| `gradle-plugin/src/main/java/de/lhns/mcdp/gradle/mixinbridges/MixinRewriter.java` | Indy replacement + `LAMBDA_*` field/clinit injection. |
-| `gradle-plugin/src/test/java/de/lhns/mcdp/gradle/mixinbridges/AnnotationSeedScannerTest.java` | NEW — 10 cases. |
-| `gradle-plugin/src/test/java/de/lhns/mcdp/gradle/mixinbridges/BridgeMixinScannerLambdaTest.java` | NEW — 7 cases (metafactory/altMetafactory, recursive scan, method ref warning, site indexing, capture types). |
-| `gradle-plugin/src/test/java/de/lhns/mcdp/gradle/mixinbridges/LambdaWrapperEmitterTest.java` | NEW — 5 cases (interface shape, impl shape, indy in make body, field naming, capture descriptors). |
-| `docs/mixin-bridge.md` | Annotation-driven seeding section + lambda-capture section. |
-| `README.md` | "Mods with Mixins" → "Mods with Mixins or annotation-driven side-loads". |
-| `docs/pitfalls.md` | Two new entries (mixin lambda CNF, subscriber side-load). |
-
 ## Alternatives considered
 
-- **Mixin into `cpw.mods.cl.ModuleClassLoader`** — rejected. ModuleClassLoader is BOOT/SERVICE-layer; loaded by `BootstrapLauncher` before Sponge Mixin initializes. Not a valid `@Mixin` target.
-- **Mixin into NeoForge's `AutomaticEventSubscriber` registrar** — rejected. Fixes leak (2) only; doesn't address leak (1)'s lambda-merged case (different JVM resolution rule). Adds NeoForge-version fragility (registrar class/method names can rename across minors).
-- **`ITransformationService` redirecting class loads** — rejected. Same reasoning; redirecting subscriber loading doesn't affect MC's class's defining loader's resolution of merged-in synthetic bodies. Promoting Scala stdlib to FML's loader (mentioned in ADR-0009 as a related rejected alternative) breaks per-mod isolation.
+- **Runtime hooks** — all rejected per the JVM resolution rule above (they cannot reach leak (1)): mixing into `cpw.mods.cl.ModuleClassLoader` (BOOT/SERVICE-layer, loaded by `BootstrapLauncher` before Sponge Mixin initializes — not a valid `@Mixin` target at all); mixing into NeoForge's `AutomaticEventSubscriber` registrar (also adds version fragility — registrar class/method names rename across minors); `ITransformationService` redirecting class loads (and promoting Scala stdlib to FML's loader, ADR-0009's related rejected alternative, breaks per-mod isolation).
 - **Build-time output split into `fml-visible/` + `mcdp-private/`** — rejected. Heavy build-system changes; doesn't fix leak (1) either, because the synthetic still gets merged into MC.
 - **Move synthetic body to a method on a helper class on `ModClassLoader` and have the wrapper call it** — equivalent to the chosen design but adds an extra indirection without runtime advantage.
 - **Inline the synthetic body directly into a wrapper class implementing the SAM** — would require local-variable remapping and runs into "wrapper's defining loader must see Scala" problems if the wrapper is in a shared package. Chosen design instead routes through the bridge interface like every other ADR-0018 bridge, reusing ADR-0019's manifest-registration plumbing.
@@ -137,47 +117,3 @@ Default covers Sponge-Mixin and NeoForge 1.21.x's automatic event subscriber reg
 - **`IEventBus.register(Object)` runtime registration** — bypasses annotation scan. Document as a manual-bridge case (write the subscriber in Java, route Scala calls through a hand-written bridge).
 - **Capture type erasure to `Object`** — would let Scala-typed captures flow through bridges. Out of scope for v1; revisit if real mods need it.
 - **Mixin into NeoForge for residual annotation-driven loads** — if a NeoForge subsystem adds a new annotation scanner mcdp doesn't yet seed on, the annotation can be added to `bridgedAnnotations` config without code changes. Only revisit if scanning is impossible (e.g., the registered class's bytecode isn't available at build time).
-
-## Errata
-
-### Bridge impl package must not be in `sharedPackages`
-
-**Symptom.** Real-world Scala mod (mc-fluid-physics) crashed during chunk
-generation with `ClassNotFoundException: scala.math.Ordering`. The stack
-showed `SpringBlockFeatureBridgeImpl.generate(Unknown Source)` invoking
-`SpringBlockFeature.generate(SpringBlockFeature.scala)` (a mod-private Scala
-class), with `cpw.mods.cl.ModuleClassLoader` as the loader resolving Scala
-stdlib.
-
-**Root cause.** ADR-0018 / ADR-0019 emit bridge interfaces *and* impls in
-the same package and auto-add that package to `sharedPackages`. The
-sharedPackages prefix triggers parent-first delegation in `ModClassLoader`:
-when `McdpProvider.resolveAutoBridgeImpl` does
-`Class.forName(implFqn, true, modClassLoader)`, the load goes parent-first
-to FML's loader, which finds the impl on the mod jar's modulepath and
-defines it. The impl is now defined by FML. JVM resolves class names in the
-impl's bytecode (the target Scala class, then transitively Scala stdlib)
-via the impl's defining loader — FML's. FML can't see Scala. Crash.
-
-The architectural reason this didn't surface earlier: existing test mods
-(`mixin-example`) routed bridge calls into Java helpers, not Scala
-directly, so the impl bodies never named anything FML couldn't resolve.
-
-**Fix.** Emit impls in a sibling package — `<bridgePackage>_impl` — that
-does NOT match the auto-shared `<bridgePackage>.` prefix (because of the
-trailing dot). `ModClassLoader.loadClass` then child-loads impl FQNs:
-`findClass` succeeds locally (the codegen output is on the mod's URL list
-via `expandDevRoots`), defines the impl on `ModClassLoader`. Impl's body
-resolves Scala via `ModClassLoader`'s parent chain → libsLoader → ✓.
-
-The bridge interface stays in `<bridgePackage>` (auto-shared) so MC's
-merged-in mixin code resolves the interface to the same `Class` on both
-loaders.
-
-**Affected files.** `BridgeImplEmitter.java`, `LambdaWrapperEmitter.java`,
-`BridgeCodegenTask.java` (extra `Files.createDirectories` for the new impl
-directory).
-
-**Verified** with mc-fluid-physics neoforge runServer: boots clean through
-`"Done (16.525s)! For help, type \"help\""` — chunk generation completes
-without the previous CNF.
