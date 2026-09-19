@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -56,7 +56,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         // crash (MixinHandler called FluidIsInfinite.set directly with no LOGIC_ dispatch,
         // hitting the parent ModuleClassLoader → NoClassDefFoundError on Scala stdlib).
         //
-        // Force re-run every build. The rewriter is idempotent (MixinRewriter's LOGIC field
+        // Force re-run every build. The rewriter is idempotent (BridgeRewriter's LOGIC field
         // check is a no-op on already-rewritten bytecode), and the cost is sub-second on a
         // typical mixin set since the work is pure ASM read+write.
         getOutputs().upToDateWhen(t -> false);
@@ -151,7 +151,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         BridgePolicy policy = new BridgePolicy(
                 getSharedPackages().getOrElse(List.of()),
                 getBridgePackage().get());
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
+        BridgeScanner scanner = new BridgeScanner(policy);
 
         // ASM frame-computation loader: consumer's compile classpath ∪ this project's class
         // outputs, parented at platform so we don't leak gradle-plugin internals.
@@ -166,7 +166,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 urls.toArray(new java.net.URL[0]), ClassLoader.getPlatformClassLoader())) {
 
         int cfv = getClassFileVersion().getOrElse(org.objectweb.asm.Opcodes.V21);
-        MixinRewriter rewriter = new MixinRewriter(policy, getBridgePackage().get(), frameLookup);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, getBridgePackage().get(), frameLookup);
         BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(getBridgePackage().get(), cfv);
         BridgeImplEmitter implEmitter = new BridgeImplEmitter(getBridgePackage().get(), frameLookup, cfv);
         LambdaWrapperEmitter lambdaEmitter = new LambdaWrapperEmitter(getBridgePackage().get(), frameLookup, cfv);
@@ -197,7 +197,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 continue;
             }
             byte[] bytes = Files.readAllBytes(classFile);
-            MixinScanResult result = scanner.scan(bytes);
+            BridgeScanResult result = scanner.scan(bytes);
             warnings.addAll(result.warnings());
             switch (result.status()) {
                 case UNSUPPORTED -> {
@@ -270,7 +270,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     // Mutating another task's declared output is technically a Gradle
                     // anti-pattern, but it's tolerated here because (a) the rewriter is
                     // idempotent — re-running on already-rewritten bytecode is a no-op via
-                    // the LOGIC field check in MixinRewriter; (b) Java/Scala/Kotlin compile
+                    // the LOGIC field check in BridgeRewriter; (b) Java/Scala/Kotlin compile
                     // tasks track source-file state for up-to-date checks, not output
                     // state, so the post-hoc mutation doesn't trigger unnecessary recompiles;
                     // and (c) there's precedent in the mixin-tooling ecosystem — Sponge
@@ -309,7 +309,7 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 for (String target : mixinEntry.getValue().keySet()) {
                     sb.append("\n[[bridge]]\n");
                     sb.append("mixin = ").append(tomlString(mixinFqn)).append('\n');
-                    sb.append("field = ").append(tomlString(MixinRewriter.logicFieldName(target))).append('\n');
+                    sb.append("field = ").append(tomlString(BridgeRewriter.logicFieldName(target))).append('\n');
                     sb.append("interface = ").append(tomlString(ifaceEmitter.interfaceFqn(target))).append('\n');
                     sb.append("impl = ").append(tomlString(implEmitter.implFqn(target))).append('\n');
                 }

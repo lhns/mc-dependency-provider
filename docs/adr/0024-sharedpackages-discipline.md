@@ -47,7 +47,7 @@ Platform-visible set: `BridgePolicy.PLATFORM_PREFIXES` (mirror of `ModClassLoade
 
 Mechanism. Mixin merges `@Mixin`-annotated interfaces' `@Accessor`/`@Invoker` methods into the target class on the game-layer transformer. The merged target class is in the game-layer loader. Mod code casting `(BlockEntityAccessor) someBlockEntity` resolves `BlockEntityAccessor` against the cast site's classloader — the per-mod loader, which has its own `BlockEntityAccessor.class` from the mod jar. JVM Class identity is `(name, defining loader)`, so the per-mod-loader copy and the game-layer copy are distinct types. CCE.
 
-Why mcdp can't auto-rewrite this. `CHECKCAST` and `INSTANCEOF` against type T put T into the calling frame's verifier-level local-variable type. A bridge interface (the rewriter's tool for cross-loader calls) can't change a frame's local-variable type without changing the surrounding bytecode in ways the verifier rejects. Bridge codegen explicitly rejects rewriting these opcodes against mod-private types (see `BridgeMixinScanner.java`); the only fix is to make T resolve to the same `Class` object on both sides — `sharedPackages`.
+Why mcdp can't auto-rewrite this. `CHECKCAST` and `INSTANCEOF` against type T put T into the calling frame's verifier-level local-variable type. A bridge interface (the rewriter's tool for cross-loader calls) can't change a frame's local-variable type without changing the surrounding bytecode in ways the verifier rejects. Bridge codegen explicitly rejects rewriting these opcodes against mod-private types (see `BridgeScanner.java`); the only fix is to make T resolve to the same `Class` object on both sides — `sharedPackages`.
 
 Validator B catches the missing-share at build time:
 

@@ -1,10 +1,10 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * Output of {@link BridgeMixinScanner} for a single mixin class. Either:
+ * Output of {@link BridgeScanner} for a single mixin class. Either:
  * <ul>
  *   <li>{@code skipped}: the class was inspected but doesn't need any bridge work (no
  *       cross-classloader references in any method body).</li>
@@ -18,7 +18,7 @@ import java.util.Map;
  *       these with constructor calls to generated wrapper classes (ADR-0021).</li>
  * </ul>
  */
-public final class MixinScanResult {
+public final class BridgeScanResult {
 
     public enum Status { SKIPPED, UNSUPPORTED, REWRITABLE }
 
@@ -31,7 +31,7 @@ public final class MixinScanResult {
     /** All lambda sites discovered across the class's methods. */
     private final List<LambdaSite> lambdaSites;
 
-    private MixinScanResult(String mixinFqn, Status status, List<String> errors,
+    private BridgeScanResult(String mixinFqn, Status status, List<String> errors,
                             List<String> warnings, Map<String, List<BridgeMember>> targets,
                             List<LambdaSite> lambdaSites) {
         this.mixinFqn = mixinFqn;
@@ -42,23 +42,23 @@ public final class MixinScanResult {
         this.lambdaSites = List.copyOf(lambdaSites);
     }
 
-    public static MixinScanResult skipped(String fqn, List<String> warnings) {
-        return new MixinScanResult(fqn, Status.SKIPPED, List.of(), warnings, Map.of(), List.of());
+    public static BridgeScanResult skipped(String fqn, List<String> warnings) {
+        return new BridgeScanResult(fqn, Status.SKIPPED, List.of(), warnings, Map.of(), List.of());
     }
 
-    public static MixinScanResult unsupported(String fqn, List<String> errors) {
-        return new MixinScanResult(fqn, Status.UNSUPPORTED, errors, List.of(), Map.of(), List.of());
+    public static BridgeScanResult unsupported(String fqn, List<String> errors) {
+        return new BridgeScanResult(fqn, Status.UNSUPPORTED, errors, List.of(), Map.of(), List.of());
     }
 
-    public static MixinScanResult rewritable(String fqn, Map<String, List<BridgeMember>> targets,
+    public static BridgeScanResult rewritable(String fqn, Map<String, List<BridgeMember>> targets,
                                               List<String> warnings) {
-        return new MixinScanResult(fqn, Status.REWRITABLE, List.of(), warnings, targets, List.of());
+        return new BridgeScanResult(fqn, Status.REWRITABLE, List.of(), warnings, targets, List.of());
     }
 
-    public static MixinScanResult rewritable(String fqn, Map<String, List<BridgeMember>> targets,
+    public static BridgeScanResult rewritable(String fqn, Map<String, List<BridgeMember>> targets,
                                               List<LambdaSite> lambdaSites,
                                               List<String> warnings) {
-        return new MixinScanResult(fqn, Status.REWRITABLE, List.of(), warnings, targets, lambdaSites);
+        return new BridgeScanResult(fqn, Status.REWRITABLE, List.of(), warnings, targets, lambdaSites);
     }
 
     public String mixinFqn() { return mixinFqn; }

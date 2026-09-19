@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
@@ -34,7 +34,7 @@ public final class BridgeInterfaceEmitter {
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
-        String simple = MixinRewriter.simpleName(targetInternalName);
+        String simple = BridgeRewriter.simpleName(targetInternalName);
         String ifaceInternal = bridgePackageInternal + "/" + simple + "Bridge";
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         cw.visit(
@@ -60,6 +60,6 @@ public final class BridgeInterfaceEmitter {
 
     public String interfaceFqn(String targetInternalName) {
         return BridgePolicy.toDotted(bridgePackageInternal) + "."
-                + MixinRewriter.simpleName(targetInternalName) + "Bridge";
+                + BridgeRewriter.simpleName(targetInternalName) + "Bridge";
     }
 }

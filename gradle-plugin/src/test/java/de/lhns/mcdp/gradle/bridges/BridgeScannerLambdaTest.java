@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code LambdaMetafactory}, recursively scans the synthetic body, and records the site for
  * the rewriter.
  */
-class BridgeMixinScannerLambdaTest {
+class BridgeScannerLambdaTest {
 
     private final BridgePolicy policy = new BridgePolicy(
             List.of("com/example/api/"),
@@ -31,8 +31,8 @@ class BridgeMixinScannerLambdaTest {
                 "java/util/function/Supplier",
                 "()Ljava/util/function/Supplier;",
                 false);
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertEquals(1, r.lambdaSites().size());
         LambdaSite site = r.lambdaSites().get(0);
         assertEquals("com/example/mod/MixinFoo", site.containerInternal());
@@ -49,8 +49,8 @@ class BridgeMixinScannerLambdaTest {
                 "java/util/function/Supplier",
                 "()Ljava/util/function/Supplier;",
                 true);
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertEquals(1, r.lambdaSites().size());
     }
 
@@ -63,8 +63,8 @@ class BridgeMixinScannerLambdaTest {
                 "java/util/function/Supplier",
                 "()Ljava/util/function/Supplier;",
                 false);
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertTrue(r.targets().containsKey("com/example/mod/MyMod"),
                 "expected synthetic body's INVOKESTATIC to land in targets: " + r.targets());
     }
@@ -75,7 +75,7 @@ class BridgeMixinScannerLambdaTest {
         byte[] bytes = mixinWithMethodReference(
                 "com/example/mod/MixinFoo",
                 "com/example/mod/MyMod");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         // Method-ref doesn't produce a lambda site; the scanner reports a warning.
         assertEquals(0, r.lambdaSites().size());
         assertFalse(r.warnings().isEmpty());
@@ -86,7 +86,7 @@ class BridgeMixinScannerLambdaTest {
     @Test
     void nonLambdaIndyEmitsWarning() {
         byte[] bytes = nonLambdaIndy("com/example/mod/MixinFoo");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         assertEquals(0, r.lambdaSites().size());
         assertFalse(r.warnings().isEmpty());
         assertTrue(r.warnings().get(0).contains("INVOKEDYNAMIC"),
@@ -97,8 +97,8 @@ class BridgeMixinScannerLambdaTest {
     void siteIndexIsStableAndPerClass() {
         // A class with two lambdas should get site indices 0 and 1.
         byte[] bytes = mixinWithTwoLambdas("com/example/mod/MixinFoo");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertEquals(2, r.lambdaSites().size());
         assertEquals(0, r.lambdaSites().get(0).siteIndex());
         assertEquals(1, r.lambdaSites().get(1).siteIndex());
@@ -108,7 +108,7 @@ class BridgeMixinScannerLambdaTest {
     void capturedTypesDerivedFromIndyDescriptor() {
         // (Ljava/lang/String;)Ljava/util/function/Supplier; — captures one String.
         byte[] bytes = mixinWithCapturingLambda("com/example/mod/MixinFoo");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         LambdaSite site = r.lambdaSites().get(0);
         Type[] caps = site.capturedTypes();
         assertEquals(1, caps.length);

@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;

@@ -1,6 +1,6 @@
 package de.lhns.mcdp.gradle;
 
-import de.lhns.mcdp.gradle.mixinbridges.BridgeCodegenTask;
+import de.lhns.mcdp.gradle.bridges.BridgeCodegenTask;
 import de.lhns.mcdp.gradle.validate.ValidateSharedPackagesTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;

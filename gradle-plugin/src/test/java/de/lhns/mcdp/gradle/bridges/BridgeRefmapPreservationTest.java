@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
@@ -48,11 +48,11 @@ class BridgeRefmapPreservationTest {
         assertFalse(targetRefsBefore.isEmpty(),
                 "fixture should contain target-class references for the test to be meaningful");
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinScanResult result = scanner.scan(before);
-        assertEquals(MixinScanResult.Status.REWRITABLE, result.status());
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(before);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
 
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] after = rewriter.rewrite(before, result.targets());
 
         Set<MemberRef> targetRefsAfter = collectRefs(after, TARGET_OWNER);
@@ -70,8 +70,8 @@ class BridgeRefmapPreservationTest {
         assertFalse(modBefore.isEmpty(),
                 "fixture should reference mod-private types for the test to be meaningful");
 
-        BridgeMixinScanner scanner = new BridgeMixinScanner(policy);
-        MixinRewriter rewriter = new MixinRewriter(policy, BRIDGE_PKG);
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
         byte[] after = rewriter.rewrite(before, scanner.scan(before).targets());
 
         Set<MemberRef> modAfter = collectRefs(after, MOD_OWNER);

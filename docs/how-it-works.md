@@ -232,7 +232,7 @@ The middle `INVOKESTATIC com/example/MyMod.shouldCancel` is the cross-classloade
 
 `AnnotationSeedScanner` walks compiled `.class` files and notices `@org.spongepowered.asm.mixin.Mixin` on `BlockMixin`. The class FQN goes into the seed set.
 
-`BridgeMixinScanner.scan(BlockMixin.class.bytes)` walks every method's instructions. For each INVOKE/GET/PUT/LDC/INVOKEDYNAMIC opcode it asks `BridgePolicy.needsBridge(owner)`:
+`BridgeScanner.scan(BlockMixin.class.bytes)` walks every method's instructions. For each INVOKE/GET/PUT/LDC/INVOKEDYNAMIC opcode it asks `BridgePolicy.needsBridge(owner)`:
 
 ```
 INVOKESTATIC com/example/MyMod.shouldCancel
@@ -242,7 +242,7 @@ INVOKESTATIC com/example/MyMod.shouldCancel
               keyed under target "com/example/MyMod"
 ```
 
-Result: `MixinScanResult.REWRITABLE` with `targets = { "com/example/MyMod" -> [BridgeMember(...)] }`.
+Result: `BridgeScanResult.REWRITABLE` with `targets = { "com/example/MyMod" -> [BridgeMember(...)] }`.
 
 ### 6.4 The bridge interface (`BridgeInterfaceEmitter` output)
 
@@ -286,7 +286,7 @@ ACC_PUBLIC  shouldCancel(Ljava/lang/String;)Z
 
 This package is **NOT** in `sharedPackages` (note the underscore: `<bridgePackage>_impl`, not `<bridgePackage>.impl`). `ModClassLoader.loadClass` for this FQN goes child-first; ModClassLoader defines the impl. `com/example/MyMod` and (transitively) Scala stdlib resolve via the impl's defining loader (ModClassLoader) → finds them via the LibraryClassLoader chain. ✓
 
-### 6.6 The rewritten mixin (`MixinRewriter` output)
+### 6.6 The rewritten mixin (`BridgeRewriter` output)
 
 The original `BlockMixin.class` is replaced with a rewritten version. Three changes:
 

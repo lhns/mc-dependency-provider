@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class BridgeMixinScannerTest {
+class BridgeScannerTest {
 
     private final BridgePolicy policy = new BridgePolicy(
             List.of("com/example/api/"),
@@ -24,8 +24,8 @@ class BridgeMixinScannerTest {
                     "(Ljava/lang/String;)Z", false);
             mv.visitInsn(Opcodes.IRETURN);
         }, "(Ljava/lang/String;)Z");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertTrue(r.targets().containsKey("com/example/mod/MyMod"));
         assertEquals(1, r.targets().get("com/example/mod/MyMod").size());
         assertEquals(BridgeMember.Kind.STATIC_METHOD,
@@ -44,9 +44,9 @@ class BridgeMixinScannerTest {
             mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "com/example/mod/Foo", "doThing", "()V", false);
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         // The class header is fine; only NEW emits a warning. INVOKEVIRTUAL gets bridged.
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").stream()
                 .filter(m -> m.kind() == BridgeMember.Kind.VIRTUAL_METHOD)
                 .findFirst().orElseThrow();
@@ -59,8 +59,8 @@ class BridgeMixinScannerTest {
             mv.visitFieldInsn(Opcodes.GETSTATIC, "com/example/mod/Foo", "BAR", "I");
             mv.visitInsn(Opcodes.IRETURN);
         }, "()I");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").get(0);
         assertEquals(BridgeMember.Kind.STATIC_FIELD_GET, bm.kind());
         assertEquals("BAR", bm.name());
@@ -74,16 +74,16 @@ class BridgeMixinScannerTest {
                     "(I)Ljava/lang/Integer;", false);
             mv.visitInsn(Opcodes.ARETURN);
         }, "()Ljava/lang/Integer;");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
         assertTrue(r.warnings().isEmpty());
     }
 
     @Test
     void modPrivateInterfaceOnHeaderRejected() {
         byte[] bytes = mixinHeader(new String[] { "com/example/mod/MyIface" }, null);
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.UNSUPPORTED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.UNSUPPORTED, r.status());
         assertEquals(1, r.errors().size());
         assertTrue(r.errors().get(0).contains("implements"));
         assertTrue(r.errors().get(0).contains("com.example.mod.MyIface"));
@@ -93,16 +93,16 @@ class BridgeMixinScannerTest {
     @Test
     void modPrivateSuperOnHeaderRejected() {
         byte[] bytes = mixinHeader(null, "com/example/mod/Base");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.UNSUPPORTED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.UNSUPPORTED, r.status());
         assertTrue(r.errors().get(0).contains("extends"));
     }
 
     @Test
     void platformInterfaceOnHeaderAccepted() {
         byte[] bytes = mixinHeader(new String[] { "java/lang/Runnable" }, "java/lang/Object");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertFalse(r.status() == MixinScanResult.Status.UNSUPPORTED);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertFalse(r.status() == BridgeScanResult.Status.UNSUPPORTED);
     }
 
     @Test
@@ -112,8 +112,8 @@ class BridgeMixinScannerTest {
                     "fire", "()V", false);
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
     }
 
     @Test
@@ -124,8 +124,8 @@ class BridgeMixinScannerTest {
                     "(Lscala/Option;)V", false);
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         assertTrue(r.warnings().stream().anyMatch(w -> w.contains("scala.Option")));
     }
 
@@ -137,7 +137,7 @@ class BridgeMixinScannerTest {
                     "(Ljava/lang/String;)Ljava/lang/Class;", false);
             mv.visitInsn(Opcodes.ARETURN);
         }, "()Ljava/lang/Class;");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         assertTrue(r.warnings().stream().anyMatch(w -> w.contains("Class.forName")));
     }
 
@@ -153,7 +153,7 @@ class BridgeMixinScannerTest {
             mv.visitInsn(Opcodes.POP);
             mv.visitInsn(Opcodes.RETURN);
         }, "(Ljava/lang/Object;)V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         assertTrue(r.warnings().stream().anyMatch(w ->
                 w.contains("bridge-model limit") && w.contains("docs/mixin-bridge.md")
                         && w.contains("sharedPackages")));
@@ -169,8 +169,8 @@ class BridgeMixinScannerTest {
             mv.visitInsn(Opcodes.POP);
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").stream()
                 .filter(m -> m.kind() == BridgeMember.Kind.CONSTRUCTOR)
                 .findFirst().orElseThrow();
@@ -185,8 +185,8 @@ class BridgeMixinScannerTest {
             mv.visitFieldInsn(Opcodes.PUTSTATIC, "com/example/mod/Foo", "BAR", "I");
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").get(0);
         assertEquals(BridgeMember.Kind.STATIC_FIELD_SET, bm.kind());
         assertEquals("BAR", bm.name());
@@ -200,8 +200,8 @@ class BridgeMixinScannerTest {
             mv.visitFieldInsn(Opcodes.PUTFIELD, "com/example/mod/Foo", "x", "I");
             mv.visitInsn(Opcodes.RETURN);
         }, "(Ljava/lang/Object;)V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").get(0);
         assertEquals(BridgeMember.Kind.INSTANCE_FIELD_SET, bm.kind());
     }
@@ -212,8 +212,8 @@ class BridgeMixinScannerTest {
             mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType("com/example/mod/Foo"));
             mv.visitInsn(Opcodes.ARETURN);
         }, "()Ljava/lang/Class;");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.REWRITABLE, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, r.status());
         BridgeMember bm = r.targets().get("com/example/mod/Foo").get(0);
         assertEquals(BridgeMember.Kind.CLASS_LITERAL, bm.kind());
     }
@@ -233,8 +233,8 @@ class BridgeMixinScannerTest {
             mv.visitFieldInsn(Opcodes.PUTSTATIC, "com/example/mod/mixin/MixinFoo", "LOGIC", "I");
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.SKIPPED, r.status(),
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status(),
                 "self-reference inside the mixin body should not seed a bridge target");
         assertTrue(r.targets().isEmpty(),
                 "expected empty targets, got: " + r.targets());
@@ -247,8 +247,8 @@ class BridgeMixinScannerTest {
                     "helper", "()V", false);
             mv.visitInsn(Opcodes.RETURN);
         }, "()V");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
     }
 
     @Test
@@ -257,8 +257,8 @@ class BridgeMixinScannerTest {
             mv.visitFieldInsn(Opcodes.GETSTATIC, "com/example/mod/mixin/MixinFoo", "LOGIC", "I");
             mv.visitInsn(Opcodes.IRETURN);
         }, "()I");
-        MixinScanResult r = new BridgeMixinScanner(policy).scan(bytes);
-        assertEquals(MixinScanResult.Status.SKIPPED, r.status());
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
     }
 
     /** Build a minimal class with one method whose body the caller writes via {@code body}. */

@@ -1,4 +1,4 @@
-package de.lhns.mcdp.gradle.mixinbridges;
+package de.lhns.mcdp.gradle.bridges;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Handle;
@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads a compiled mixin class with ASM and produces a {@link MixinScanResult}: either
+ * Reads a compiled mixin class with ASM and produces a {@link BridgeScanResult}: either
  * {@code SKIPPED} (no cross-classloader refs), {@code UNSUPPORTED} (header references
  * mod-private types — cannot rewrite without sharedPackages), or {@code REWRITABLE} (every
  * cross-classloader reference is grouped per target type).
@@ -40,21 +40,21 @@ import java.util.Set;
  * records those as warnings pointing at the user's only options
  * ({@code sharedPackages} or restructuring the mixin).</p>
  */
-public final class BridgeMixinScanner {
+public final class BridgeScanner {
 
     private final BridgePolicy policy;
 
-    public BridgeMixinScanner(BridgePolicy policy) {
+    public BridgeScanner(BridgePolicy policy) {
         this.policy = policy;
     }
 
-    public MixinScanResult scan(byte[] classBytes) {
+    public BridgeScanResult scan(byte[] classBytes) {
         ClassNode cn = new ClassNode();
         new ClassReader(classBytes).accept(cn, ClassReader.SKIP_FRAMES);
         return scan(cn);
     }
 
-    public MixinScanResult scan(ClassNode cn) {
+    public BridgeScanResult scan(ClassNode cn) {
         String mixinFqn = BridgePolicy.toDotted(cn.name);
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -83,7 +83,7 @@ public final class BridgeMixinScanner {
             }
         }
         if (!errors.isEmpty()) {
-            return MixinScanResult.unsupported(mixinFqn, errors);
+            return BridgeScanResult.unsupported(mixinFqn, errors);
         }
 
         Map<String, List<BridgeMember>> targets = new LinkedHashMap<>();
@@ -100,7 +100,7 @@ public final class BridgeMixinScanner {
         }
 
         if (targets.isEmpty() && lambdaSites.isEmpty()) {
-            return MixinScanResult.skipped(mixinFqn, warnings);
+            return BridgeScanResult.skipped(mixinFqn, warnings);
         }
         // Dedupe per-target members (a single call site appears once but multiple sites can refer
         // to the same name+desc — keep one entry per unique tuple).
@@ -112,7 +112,7 @@ public final class BridgeMixinScanner {
             }
             deduped.put(e.getKey(), uniq);
         }
-        return MixinScanResult.rewritable(mixinFqn, deduped, lambdaSites, warnings);
+        return BridgeScanResult.rewritable(mixinFqn, deduped, lambdaSites, warnings);
     }
 
     /** Per-class scan context: stable site numbering and recursion guard. */
