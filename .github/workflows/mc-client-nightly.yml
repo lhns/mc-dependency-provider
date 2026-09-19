@@ -91,7 +91,7 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.6"
         run: |
           xvfb-run -a --server-args="-screen 0 1280x720x24" \
-            python3 ../../.gitea/scripts/mc_smoke.py \
+            python3 ../../scripts/mc_smoke.py \
               --cwd . \
               --task :runClient \
               --timeout 1200 \

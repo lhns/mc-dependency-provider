@@ -66,7 +66,6 @@ public final class LambdaSite {
     public String samInternal() { return samInternal; }
     public String samMethodName() { return samMethodName; }
     public Handle implMethod() { return implMethod; }
-    public String indyDescriptor() { return indyDescriptor; }
     public int siteIndex() { return siteIndex; }
 
     /** Captured-value types, derived from the indy descriptor's arg list. */

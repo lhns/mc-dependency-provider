@@ -1,3 +1,5 @@
+# MIRROR — do not edit here. Canonical source: .github/workflows/mc-client-nightly.yml
+# Edit the .github copy, then copy it verbatim to this path (only this header differs).
 name: CI — Tier 3 (runClient nightly via xvfb)
 
 # Why a separate workflow from Tier-2 (mc-smoke.yml):
@@ -91,7 +93,7 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.6"
         run: |
           xvfb-run -a --server-args="-screen 0 1280x720x24" \
-            python3 ../../.gitea/scripts/mc_smoke.py \
+            python3 ../../scripts/mc_smoke.py \
               --cwd . \
               --task :runClient \
               --timeout 1200 \

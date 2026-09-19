@@ -4,7 +4,6 @@ import net.minecraftforge.forgespi.language.ILifecycleEvent;
 import net.minecraftforge.forgespi.language.IModInfo;
 import net.minecraftforge.forgespi.language.IModLanguageProvider;
 import net.minecraftforge.forgespi.language.ModFileScanData;
-import org.objectweb.asm.Type;
 
 import java.util.Map;
 import java.util.Optional;
@@ -14,12 +13,13 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * Forge {@link IModLanguageProvider} for mcdp on MC 1.18.x (forgespi 4.0.x).
+ * Forge {@link IModLanguageProvider} for mcdp on MC 1.18.x (forgespi 4.0.x) and
+ * MC 1.20.x (forgespi 7.x); this source is shared by both bands.
  * Discovered by Forge via
  * {@code META-INF/services/net.minecraftforge.forgespi.language.IModLanguageProvider}.
  * Mods opt in by setting {@code modLoader = "mcdepprovider"} in their {@code mods.toml}.
  *
- * <p>Lifecycle (per Forge 1.18 FML's invocation order):
+ * <p>Lifecycle (per Forge FML's invocation order, identical on both bands):
  * <ol>
  *   <li>FML scans every mod jar's class file annotations into a {@link ModFileScanData}
  *       and invokes {@link #getFileVisitor()} once per mod jar that declares
@@ -32,11 +32,12 @@ import java.util.logging.Logger;
  *       the mod for lifecycle events.</li>
  * </ol>
  *
- * <p><b>Status:</b> the file visitor + registry are implemented; the {@code loadMod}
- * dispatch + {@link McdpModContainer} subclass are partial — they wire enough to
- * compile and pass FML's null-check, but the per-mod manifest read, library download,
- * {@link de.lhns.mcdp.core.ModClassLoader} build, and entrypoint instantiation are
- * still TODO. See {@link McdpModContainer}'s class Javadoc for the next-step roadmap.
+ * <p><b>Status:</b> the file visitor, registry, {@code loadMod} dispatch, and the
+ * {@link McdpModContainer} subclass are implemented end to end — the container's
+ * constructor reads the per-mod manifest, resolves libraries, builds the per-mod
+ * {@link de.lhns.mcdp.core.ModClassLoader}, registers the mod (and any bridge
+ * manifest), and instantiates the entrypoint. See {@link McdpModContainer}'s class
+ * Javadoc for the runtime-verification status.
  */
 public final class McdpLanguageProvider implements IModLanguageProvider {
 
@@ -114,8 +115,8 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
                     .map(a -> a.clazz().getClassName())
                     .orElseThrow(() -> new IllegalStateException(
                             "mcdepprovider: no @Mod-annotated class in " + info.getModId()));
-            // Per-mod registration (manifest read, library download, ModClassLoader build) is
-            // not yet implemented. McdpModContainer's class Javadoc has the roadmap.
+            // Per-mod registration (manifest read, library resolution, ModClassLoader build,
+            // entrypoint instantiation) runs in McdpModContainer's constructor.
             return (T) new McdpModContainer(info, entryFqn);
         }
     }

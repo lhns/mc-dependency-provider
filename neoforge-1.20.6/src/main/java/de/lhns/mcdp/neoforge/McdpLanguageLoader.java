@@ -19,7 +19,6 @@ import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
 import net.neoforged.neoforgespi.language.ModFileScanData;
 
-import java.lang.annotation.ElementType;
 
 import java.io.IOException;
 import java.io.InputStream;
