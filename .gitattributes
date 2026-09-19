@@ -1,0 +1,20 @@
+# Explicit line-ending contract.
+#
+# The repository content is already all-LF; this file pins that contract so it no
+# longer depends on each contributor's core.autocrlf setting. Without it, a clone
+# with autocrlf=false or input can introduce CRLF into the index on commit.
+* text=auto eol=lf
+
+# Windows-only scripts must check out CRLF to stay runnable by cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# gradlew is a POSIX shell script; its .bat sibling is covered by the rule above.
+gradlew text eol=lf
+
+# Binary — never convert.
+*.jar   binary
+*.gz    binary
+*.png   binary
+*.zip   binary
+*.hprof binary
