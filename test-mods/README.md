@@ -1,0 +1,76 @@
+# test-mods
+
+Sixteen standalone example mods that exercise the full mcdp stack end to end.
+
+Each directory is its **own** Gradle build (Loom, ModDevGradle or ForgeGradle) that
+pulls mcdp in through composite-build `includeBuild("../..")` — they are not
+subprojects of the root build, so `./gradlew :test-mods:…` does not reach them.
+Build one with `cd test-mods/<mod> && ../../gradlew build`, or all of them with
+`scripts/test-mods.sh <gradle-args>`.
+
+Twelve of the sixteen run in CI. The other four are **deliberately excluded
+scaffolds, not abandoned code** — the reasons are recorded below and in the
+"Excluded from coverage" comment in `.github/workflows/mc-smoke.yml`.
+
+## Coverage
+
+| Mod | Loader / MC band | Lang | CI |
+|---|---|---|---|
+| `fabric-example` | Fabric 1.21.1 | scala | `runserver-smoke` (push + nightly), `mc-client-nightly`, `version-isolation-fabric` |
+| `fabric-example-v2` | Fabric 1.21.1 | scala | `version-isolation-fabric` (second mod, conflicting stdlib version) |
+| `neoforge-example` | NeoForge 21.1 / MC 1.21.1 | scala | `runserver-smoke` (push + nightly), `mc-client-nightly` |
+| `mixin-example` | Fabric 1.21.1 | scala | `mixin-codegen-smoke` |
+| `kotlin-example` | NeoForge 21.1 / MC 1.21.1 | kotlin | `ci.yml` build, `modcontainer-smoke`, `scripts/test-mods.sh` |
+| `scala-example` | no loader — manifest/jar only | scala | `ci.yml` build (Tier-1 manifest smoke) |
+| `fabric-example-1.17` | Fabric 1.17.1 | java | `runserver-smoke-bands` (nightly) |
+| `fabric-example-1.18` | Fabric 1.18.2 | java | `runserver-smoke-bands` (nightly) |
+| `fabric-example-1.20` | Fabric 1.20.1 | java | `runserver-smoke-bands` (nightly) |
+| `fabric-example-1.20.6` | Fabric 1.20.6 | java | `runserver-smoke-bands` (nightly) |
+| `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands` (nightly) |
+| `forge-example-1.20` | Forge 1.20.1 | java | `runserver-smoke-bands` (nightly) |
+| `fabric-example-26.1` | Fabric 26.1.2 | java | **excluded** — no MC artifacts yet (below) |
+| `neoforge-example-26.1` | NeoForge 26.1 beta | java | **excluded** — no MC artifacts yet (below) |
+| `forge-example-1.17` | Forge 1.17.1 | java | **excluded** — plugin path unusable (below) |
+| `forge-example-1.18` | Forge 1.18.2 | java | **excluded** — plugin path unusable (below) |
+
+## Why the four are excluded
+
+### `fabric-example-26.1`, `neoforge-example-26.1`
+
+MC 26.1.x is scaffold-only: Mojang has not shipped real artifacts for the band.
+Loom fails with `26.1.2 requires Java 25 but Gradle is using 21`, and the NeoForge
+26.1 line is beta-only. Both mods are complete, buildable-in-shape scaffolds
+(build script, settings, entry class, loader manifest) kept so that adding the band
+to CI is a matrix-row edit once real artifacts land. See ADR-0023 ("Supported
+Minecraft bands", `mcdp-26.1`).
+
+### `forge-example-1.17`, `forge-example-1.18`
+
+ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18, and it forces Gradle 7
+(Java ≤ 19). mcdp's `gradle-plugin` compiles to Java 21 bytecode against Gradle 8
+APIs, so **the mcdp plugin path is unusable on these two bands**. The mcdp
+*runtime* (the `mcdp-1.17` / `mcdp-1.18` jars via Maven) works; only manifest
+generation must happen outside mcdp. Forge 1.20.x is on ForgeGradle 6 + Gradle 8,
+which is why `forge-example-1.20` *is* in CI. See ADR-0023, "Consequences —
+negative".
+
+`forge-example-1.17` additionally targets a **stub adapter**: forgespi 3.2.x's
+`loadMod` predates `ModuleLayer` and `IModFileInfo.getFile()` is missing. The real
+port is a follow-up; ADR-0023 also notes the `mcdp-1.17` aggregator leaves
+`FMLModType` unset for this reason.
+
+### The Gradle 7.6 wrappers in `forge-example-1.17` / `forge-example-1.18`
+
+These two mods are the only ones in `test-mods/` that commit their own wrapper
+(`gradlew`, `gradlew.bat`, `gradle/wrapper/*`) pinning **Gradle 7.6**, while the
+repo root wrapper is 8.11.1. That is **load-bearing, not cruft**:
+
+- ForgeGradle 5.1 rejects Gradle 8.x outright (`EnvironmentChecks.checkGradleRange`),
+  so these builds must run on a Gradle 7 distribution.
+- Consequently their `settings.gradle.kts` also omit `includeBuild("../..")` — the
+  parent build needs Gradle 8 (Shadow 8.3.5), so it cannot be composite-included
+  from a Gradle 7 build. Build them with `./gradlew` *from inside the mod
+  directory*, after `../../gradlew :mcdp-1.17:publishToMavenLocal` (resp.
+  `:mcdp-1.18:…`) has populated mavenLocal.
+
+Every other test-mod intentionally has no wrapper and is driven by `../../gradlew`.
