@@ -184,15 +184,44 @@ jobs:
   # Excluded from coverage (also documented per-mod in test-mods/README.md):
   #   - 26.1 (fabric + neoforge): MC 26.1.x is scaffold-only — Mojang has not shipped
   #     real artifacts; Loom errors "26.1.2 requires Java 25 but Gradle is using 21".
-  #   - Forge 1.17 / 1.18: ForgeGradle 5.1 forces Gradle 7 (Java ≤19), but mcdp's
-  #     gradle-plugin compiles to Java 21 bytecode. The plugin path is unusable on
-  #     these bands; runtime mcdp via mavenLocal works but is not exercised by the
-  #     test-mod scaffolds. Documented in ADR-0023.
-  #   - Forge 1.17 also has a stub adapter (forgespi 3.2.x has loadMod predating
-  #     ModuleLayer; IModFileInfo.getFile() missing). Real port is a follow-up.
+  #   - Forge 1.17: the adapter is still a stub — forge-1.17's McdpLanguageProvider
+  #     throws UnsupportedOperationException (forgespi 3.2.x's loadMod predates
+  #     ModuleLayer; IModFileInfo.getFile() is missing). A cell here could only ever
+  #     assert "boot fails", which is not worth a nightly runner. Add it when the real
+  #     port lands — the scaffold (own Gradle 7.6 wrapper, mavenLocal consumption) is
+  #     already in place, so it is a one-row change at that point. Its extra wrinkle:
+  #     test-mods/forge-example-1.17 pins `toolchain { languageVersion = 16 }`, and
+  #     GitHub runners ship no JDK 16, so that row will also need a 16 in the
+  #     setup-java list below.
   #
-  # Triggers: nightly only (no push). Per-band cells are 5–10 min each × 8 cells ×
-  # 2 OSes ≈ 100 min worst-case nightly cost; we don't pay this on every PR.
+  # Forge 1.18 used to be excluded here for a second, *wrong* reason: "mcdp's
+  # gradle-plugin is built against Gradle 8 APIs". It is not. Every org.gradle.* type
+  # and method it uses exists in Gradle 7.6; the only real blocker was that the plugin
+  # compiled to Java 21 bytecode, so a Gradle 7.6 daemon on JDK 17 rejected its
+  # published variant (org.gradle.jvm.version=21). :gradle-plugin now targets Java 17
+  # (root build.gradle.kts) and loads on ForgeGradle 5.1 / Gradle 7.6. ADR-0023's
+  # "Consequences — negative" bullet is superseded; see its errata section.
+  #
+  # Why these cells were red and nobody noticed (run 35485761394, the only nightly this
+  # job has ever had): forge-1.20 and neoforge-1.20.6 were cancelled at exactly 30:00 on
+  # both OSes. The logs show they had already SUCCEEDED — `[mcdp-smoke] ... boot ok` and
+  # MC's `Done (28.875s)!` both appear ~3 min in — and then sat idle for ~26 min until
+  # `timeout-minutes` killed them. The step ran plain `gradlew runServer | tee`, which has
+  # no way to stop a server that booted fine. The Fabric cells "passed" only by accident:
+  # they set needs_eula=false, so MC halts itself at the EULA gate seconds after the mod
+  # initializer prints the marker — they never reached first tick at all. Both problems
+  # are fixed the same way: run every cell through scripts/mc_smoke.py, exactly like the
+  # 1.21 cells above, which waits for the first-tick marker and then kills the process
+  # tree. (The old comment claiming mc_smoke.py "asserts manifest-driven cats/circe
+  # contents" was wrong — that assertion is a separate workflow step, not part of the
+  # script.) Side effect worth knowing: a cancelled job never runs actions/cache's
+  # post-save step, which is why `mc-assets-*-forge-*` / `-neoforge-1.20.6` have never
+  # been populated and every nightly started cold. One green run fixes that for good.
+  #
+  # Triggers: nightly only (no push). 7 cells × 2 OSes = 14 jobs. Measured real work per
+  # cell is ~1 min publish + ~2–4 min boot-to-first-tick, so steady state is ≈ 60–90
+  # runner-minutes per nightly (the cells run in parallel, so wall time is one cell).
+  # timeout-minutes is a backstop, not a budget — see the note on it below.
   # The base 1.21 smoke above stays on push so PRs still get end-to-end signal.
   runserver-smoke-bands:
     if: github.event_name != 'push'
@@ -203,25 +232,56 @@ jobs:
         cell:
           # Each cell: dir = test mod root; modid = expected [mcdp-smoke] mod ID;
           # cache_key = MC version key; loader = fabric|neoforge|forge (which cache
-          # paths to populate); needs_eula = forge-only (FML stops at the EULA gate).
-          - { name: fabric-1.17,    dir: test-mods/fabric-example-1.17,    modid: fabric_example_117,    cache_key: 1.17.1, loader: fabric,   needs_eula: false }
-          - { name: fabric-1.18,    dir: test-mods/fabric-example-1.18,    modid: fabric_example_118,    cache_key: 1.18.2, loader: fabric,   needs_eula: false }
-          - { name: fabric-1.20,    dir: test-mods/fabric-example-1.20,    modid: fabric_example_120,    cache_key: 1.20.1, loader: fabric,   needs_eula: false }
-          - { name: fabric-1.20.6,  dir: test-mods/fabric-example-1.20.6,  modid: fabric_example_1206,   cache_key: 1.20.6, loader: fabric,   needs_eula: false }
-          - { name: neoforge-1.20.6,dir: test-mods/neoforge-example-1.20.6,modid: neoforge_example_1206, cache_key: 1.20.6, loader: neoforge, needs_eula: false }
-          - { name: forge-1.20,     dir: test-mods/forge-example-1.20,     modid: forge_example_120,     cache_key: 1.20.1, loader: forge,    needs_eula: true  }
+          # paths to populate); daemon_jdk = JDK the *test mod's* Gradle build must run
+          # on, empty = use the job default (21). Only the ForgeGradle 5.1 bands need an
+          # override: FG 5.1 rejects Gradle 8, so those mods carry their own Gradle 7.6
+          # wrapper, and Gradle 7.6 cannot run on JDK 21.
+          #
+          # There is no needs_eula field any more: mc_smoke.py writes run/eula.txt=true
+          # itself for every cell, unconditionally. The old flag was also the reason the
+          # Fabric cells looked green without reaching first tick (see the note above).
+          - { name: fabric-1.17,    dir: test-mods/fabric-example-1.17,    modid: fabric_example_117,    cache_key: 1.17.1, loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.18,    dir: test-mods/fabric-example-1.18,    modid: fabric_example_118,    cache_key: 1.18.2, loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.20,    dir: test-mods/fabric-example-1.20,    modid: fabric_example_120,    cache_key: 1.20.1, loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.20.6,  dir: test-mods/fabric-example-1.20.6,  modid: fabric_example_1206,   cache_key: 1.20.6, loader: fabric,   daemon_jdk: "" }
+          - { name: neoforge-1.20.6,dir: test-mods/neoforge-example-1.20.6,modid: neoforge_example_1206, cache_key: 1.20.6, loader: neoforge, daemon_jdk: "" }
+          - { name: forge-1.20,     dir: test-mods/forge-example-1.20,     modid: forge_example_120,     cache_key: 1.20.1, loader: forge,    daemon_jdk: "" }
+          # ForgeGradle 5.1 band. Own Gradle 7.6 wrapper, no includeBuild("../.."),
+          # consumes mcdp + the mcdp gradle-plugin from mavenLocal (populated by the
+          # preflight step below). Needs the JDK 17 daemon.
+          - { name: forge-1.18,     dir: test-mods/forge-example-1.18,     modid: forge_example_118,     cache_key: 1.18.2, loader: forge,    daemon_jdk: "17" }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Backstop, not a budget. Measured real work is 3–5 min/cell; the sibling
+    # `runserver-smoke` job (which does strictly more per job — full ./gradlew build plus
+    # two boots) uses 45 and its slowest fully-cold cell ever measured was 11:46
+    # (windows/neoforge, run 35465565854). 45 matches that job and leaves headroom for the
+    # one genuinely unmeasured cost here: a cold ForgeGradle userdev/decompile setup, which
+    # no run has ever completed because these cells were always cancelled first.
+    # Note the script timeout below is deliberately lower (30 min) so a hang is reported as
+    # a *failure* — cancelled jobs skip both the log upload and the actions/cache post-save.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (Temurin)
+      - name: Set up JDKs (21 default, 17 for the ForgeGradle 5.1 bands)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          # Multiple versions: setup-java installs each and exports JAVA_HOME_<major>_X64
+          # for it. The LAST entry wins JAVA_HOME/PATH, so the repo build and every
+          # Gradle-8 cell keep JDK 21 with no per-cell handling; the forge-1.18 cell picks
+          # JAVA_HOME_17_X64 back up explicitly in the runServer step.
+          java-version: |
+            17
+            21
+
+      - name: Set up Python 3.12
+        # scripts/mc_smoke.py runs the server and shuts it down on the first-tick marker.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Cache Gradle home
         uses: actions/cache@v4
@@ -239,6 +299,15 @@ jobs:
           # Loom (fabric) → ~/.gradle/caches/fabric-loom
           # ModDevGradle (neoforge) → ~/.neoforge
           # ForgeGradle (forge) → ~/.gradle/caches/forge_gradle
+          #
+          # Both Loom's and ForgeGradle's trees already sit under ~/.gradle/caches, which
+          # the Gradle-home cache above restores wholesale; only ~/.neoforge is strictly
+          # additive. They are still listed because this entry is keyed per loader+MC
+          # version, so a band gets its MC artifacts back from a restore-key even when the
+          # gradle-home key rotates on a build-file edit. Nothing here was ever actually
+          # saved for the forge/neoforge cells: actions/cache's post-save step does not run
+          # on a cancelled job, and those cells were cancelled every time. The mc_smoke.py
+          # change below is what makes these caches start working.
           path: |
             ~/.gradle/caches/fabric-loom
             ~/.gradle/caches/forge_gradle
@@ -255,24 +324,44 @@ jobs:
         run: ./gradlew publishToMavenLocal --no-daemon --stacktrace
         shell: bash
 
-      - name: Accept EULA (Forge bands only)
-        if: matrix.cell.needs_eula
-        shell: bash
-        run: |
-          mkdir -p ${{ matrix.cell.dir }}/run
-          echo "eula=true" > ${{ matrix.cell.dir }}/run/eula.txt
-
       - name: runServer (${{ matrix.cell.name }})
         working-directory: ${{ matrix.cell.dir }}
         shell: bash
-        # We don't reuse mc_smoke.py here: that script asserts manifest-driven cats/circe
-        # contents which the slimmer per-band test mods don't ship. Plain runServer with
-        # a timeout is enough — the [mcdp-smoke] grep below is the success criterion.
+        # Same runner as the 1.21 cells above. mc_smoke.py spawns `gradlew :runServer`,
+        # tails it, and terminates the whole process tree once MC prints its first-tick
+        # marker — runServer itself has no self-exit flag, which is exactly why the plain
+        # `gradlew runServer | tee` this replaced hung until timeout-minutes killed the job.
+        # It also handles the three things the old inline version got wrong or not at all:
+        #   * writes run/eula.txt=true for every cell, so Fabric cells reach first tick
+        #     instead of halting at the EULA gate seconds after the mod initializer ran;
+        #   * kills the forked MC JVM via process group / taskkill /T, so no orphan java
+        #     process survives to hold run/world/session.lock (the cancelled jobs logged
+        #     "Terminate orphan process: pid (java)" every time);
+        #   * fails fast on NoClassDefFoundError / ResolutionException / "Invalid package
+        #     name" rather than waiting out the timeout.
+        # Wrapper selection is the script's own walk-up from --cwd: it uses the nearest
+        # gradlew at or above the mod dir, so forge-example-1.18 gets its committed Gradle
+        # 7.6 wrapper and every other cell falls through to the repo-root 8.11.1 one.
+        # --timeout 1800 covers a cold ForgeGradle userdev/decompile setup, which happens
+        # inside this single Gradle invocation, and stays under timeout-minutes: 45.
         run: |
-          set -e
-          # Gradle wrapper path: 1.20 forge subproject lacks its own wrapper, uses parent.
-          if [ -f gradlew ]; then GW=./gradlew; else GW=../../gradlew; fi
-          $GW runServer --no-daemon --stacktrace 2>&1 | tee ../../smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+          set -euo pipefail
+          # ForgeGradle 5.1 bands: Gradle 7.6 cannot run on JDK 21. Swap JAVA_HOME to the
+          # JDK this cell asked for; mc_smoke.py inherits it through to the wrapper.
+          JDK='${{ matrix.cell.daemon_jdk }}'
+          if [ -n "$JDK" ]; then
+            VAR="JAVA_HOME_${JDK}_X64"
+            JH="${!VAR:-}"
+            [ -n "$JH" ] || { echo "ERROR: $VAR not set by setup-java"; env | grep '^JAVA_HOME' || true; exit 1; }
+            export JAVA_HOME="$JH"
+            export PATH="$JAVA_HOME/bin:$PATH"
+          fi
+          java -version
+          python3 ../../scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 1800 \
+            --log-file ../../smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
 
       - name: Assert smoke marker fired
         shell: bash

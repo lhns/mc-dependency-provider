@@ -55,10 +55,25 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 
 **Negative.**
 
-- **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
+- **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** *(SUPERSEDED — see "Errata" below. The Gradle-8-API half of this claim was never true, and the Java-21-bytecode half has been fixed. Forge 1.18 now consumes the plugin and is in CI.)* ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
 - Eight subprojects per band (fabric-X, neoforge-X or forge-X, multi-X) × six bands = a lot of `build.gradle.kts` files. Mitigated by the `buildSrc` convention plugins (`mcdp.shaded-jar`, `mcdp.band-adapter`, `mcdp.band-aggregator`), which own the shadow/`bundle`/`apiElements` recipe and the publishing POM; a band file now carries only its repositories, its SPI pins, and an `mcdpBand { }` block of genuinely per-band values.
 - NeoForge adapters can't share source today, so per-band feature work doubles. Future SPI re-stabilization could let us merge `:neoforge-1.20.6` and `:neoforge-1.21` source trees if their surfaces re-converge.
 - Test-mod fixtures multiply: each band's CI smoke runs through Loom (Fabric), MDG (NeoForge), or ForgeGradle. Six bands × two-or-three loaders = up to 18 CI cells.
+
+## Errata
+
+### The Gradle-plugin-on-Forge-1.17/1.18 exclusion was half wrong
+
+The "Consequences — negative" bullet above gave two reasons the mcdp `gradle-plugin` could not load under ForgeGradle 5.1 / Gradle 7. Re-checked against the source:
+
+- **"compiles to Java 21 bytecode" — true, and it was the whole blocker.** `java-gradle-plugin` publishes Gradle Module Metadata carrying `org.gradle.jvm.version`. At target 21, a Gradle 7.6 daemon (JDK ≤ 19) has no matching variant and refuses the plugin before loading a single class.
+- **"against Gradle 8 APIs" — false.** An exhaustive inventory of `org.gradle.*` imports across `gradle-plugin/src/main/java/**` yields 34 types, all of which predate Gradle 8: `DefaultTask`, `GradleException`, `Plugin`, `Project`, `JavaVersion`, `Action`, `artifacts.{Configuration, ModuleVersionIdentifier, ResolvedArtifact}`, `artifacts.repositories.{ArtifactRepository, MavenArtifactRepository}`, `file.{ConfigurableFileCollection, DirectoryProperty, DuplicatesStrategy, FileCollection, ProjectLayout, RegularFile, RegularFileProperty}`, `logging.Logger`, `model.ObjectFactory`, `plugins.JavaPluginExtension`, `provider.{ListProperty, Property, Provider}`, `tasks.{Input, InputFile, InputFiles, JavaExec, Optional, OutputDirectory, OutputFile, PathSensitive, PathSensitivity, SourceSet, TaskAction, TaskProvider}`, `tasks.bundling.Jar`, `language.jvm.tasks.ProcessResources`. The behavioural surface was checked too, not just the types: no `ConfigurationRole` / `consumable()` / `resolvable()` / `dependencyScope()` factories, no `Problems` API, no `DependencyCollector` or `getDependencyFactory()`, no `MapProperty`, no `Provider.zip`, no build services, no `JvmTestSuite`. Configuration wiring still goes through the 7.x-era `maybeCreate` + `setCanBeResolved`/`setCanBeConsumed` path.
+
+**Change made.** `:gradle-plugin` now compiles with `options.release = 17` instead of 21 (root `build.gradle.kts`); band adapters are unaffected, since `mcdp.shaded-jar` already overrides `options.release` per band from `mcdpBand.javaRelease`. No plugin source changed.
+
+**Why 17 and not 16.** Two independent reasons. (1) `RunTaskClasspathPatch` uses `java.util.HexFormat`, added in Java 17, so 16 would not compile without a code change. (2) 16 would buy nothing: the plugin is a *build-time* artifact whose bytecode is loaded by the Gradle daemon JVM and never by a Minecraft JVM. The MC-1.17 Java-16 runtime floor that governs `core` and `deps-lib` simply does not reach it. 17 is also the floor ForgeGradle 5.1 users are already on — MC 1.18.2 requires Java 17 — and Gradle 7.6 runs on Java 8–19, so 17 is comfortably inside the window.
+
+**Consequence.** `forge-example-1.18` joined the nightly `runserver-smoke-bands` matrix. `forge-example-1.17` did not, for an unrelated reason that this ADR already records: its adapter is a stub that throws. The plugin-path exclusion no longer applies to either band.
 
 ## Operational findings (added during runtime verification)
 

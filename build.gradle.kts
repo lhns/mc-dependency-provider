@@ -38,7 +38,22 @@ subprojects {
         }
     }
 
-    val javaTarget = if (name in setOf("core", "deps-lib")) 16 else 21
+    // :gradle-plugin is a *build-time* artifact: its bytecode is loaded by the Gradle
+    // daemon JVM, never by a Minecraft server JVM. So the MC-1.17 Java-16 runtime floor
+    // (the reason core/ and deps-lib/ target 16) does not apply to it. What does apply is
+    // the daemon JVM of the oldest build we want to support: ForgeGradle 5.1 (the only FG
+    // line for MC ≤ 1.18) pins Gradle 7.x, and Gradle 7.6 runs on Java 8–19. Targeting 21
+    // made the plugin unloadable on any Gradle 7 daemon — which is what excluded the Forge
+    // 1.17/1.18 bands from CI. Target 17 instead: it is the Gradle-7.6-compatible level
+    // that MC 1.18.2 already requires, and 17 (not 16) because RunTaskClasspathPatch uses
+    // java.util.HexFormat, a Java 17 API. Nothing in gradle-plugin/src/main uses a Gradle
+    // API newer than 7.6 (verified by import inventory + API-surface grep), so 17 is
+    // sufficient — no source change needed.
+    val javaTarget = when {
+        name in setOf("core", "deps-lib") -> 16
+        name == "gradle-plugin" -> 17
+        else -> 21
+    }
 
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
