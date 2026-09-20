@@ -6,10 +6,12 @@ repositories {
     maven("https://maven.fabricmc.net/")
 }
 
-// Fabric for MC 1.21.x. This is the band that owns the shared Fabric adapter source; the
-// other fabric-* bands point their srcDirs here.
+// Fabric for MC 1.21.x. This is the band that owns the shared Fabric adapter source *and*
+// the shared `fabric.mod.json` template; the other fabric-* bands point their srcDirs here
+// and supply their own `depends` floors (mcdp.band-adapter expands them).
 mcdpBand {
     javaRelease.set(21)
+    fabricLoaderVersion.set("0.16.0")
 }
 
 dependencies {

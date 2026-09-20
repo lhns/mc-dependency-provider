@@ -13,9 +13,10 @@ plugins {
 // java { withSourcesJar(); withJavadocJar() } here or duplicate artifacts crash publishing.
 
 // :deps-lib is shaded into the published gradle-plugin jar (ADR-0012 pattern,
-// matches :fabric / :neoforge / :mcdp). It's a sibling project that we choose
-// not to publish (ADR-0016), so its classes need to ship inside this artifact
-// or the published POM points at a coordinate consumers can't resolve.
+// matches the band modules — :fabric-1.21, :neoforge-1.21, :mcdp-1.21, …). It's a
+// sibling project that we choose not to publish (ADR-0016), so its classes need to
+// ship inside this artifact or the published POM points at a coordinate consumers
+// can't resolve.
 val bundle by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -64,8 +65,10 @@ tasks.named("assemble") {
 
 // Rewire the published software-component variants so the pluginMaven
 // publication (auto-created by java-gradle-plugin and picked up by vanniktech)
-// carries the shadow jar instead of the raw, deps-lib-less main jar. Same
-// six-line block as fabric/build.gradle.kts.
+// carries the shadow jar instead of the raw, deps-lib-less main jar. Same block
+// as buildSrc/src/main/kotlin/mcdp.shaded-jar.gradle.kts does for the band modules;
+// this project can't use that convention plugin (it is a java-gradle-plugin, not a
+// band), so the rewiring is repeated here.
 configurations.apply {
     named("apiElements").configure {
         outgoing.artifacts.clear()
@@ -93,7 +96,9 @@ gradlePlugin {
 // `com.gradle.plugin-publish` here — Plugin Portal publication is out of scope; consumers can
 // resolve the plugin from Maven Central via `pluginManagement { repositories { mavenCentral() } }`.
 mavenPublishing {
-    // vanniktech 0.32.0 — same shape as in :mcdp; see comment there.
+    // vanniktech 0.32.0 — same shape as the band aggregators; see the comment in
+    // buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts for what
+    // automaticRelease=true implies (ADR-0026).
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
     signAllPublications()
     coordinates("de.lhns.mcdp", "gradle-plugin", project.version.toString())

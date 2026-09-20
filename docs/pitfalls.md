@@ -312,24 +312,25 @@ cache. Fall back to empty-selection if `LoadingModList` isn't accessible
 yet so the code path degrades to pre-promotion behavior rather than
 crashing.
 
-## Fabric / Loom
-
 ### `mods { create { dependency(...) } }` DSL doesn't exist in ModDevGradle 2.0.78
 
 **Symptom.** `Unresolved reference: dependency` in the test-mod's
 `build.gradle.kts`.
 
-**Fix.** Use `implementation("de.lhns.mcdp:neoforge:0.1.0-SNAPSHOT")`.
-FML auto-discovers the adapter on the runtime classpath via its bundled
-`neoforge.mods.toml` + `META-INF/services/` entry.
+**Fix.** Use `implementation("de.lhns.mcdp:mcdp-<band>:0.1.0-SNAPSHOT")` — the
+band aggregator is the published coordinate (ADR-0023); `de.lhns.mcdp:neoforge`
+is an internal, unpublished subproject. FML auto-discovers the adapter on the
+runtime classpath via its bundled `META-INF/services/` entry.
 
 ### `localRuntime` config doesn't use project repositories
 
-**Symptom.** `Could not find de.lhns.mcdp:neoforge`.
+**Symptom.** `Could not find de.lhns.mcdp:mcdp-<band>`.
 
 **Fix.** Add project-level
 `repositories { mavenLocal(); mavenCentral(); maven("https://maven.neoforged.net/releases") }`
 so the `implementation` dep resolves.
+
+## Fabric / Loom
 
 ### `fabric.mod.json` `version = "${version}"` isn't expanded without `processResources` wiring
 
@@ -347,6 +348,13 @@ tasks.processResources {
     }
 }
 ```
+
+The same trap bit mcdp's own jars: every `fabric-*` band shipped a literal
+`${version}` to Maven Central snapshots before the wiring was added. It now
+lives in the `mcdp.band-adapter` convention plugin (ADR-0023, "Per-band
+`fabric.mod.json` floors"). Note the `filesMatching` scope — `expand()` runs
+Groovy's `SimpleTemplateEngine`, which fails on any stray `$` in *any* resource
+it touches.
 
 ## Minecraft runtime
 

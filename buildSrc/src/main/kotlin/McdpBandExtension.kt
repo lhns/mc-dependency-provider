@@ -8,26 +8,29 @@ import org.gradle.api.provider.Property
  * is genuinely band-specific rather than boilerplate.
  */
 abstract class McdpBandExtension {
-    /** Bytecode target for this band, i.e. the Java version the band's Minecraft JVM ships. */
+    /**
+     * Bytecode target for this band, i.e. the Java version the band's Minecraft JVM ships.
+     * Required — there is no sensible default, and on Fabric bands it also becomes the
+     * `depends.java` floor in `fabric.mod.json`, where a wrong guess is a runtime failure.
+     */
     abstract val javaRelease: Property<Int>
 
     /**
-     * Base name of the shaded jar. Defaults to `mcdp-<project name>` for adapter modules and
-     * to `<project name>` for band aggregators (whose project name already is the published
-     * artifactId — see settings.gradle.kts).
+     * The band's `depends.fabricloader` floor, filled into the shared `fabric.mod.json`
+     * template. Fabric adapter modules only; leaving it unset is what tells
+     * `mcdp.band-adapter` this module has no Fabric metadata to expand.
      */
-    abstract val archiveBaseName: Property<String>
+    abstract val fabricLoaderVersion: Property<String>
 
     /**
      * FML's jar-type manifest attribute, or unset for jars FML never sees (the Fabric-only
-     * adapters). `LANGPROVIDER` on Forge-bundling bands (≤ 1.20.4); `LIBRARY` on NeoForge
-     * bands, where FML 4.x/8.x+ routes LIBRARY jars into the PLUGIN module layer it
-     * ServiceLoader-scans for IModLanguageLoader and `LANGPROVIDER` is not a valid value.
+     * adapters) and for bands FML must *not* route (`mcdp-1.17`, whose Forge adapter is
+     * still a stub — ADR-0023). `LANGPROVIDER` on Forge-bundling bands (≤ 1.20.4);
+     * `LIBRARY` on NeoForge bands, where FML 4.x/8.x+ routes LIBRARY jars into the PLUGIN
+     * module layer it ServiceLoader-scans for IModLanguageLoader and `LANGPROVIDER` is not
+     * a valid value.
      */
     abstract val fmlModType: Property<String>
-
-    /** POM `<name>`; defaults to the project name. Aggregator modules only. */
-    abstract val pomName: Property<String>
 
     /** POM `<description>`. Aggregator modules only. */
     abstract val pomDescription: Property<String>

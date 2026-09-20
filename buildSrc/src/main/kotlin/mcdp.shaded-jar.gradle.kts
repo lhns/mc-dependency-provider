@@ -6,8 +6,6 @@ plugins {
 }
 
 val mcdpBand = extensions.create<McdpBandExtension>("mcdpBand")
-mcdpBand.javaRelease.convention(21)
-mcdpBand.archiveBaseName.convention(project.name)
 
 // Overrides the root build's blanket `options.release` so each band compiles down to the
 // Java version its Minecraft JVM actually ships. The toolchain JDK stays 21 (root).
@@ -32,19 +30,27 @@ tasks.named<Jar>("jar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("")
-    archiveBaseName.set(mcdpBand.archiveBaseName)
+    // Band aggregators are named for the artifactId they publish; `mcdp.band-adapter`
+    // overrides this with the `mcdp-` prefix its modules' names lack.
+    archiveBaseName.set(project.name)
     configurations = listOf(bundle)
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    mcdpBand.fmlModType.orNull?.let { modType ->
-        // Automatic-Module-Name is a JPMS hint for FML's classloader pipeline; Fabric
-        // ignores both attributes.
-        manifest {
-            attributes(
-                "FMLModType" to modType,
-                "Automatic-Module-Name" to "mcdepprovider"
-            )
-        }
+    // Automatic-Module-Name is a JPMS hint for FML's classloader pipeline; Fabric ignores it.
+    manifest {
+        attributes("Automatic-Module-Name" to "mcdepprovider")
+    }
+    // FMLModType is what actually makes FML route the jar, so it is only set where FML
+    // should pick it up — see McdpBandExtension. Unset must stay "no attribute": an empty
+    // or bogus value is worse than none.
+    //
+    // Resolved at execution time rather than with an eager `.orNull` here: if anything ever
+    // realizes this task before the band's `mcdpBand { }` block runs, an eager read silently
+    // drops the attribute, and the jar then publishes fine while FML never routes it.
+    val fmlModType = mcdpBand.fmlModType
+    inputs.property("fmlModType", fmlModType).optional(true)
+    doFirst {
+        fmlModType.orNull?.let { manifest.attributes("FMLModType" to it) }
     }
 }
 
