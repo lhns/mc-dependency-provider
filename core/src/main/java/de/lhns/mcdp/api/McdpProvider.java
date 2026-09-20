@@ -74,12 +74,34 @@ public final class McdpProvider {
             throw new IllegalStateException(
                     "mcdepprovider: failed to read auto-bridge manifest " + tomlFile, ioe);
         }
+        return registerAutoBridgeManifestTomlContent(modLoader, content, tomlFile.toString());
+    }
+
+    /**
+     * Content-addressed variant of {@link #registerAutoBridgeManifestToml(ModClassLoader, Path)}.
+     *
+     * <p>Exists for adapters whose loader SPI exposes mod-jar entries as streams rather than as
+     * {@link Path}s. NeoForge FML 10.0.x (MC 1.21.10+) replaced
+     * {@code IModFile.findResource(String...)} with {@code JarContents}, which has no
+     * {@code Path} view of an entry at all — see ADR-0030. Every other adapter keeps using the
+     * {@link Path} overload, which simply reads the file and delegates here.
+     *
+     * @param modLoader   per-mod loader the bridge impls belong to
+     * @param tomlContent the manifest's text; {@code null} or blank → no-op
+     * @param source      a human-readable origin used only in error messages
+     * @return number of bridge entries registered
+     */
+    public static int registerAutoBridgeManifestTomlContent(ModClassLoader modLoader,
+                                                            String tomlContent,
+                                                            String source) {
+        Objects.requireNonNull(modLoader, "modLoader");
+        if (tomlContent == null || tomlContent.isBlank()) return 0;
         Map<String, Object> root;
         try {
-            root = MiniToml.parse(content);
+            root = MiniToml.parse(tomlContent);
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "mcdepprovider: failed to parse auto-bridge manifest " + tomlFile, e);
+                    "mcdepprovider: failed to parse auto-bridge manifest " + source, e);
         }
         Object bridges = root.get("bridge");
         if (!(bridges instanceof List<?> list)) return 0;
@@ -91,7 +113,7 @@ public final class McdpProvider {
             String impl = asStr(table.get("impl"));
             if (mixinFqn == null || field == null || impl == null) {
                 throw new IllegalStateException(
-                        "mcdepprovider: incomplete [[bridge]] entry in " + tomlFile + ": " + table);
+                        "mcdepprovider: incomplete [[bridge]] entry in " + source + ": " + table);
             }
             AUTO_BRIDGE_REGISTRY.put(mixinFqn + "#" + field, new BridgeEntry(impl, modLoader));
             registered++;

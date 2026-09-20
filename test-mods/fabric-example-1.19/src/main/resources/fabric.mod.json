@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "fabric_example_119",
+  "version": "${version}",
+  "name": "mcdp Fabric 1.19 example",
+  "description": "Minimal mod that exercises the mcdp Fabric adapter on MC 1.19.2.",
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "mcdepprovider",
+        "value": "com.example.fabric119.FabricExampleMod"
+      }
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.14",
+    "mcdepprovider": "*",
+    "minecraft": "~1.19.2"
+  }
+}

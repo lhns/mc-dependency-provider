@@ -2,6 +2,8 @@
 
 **Status:** Accepted — first cut shipped post-v0.1. Refines [ADR-0008](0008-mixin-via-bridge-pattern.md): the bridge pattern itself stays — the codegen is a layer that hides it from the consumer. Further refined by [ADR-0021](0021-generalized-bridge-codegen.md): seeding generalized to arbitrary class-level annotations (covers `@EventBusSubscriber` etc.); INVOKEDYNAMIC LambdaMetafactory sites now rewrite to per-site wrapper bridges, closing the Scala-lambda-merged-into-MC leak (the fluidphysics CNF).
 
+> **Loader coverage (2026-09-20).** The *build-time* half of this ADR (the ASM scan and rewrite in the Gradle plugin) is loader-agnostic and always was. The *runtime* half — resolving `LOGIC_*` fields through `McdpProvider` — only ever worked on Fabric and NeoForge; it was inert on the Forge bands until [ADR-0028](0028-forge-cross-mod-registration.md) ported the lazy populator there. See [ADR-0019](0019-bridge-manifest-format-and-registration.md)'s status note.
+
 ## Context
 
 ADR-0008 established the runtime architecture for Mixin support: a Java bridge interface in a `sharedPackages` namespace, a Scala/Kotlin impl class, and an `@McdpMixin(impl = "...")` annotation on the mixin so `McdpProvider.loadMixinImpl(...)` can wire the static field. Correct, but ergonomically harsh for ports — ~15-20 mirrored bridge methods per mixin in a real-world codebase, every call site rewritten from `MyMod.foo(...)` to `LOGIC.foo(...)`, and discoverability is a cliff (users hit `NoClassDefFoundError`, dig through ADR-0008, find `loadMixinImpl`, find `sharedPackages`, assemble the recipe themselves).

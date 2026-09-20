@@ -2,6 +2,8 @@
 
 **Status:** Accepted — supersedes the runtime-wiring and manifest-discovery errata in ADR-0018.
 
+> **"Both platform adapters" meant two of three (2026-09-20).** When this ADR was written there were two adapters, Fabric and NeoForge, and the wording below is accurate for them. The band model (ADR-0023) later added Forge, where this feature was **effectively broken**: `McdpProvider.installLazyPopulator(Runnable)` had zero callers in `forge-1.18/`, so a mixin applied to a class touched during `Bootstrap.bootStrap()` — which runs before FML's `loadMod` sweep on Forge exactly as on NeoForge — reached `resolveAutoBridgeImpl` against an empty registry and threw `no auto-bridge registered`. [ADR-0028](0028-forge-cross-mod-registration.md) ports the lazy populator to Forge (installed from `McdpLanguageProvider`'s static initializer, backed by the idempotent `ensureRegistered`). Read "both" as **all three** adapters from that ADR onward. The manifest *format* and the registration API in this ADR did not change.
+
 ## Context
 
 ADR-0018 specifies the auto-codegen mixin-bridge pipeline: the Gradle plugin scans compiled mixin bytecode, rewrites cross-classloader call sites to dispatch through bridge interfaces, and emits matching bridge interface + impl classes. To wire those at runtime, each rewritten mixin gains a synthetic `<clinit>` that populates per-target `LOGIC_*` static fields by calling back into `McdpProvider.resolveAutoBridgeImpl(mixinFqn, fieldName)`. The provider needs a registry mapping `(mixinFqn, fieldName)` to the bridge impl FQN + the per-mod `ModClassLoader` to load it through.

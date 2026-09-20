@@ -1,0 +1,23 @@
+modLoader = "mcdepprovider"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "neoforge_example_12111"
+version = "${version}"
+displayName = "mcdp NeoForge 1.21.11 example"
+description = "Minimal mod that exercises the mcdp NeoForge 1.21.11 adapter (FML loader 10.0.x)."
+
+[[dependencies.neoforge_example_12111]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.10,22)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.neoforge_example_12111]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.10,1.22)"
+ordering = "NONE"
+side = "BOTH"

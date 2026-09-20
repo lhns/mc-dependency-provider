@@ -1,0 +1,65 @@
+// Fabric test mod for MC 26.3 (released 2026-09-15), consuming the single `mcdp-26` band.
+//
+// Runs on this directory's OWN Gradle 9.6 wrapper + a JDK 25 daemon — see
+// settings.gradle.kts for why it cannot be composite-included into the root build.
+
+plugins {
+    `java-library`
+    // Loom 1.18.x is the line current with MC 26.3 (1.18.2 published 2026-09-16, one day
+    // after the game). Its Gradle module metadata declares `org.gradle.jvm.version = 25`,
+    // so it *requires* a JDK 25 daemon — which this band needs anyway.
+    //
+    // Loom 1.17.21 is the last line that still declares jvm.version 21. It does NOT help:
+    // Loom separately refuses a MC version whose required Java exceeds the daemon JVM, and
+    // MC 26.x requires 25. So the daemon must be 25 either way, and 1.18.2 is the newer
+    // line. Drop to 1.17.21 only if 1.18.x turns out to reject Gradle 9.6.
+    id("fabric-loom") version "1.18.2"
+    // No includeBuild("../..") here, so the plugin needs an explicit version. Populate it
+    // with `../../gradlew :gradle-plugin:publishToMavenLocal`, or let it resolve from the
+    // Sonatype snapshot repo listed in settings.gradle.kts.
+    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
+}
+
+repositories {
+    // mavenLocal FIRST and non-optional: with no includeBuild("../.."), the only source of
+    // `de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT` is the parent build's publishToMavenLocal.
+    mavenLocal()
+    mavenCentral()
+    maven("https://maven.fabricmc.net/")
+}
+
+group = "com.example"
+version = "0.1.0"
+
+// 25, not 21: MC 26.x's own runtime requirement. The mcdp jar we consume is release-21
+// bytecode, which loads fine here — bytecode is forward-compatible; it is the *toolchain*
+// that has to be 25, not the artifact.
+java { toolchain { languageVersion.set(JavaLanguageVersion.of(25)) } }
+
+val minecraftVersion = "26.3"
+
+dependencies {
+    minecraft("com.mojang:minecraft:$minecraftVersion")
+    // Yarn, NOT used. `net.fabricmc:yarn` stops at 1.21.11 — there is no yarn build for any
+    // 26.x version (meta.fabricmc.net/v2/versions/yarn/26.3 is an empty array), and the
+    // calendar line publishes a single rolling `net.fabricmc:intermediary:0.0.0`. Official
+    // Mojang mappings are the only option, and this mod touches no MC types anyway.
+    mappings(loom.officialMojangMappings())
+    modImplementation("net.fabricmc:fabric-loader:0.19.5")
+    modImplementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")
+    mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
+}
+
+mcdepprovider { lang.set("java") }
+
+// SNAPSHOT dependencies are "changing" modules, cached for 24h by default. That defeats the
+// CI preflight: publishToMavenLocal writes a fresh mcdp jar and the consumer resolves the
+// previous one. Re-resolve every build — this mod exists to exercise what was just built.
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
+}
+
+tasks.processResources {
+    inputs.property("version", project.version)
+    filesMatching("fabric.mod.json") { expand("version" to project.version) }
+}

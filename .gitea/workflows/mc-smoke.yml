@@ -178,23 +178,67 @@ jobs:
 
   # Per-band runServer smoke (ADR-0023).
   #
-  # The multi-MC-band restructure ships six bands of Fabric/NeoForge/Forge adapters.
+  # The multi-MC-band restructure ships EIGHT bands of Fabric/NeoForge/Forge adapters:
+  # 1.17, 1.18, 1.19, 1.20, 1.20.6, 1.21, 1.21.11 and 26. (`mcdp-26.1` no longer exists —
+  # ADR-0032 collapsed the whole calendar line into one `mcdp-26` band.)
   # `runserver-smoke` above only covers MC 1.21.1; a regression in any per-band SPI
-  # port (Forge 4.0 vs 7.x, NeoForge 8.0.x vs 9.0.x, fabric-loader 0.14 vs 0.15) would
-  # not surface until release. This job boots one test mod per (loader × band) cell.
+  # port (Forge 4.0 vs 6.0 vs 7.x, NeoForge 8.0.x vs 9.0.x vs 10.x, fabric-loader 0.14
+  # vs 0.15 vs 0.19) would not surface until release. This job boots one test mod per
+  # (loader × band) cell.
+  #
+  # WHAT IS COVERED: the 7 cells in the matrix below (1.17, 1.18, 1.20, 1.20.6 Fabric;
+  # 1.20.6 NeoForge; 1.20 + 1.18 Forge), plus MC 1.21.1 Fabric/NeoForge in the
+  # `runserver-smoke` job above. That is five of the eight bands, and no band is covered
+  # on every loader it ships.
   #
   # Excluded from coverage (also documented per-mod in test-mods/README.md):
-  #   - 26.1 (fabric + neoforge): MC 26.1.x is scaffold-only — Mojang has not shipped
-  #     real artifacts; Loom errors "26.1.2 requires Java 25 but Gradle is using 21".
-  #   - Forge 1.17: the adapter now works (it shares forge-1.18's source — Forge
-  #     1.17.1-37.1.2 runs forgespi 4.0.x, not the 3.2.x this band was mis-pinned to;
-  #     see ADR-0029), so a cell here would be meaningful. It is not added yet only
-  #     because of the wrinkle below; the rest of the scaffold (own Gradle 7.6 wrapper,
-  #     mavenLocal consumption) is already in place, so it is a one-row change. The
-  #     wrinkle:
+  #   - 26.x (fabric-example-26.3 + neoforge-example-26.2): the blocker is the BUILD
+  #     TOOLCHAIN, not Minecraft. An older version of this comment said "Mojang has not
+  #     shipped real artifacts" — that is FALSE. MC 26.1, 26.2 and 26.3 all have full
+  #     downloads in version_manifest_v2.json (all declaring javaVersion 25), NeoForge
+  #     has STABLE 26.1.2.109 and 26.2.0.88 builds, fabric-loader 0.19.5 and Loom 1.18.2
+  #     are released. What is actually missing:
+  #       * Loom refuses a MC version whose required Java exceeds the *Gradle daemon* JVM.
+  #         MC 26.x needs JDK 25; Gradle 8.11.1 (the repo-root wrapper) cannot run on
+  #         JDK 25 at all. So the 26.x test mods carry their own Gradle 9.6.1 wrapper and
+  #         need JDK 25 added to this job's setup-java list before either cell can exist.
+  #       * Those wrappers are INCOMPLETE IN THE REPO: gradle-wrapper.jar, gradlew and
+  #         gradlew.bat are deliberately not committed (they cannot be produced without a
+  #         local Gradle 9.6 install). See test-mods/fabric-example-26.3/gradle/wrapper/
+  #         gradle-wrapper.properties — either run `gradle wrapper --gradle-version 9.6.1`
+  #         once, or use gradle/actions/setup-gradle@v4 with gradle-version 9.6.1 for
+  #         these cells and invoke `gradle` instead of `./gradlew`.
+  #     Two mapping facts worth keeping here, because the deleted fabric-example-26.1 got
+  #     both wrong and they would otherwise be copied forward:
+  #       * net.fabricmc:yarn has NO 26.x builds at all — its metadata stops at
+  #         1.21.11+build.6, and meta.fabricmc.net/v2/versions/yarn/26.3 returns []. The
+  #         calendar line publishes only a rolling net.fabricmc:intermediary:0.0.0. The old
+  #         fabric-example-26.1 pinned `net.fabricmc:yarn:26.1.2+build.1:v2`, a version that
+  #         never existed. 26.x test mods MUST use loom.officialMojangMappings().
+  #       * The NeoForge 26.x smoke targets MC 26.2, not 26.3: NeoForge's 26.3 line is
+  #         beta-only (26.3.0.0-beta … 26.3.0.7-beta); 26.2.0.88 is the newest stable.
+  #     See ADR-0032.
+  #   - Forge 1.17: the adapter WORKS — the band was never actually blocked. It shares
+  #     forge-1.18's source because Forge 1.17.1-37.1.2 runs forgespi 4.0.x, not the 3.2.x
+  #     the band was mis-pinned to (ADR-0029), and multi-1.17 now sets
+  #     FMLModType=LANGPROVIDER like the other Forge-bundling bands. So a cell here would
+  #     be meaningful, and the rest of the scaffold (own Gradle 7.6 wrapper, mavenLocal
+  #     consumption) is already in place — it is a one-row change. The only wrinkle left:
   #     test-mods/forge-example-1.17 pins `toolchain { languageVersion = 16 }`, and
   #     GitHub runners ship no JDK 16, so that row will also need a 16 in the
   #     setup-java list below.
+  #   - The three bands added on 2026-09-20 (1.19, 1.21.11, 26) have NO cells, on purpose.
+  #     Their test mods (fabric-example-1.19, forge-example-1.19, fabric-example-1.21.11,
+  #     neoforge-example-1.21.11, fabric-example-26.3, neoforge-example-26.2) have never
+  #     been built — the adapters were verified by compiling with plain javac against the
+  #     real upstream jars, not through Gradle (ADR-0030, ADR-0031, ADR-0032). The 26.x
+  #     pair is additionally unbuildable here for the toolchain reason above. 1.19 and
+  #     1.21.11 are the cheap adds once their mods build: 1.19 needs no new JDK (Java 17,
+  #     ForgeGradle 6 / Gradle 8 like the 1.20 cell); 1.21.11's Fabric cell needs a Loom
+  #     that can provision MC 1.21.11, which the root Gradle 8.11.1 wrapper cannot supply
+  #     (Loom 1.10+ needs Gradle 8.12), so it needs a root wrapper bump or its own wrapper.
+  #   - MC 1.21.2 - 1.21.9 have no band at all, so there is nothing to smoke. Deliberate:
+  #     they span FML 5.0/6.0/7.0/8.0/9.0 (ADR-0030).
   #
   # Forge 1.18 used to be excluded here for a second, *wrong* reason: "mcdp's
   # gradle-plugin is built against Gradle 8 APIs". It is not. Every org.gradle.* type
@@ -220,7 +264,13 @@ jobs:
   # post-save step, which is why `mc-assets-*-forge-*` / `-neoforge-1.20.6` have never
   # been populated and every nightly started cold. One green run fixes that for good.
   #
-  # Triggers: nightly only (no push). 7 cells × 2 OSes = 14 jobs. Measured real work per
+  # That green run happened: in run 35526039405, forge-1.20 and neoforge-1.20.6 PASSED for
+  # the first time. So the mc_smoke.py conversion above is confirmed working, and the
+  # mc-assets caches for those cells are populated from here on.
+  #
+  # Triggers: nightly only (no push). Still 7 cells × 2 OSes = 14 jobs — the three bands
+  # added on 2026-09-20 deliberately added no rows (see "Excluded from coverage" above), so
+  # the cost estimate below is unchanged by them. Measured real work per
   # cell is ~1 min publish + ~2–4 min boot-to-first-tick, so steady state is ≈ 60–90
   # runner-minutes per nightly (the cells run in parallel, so wall time is one cell).
   # timeout-minutes is a backstop, not a budget — see the note on it below.

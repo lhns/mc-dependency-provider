@@ -2,6 +2,8 @@
 
 **Status:** Accepted — shipped before v0.1.0. Supersedes the construction-timing aspect of ADR-0013 (the `@Mod` discovery + bag-dispatch decisions in 0013 stand unchanged).
 
+> **Scope note (2026-09-20).** This ADR is about **NeoForge**, and the "full vanilla-parity in entry-ctor expressiveness" claim in its Consequences should be read that way. It was *not* true on Forge: the Forge `McdpModContainer` had no `IEventBus` at all and called `adapter.construct(entryClass)` with an **empty bag**, so none of the `(IEventBus, ModContainer, Dist)` shapes below could be expressed by a Forge mcdp mod. [ADR-0027](0027-forge-lifecycle-staging.md) applies this ADR's construction-timing decision to Forge (construction moves to the `CONSTRUCT` stage, the container owns a real `IEventBus`) and the bag is now populated there too. Forge parity is complete except for `@EventBusSubscriber` auto-registration, which NeoForge gets via `AutomaticEventSubscriber.inject` and Forge does not yet.
+
 ## Context
 
 ADR-0013 established that mcdpprovider mods follow vanilla NeoForge's `@Mod`-annotation discovery and bag-based constructor dispatch (`{IEventBus, Dist, ...}` matched by `isAssignableFrom`). The remaining gap was *when* construction happens.

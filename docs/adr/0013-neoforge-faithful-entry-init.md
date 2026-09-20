@@ -2,6 +2,8 @@
 
 **Status:** Accepted — shipped in `17cccec` (`@Mod` discovery + `AutomaticEventSubscriber.inject`) on top of `c48869b` (`IEventBus` + `Dist` reaching the entry ctor). The construction-timing aspect (eager construct in `loadMod`, then wrap) is **superseded by [ADR-0017](0017-modcontainer-as-ctor-arg.md)**, which moves construction into `McdpModContainer.constructMod()` to enable `ModContainer` in the entry ctor. The `@Mod`-discovery + bag-dispatch decisions in this ADR stand unchanged.
 
+> **Scope note (2026-09-20).** As the title says, this ADR is NeoForge-only; it makes no cross-loader claim and none should be read into it. For the record of when the same contract reached the Forge bands (ADR-0023): the bag was empty on Forge until [ADR-0027](0027-forge-lifecycle-staging.md), and `@EventBusSubscriber` auto-registration — the `AutomaticEventSubscriber.inject` half of this ADR — is still **not** implemented on Forge.
+
 ## Context
 
 mc-lib-provider's NeoForge entry-init originally invented a contract: mod authors declared their entry class via a `[modproperties.<modId>] entrypoint = "..."` toml property and the language loader passed only `IModInfo` to the entry constructor. ADR-0005 also kept the door open for an `(IModInfo)`-shaped ctor that no other NeoForge loader uses.

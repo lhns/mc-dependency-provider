@@ -31,23 +31,26 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0007](0007-dev-mode-parity.md) | Dev-mode runs through the production dep-loading path | Accepted |
 | [0008](0008-mixin-via-bridge-pattern.md) | Mixin supported via a bridge pattern | Accepted |
 | [0009](0009-reject-alternatives.md) | Rejected alternatives record | Accepted |
-| [0010](0010-stdlib-version-promotion.md) | Opt-in stdlib version promotion | Accepted |
+| [0010](0010-stdlib-version-promotion.md) | Opt-in stdlib version promotion | Accepted; reached the Forge bands only via 0028 |
 | [0011](0011-defer-sbt-and-maven-plugins.md) | Defer sbt and Maven plugins to v0.2 | Accepted |
 | [0012](0012-dev-mode-classpath-grouping.md) | Dev-mode classpath grouping for composite-built multi-project mods | Accepted |
-| [0013](0013-neoforge-faithful-entry-init.md) | NeoForge-faithful entry init via `@Mod` + FML helpers | Accepted |
+| [0013](0013-neoforge-faithful-entry-init.md) | NeoForge-faithful entry init via `@Mod` + FML helpers | Accepted; NeoForge-scoped — Forge equivalent landed in 0027/0028, minus `@EventBusSubscriber` |
 | [0014](0014-opt-in-mcdep-implementation.md) | Opt-in `mcdepImplementation` Gradle bucket replaces `excludeGroup` | Accepted |
 | [0015](0015-in-tree-closed-schema-parsers.md) | In-tree closed-schema parsers (`MiniJson`, `MiniToml`) | Accepted |
 | [0016](0016-unified-mcdp-jar.md) | Unified `mcdp` jar bundling Fabric and NeoForge adapters | Accepted |
-| [0017](0017-modcontainer-as-ctor-arg.md) | NeoForge mod construction inside `ModContainer.constructMod()` (enables `ModContainer` in entry ctor) | Accepted; supersedes part of 0013 |
+| [0017](0017-modcontainer-as-ctor-arg.md) | NeoForge mod construction inside `ModContainer.constructMod()` (enables `ModContainer` in entry ctor) | Accepted; supersedes part of 0013; applied to Forge by 0027 |
 | [0018](0018-automatic-mixin-bridge-codegen.md) | Automatic Mixin → mod-private bridge codegen via bytecode rewriting | Accepted; refines 0008 |
-| [0019](0019-bridge-manifest-format-and-registration.md) | Bridge manifest format (TOML) and runtime registration | Accepted; supersedes 0018's runtime-wiring/manifest-discovery errata |
-| [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted; staging-gate decision superseded by 0026 |
+| [0019](0019-bridge-manifest-format-and-registration.md) | Bridge manifest format (TOML) and runtime registration | Accepted; supersedes 0018's runtime-wiring/manifest-discovery errata; its "both platform adapters" became all three via 0028 |
+| [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted; staging-gate decision superseded by 0026; artifact list now eight bands (0030/0031/0032) |
 | [0021](0021-generalized-bridge-codegen.md) | Generalized bridge codegen — arbitrary annotation seeding + lambda-site coverage | Accepted; refines 0008/0018 |
 | [0022](0022-devroots-source-set-output-contract.md) | `dev_roots` is the plugin's contract for the per-mod ModClassLoader's URL list | Accepted; refines 0007 |
-| [0023](0023-multi-mc-band-publication.md) | Multi-Minecraft-band publication model (`mcdp-1.17` … `mcdp-26.1`) | Accepted; supersedes 0016's single-artifact assumption |
+| [0023](0023-multi-mc-band-publication.md) | Multi-Minecraft-band publication model (`mcdp-1.17` … `mcdp-26`) | Accepted; supersedes 0016's single-artifact assumption. Model in force; band table, out-of-scope list and 26.x source-sharing amended by 0029–0032 (see its "Amendments" section) |
 | [0024](0024-sharedpackages-discipline.md) | `sharedPackages` discipline — build-time validators for cross-classloader granularity | Accepted |
 | [0025](0025-run-task-stripping-opt-in.md) | Run-task classpath stripping is opt-in, not the default | Accepted; supersedes 0007's stripping default |
 | [0026](0026-automatic-release.md) | `automaticRelease = true` — green CI gate replaces the Portal click | Accepted; supersedes 0020's staging gate |
 | [0027](0027-forge-lifecycle-staging.md) | Forge mod construction moves to the `CONSTRUCT` stage; classloader setup stays in `loadMod` | Accepted; applies 0017 to Forge |
 | [0028](0028-forge-cross-mod-registration.md) | Forge cross-mod registration: one idempotent `ensureRegistered`, reached from a reflective `LoadingModList` walk | Accepted; completes 0027, applies 0010/0019 to Forge |
 | [0029](0029-forge-1-17-shares-the-4-0-adapter.md) | Forge 1.17 runs forgespi 4.0.x; the band shares the 1.18 adapter source | Accepted; corrects 0023's SPI premise |
+| [0030](0030-mc-1-21-11-band.md) | MC 1.21.11 gets its own band — the NeoForge SPI broke at FML 10.0 | Accepted; corrects 0023's `mcdp-1.21` scope |
+| [0031](0031-mc-1-19-band.md) | MC 1.19 band — shares the Forge adapter; the gap was never rationalised | Accepted |
+| [0032](0032-single-26x-band.md) | One `mcdp-26` band for Mojang's whole calendar-versioning line | Accepted; supersedes `mcdp-26.1` |
