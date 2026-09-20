@@ -12,29 +12,34 @@ Gradle 9.x — the root build is Gradle 8.11.1 / JDK 21 and stays there.
 
 ```sh
 cd ../.. && ./gradlew :mcdp-26:publishToMavenLocal :gradle-plugin:publishToMavenLocal
-cd test-mods/fabric-example-26.3 && ./gradlew build        # Gradle 9.6, JDK 25
+cd test-mods/fabric-example-26.3 && ./gradlew build        # this dir's own Gradle 9.7.1, JDK 25
 ```
 
-Same shape as `forge-example-1.17` / `forge-example-1.18`: own wrapper, no
+Same shape as `forge-example-1.17`: own wrapper, no
 `includeBuild("../..")`, `mavenLocal()` first in project `repositories`, and
 `cacheChangingModulesFor(0, "seconds")` so the just-published SNAPSHOT is the one
 that resolves.
 
-## The wrapper binaries are missing on purpose
+## The wrapper
 
-`gradle/wrapper/gradle-wrapper.properties` is committed and points at Gradle 9.6.1.
-`gradle-wrapper.jar`, `gradlew` and `gradlew.bat` are **not** — they cannot be
-produced without a local Gradle 9.6. Regenerate once with `gradle wrapper
---gradle-version 9.6.1`, or have CI use `gradle/actions/setup-gradle@v4` with
-`gradle-version: 9.6.1` and call `gradle` instead of `./gradlew`.
+The **full** wrapper is committed: `gradle/wrapper/gradle-wrapper.properties`,
+`gradle/wrapper/gradle-wrapper.jar`, `gradlew` and `gradlew.bat`. The binaries were
+copied verbatim from the repo-root wrapper — they are version-agnostic bootstrappers
+that read `distributionUrl` from the properties file beside them, so the root's 8.11.1
+binaries download and launch 9.7.1 here exactly as `forge-example-1.17`'s identical
+copies launch 7.6. (An earlier note here claimed they "cannot be produced without a
+local Gradle 9.6". That was wrong.)
+
+**Why 9.7.1 and not 9.6.x:** Loom 1.18.x publishes `runtimeElements` with
+`org.gradle.plugin.api-version = 9.7.0`, so a 9.6.1 consumer is rejected at variant
+selection and never loads the plugin at all. 9.7.0 is the floor; 9.7.1 is current.
 
 ## CI status
 
-**Excluded** until the toolchain exists. The blocker is not Minecraft — MC 26.3,
-fabric-loader 0.19.5, Fabric API `0.161.0+26.3` and Loom 1.18.2 are all published
-and stable. The blocker is that `runserver-smoke-bands` installs JDK 17 + 21 only,
-and this cell needs JDK 25 in `setup-java` plus the wrapper above. See
-`PHASE4-26.3.md` (root) for the exact matrix row and workflow edits.
+This cell is now a row in `runserver-smoke-bands` (`daemon_jdk: "25"`, `25` added to
+the job's `setup-java` list before `21`). **It has not yet passed** — no nightly has
+run it. Two things are wired but unproven: whether Loom 1.18.2 can actually provision
+MC 26.3, and whether the mcdp Gradle plugin loads on a Gradle 9.x daemon at all.
 
 ## Mappings
 

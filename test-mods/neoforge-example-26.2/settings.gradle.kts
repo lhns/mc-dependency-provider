@@ -9,12 +9,12 @@ rootProject.name = "neoforge-example-26.2"
 // 21"). MDG resolves the run/compile JVM through Gradle's Java toolchain mechanism, so a
 // `toolchain { languageVersion = 25 }` may be enough to let this mod stay composite-included
 // on the root Gradle 8.11.1 / JDK 21 daemon. That has NOT been verified (no build was run).
-// If it holds, delete this directory's wrapper properties, restore `includeBuild("../..")`
-// and the cell can join CI without a second Gradle distribution.
+// If it holds, delete this directory's wrapper (properties, jar and launcher scripts)
+// and restore `includeBuild("../..")` — the cell would then need no second distribution.
 //
 // Until then, the ForgeGradle-band recipe:
 //     cd ../.. ; ./gradlew :mcdp-26:publishToMavenLocal :gradle-plugin:publishToMavenLocal
-//     cd test-mods/neoforge-example-26.2 ; ./gradlew build
+//     cd test-mods/neoforge-example-26.2 ; ./gradlew build   # this mod's own Gradle 9.7.1 wrapper
 
 pluginManagement {
     repositories {

@@ -59,7 +59,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 
 **Negative.**
 
-- **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** *(SUPERSEDED — see "Errata" below. The Gradle-8-API half of this claim was never true, and the Java-21-bytecode half has been fixed. Forge 1.18 now consumes the plugin and is in CI.)* ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
+- **Forge 1.17 / 1.18 cannot consume the mcdp Gradle plugin.** *(SUPERSEDED — see "Errata" below. The Gradle-8-API half of this claim was never true, the Java-21-bytecode half has been fixed, and the parenthetical premise — "the only FG line that supports MC ≤ 1.18" — is itself false. Forge 1.18 now consumes the plugin on ForgeGradle 6 and is in CI.)* ForgeGradle 5.1 (the only FG line that supports MC ≤ 1.18) requires Gradle 7, which runs on Java ≤ 19. Our gradle-plugin compiles to Java 21 bytecode against Gradle 8 APIs. So Forge 1.17/1.18 modders can use the mcdp **runtime** (the `mcdp-1.18` jar consumed via Maven) but must generate their `META-INF/mcdepprovider.toml` outside of mcdp — manual TOML, or a script. Forge 1.20.x uses ForgeGradle 6 + Gradle 8, so the plugin works there. NeoForge bands (1.20.6+) also work because MDG is Gradle 8 native. Documented in the test-mod scaffolds.
 - Eight subprojects per band (fabric-X, neoforge-X or forge-X, multi-X) × six bands = a lot of `build.gradle.kts` files. Mitigated by the `buildSrc` convention plugins (`mcdp.shaded-jar`, `mcdp.band-adapter`, `mcdp.band-aggregator`), which own the shadow/`bundle`/`apiElements` recipe and the publishing POM; a band file now carries only its repositories, its SPI pins, and an `mcdpBand { }` block of genuinely per-band values.
 - NeoForge adapters can't share source today, so per-band feature work doubles. Future SPI re-stabilization could let us merge `:neoforge-1.20.6` and `:neoforge-1.21` source trees if their surfaces re-converge.
 - Test-mod fixtures multiply: each band's CI smoke runs through Loom (Fabric), MDG (NeoForge), or ForgeGradle. Six bands × two-or-three loaders = up to 18 CI cells.
@@ -80,6 +80,49 @@ The "Consequences — negative" bullet above gave two reasons the mcdp `gradle-p
 **Consequence.** `forge-example-1.18` joined the nightly `runserver-smoke-bands` matrix. `forge-example-1.17` did not, for an unrelated reason that this ADR already records: its adapter is a stub that throws. The plugin-path exclusion no longer applies to either band.
 
 > **Correction.** The `forge-1.17` "stub that throws" reason was itself wrong — the band was never actually blocked. Forge 1.17.1-37.1.2 runs **forgespi 4.0.x**, not the 3.2.x this ADR assumed, so `forge-1.17` shares `forge-1.18`'s working adapter verbatim ([ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)). No Forge band ships a stub today. `forge-example-1.17` is still out of the CI matrix, but now for a purely mechanical reason: it pins a Java 16 toolchain and GitHub runners ship no JDK 16.
+
+### "ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18" — false
+
+This premise is stated in the "Consequences — negative" bullet above and was copied into
+`test-mods/README.md`, both `mc-smoke.yml` copies, `test-mods/forge-example-1.18/*.kts`, and
+the Java-17 rationale in the root `build.gradle.kts`. It never held. **Forge regenerated its
+MDKs onto ForgeGradle 6 on both sides of 1.17**, verified against the artifacts on
+`maven.minecraftforge.net`:
+
+| MDK | ForgeGradle declaration | Wrapper |
+|---|---|---|
+| `forge-1.18.2-40.3.12-mdk.zip` | `id 'net.minecraftforge.gradle' version '[6.0,6.2)'` | Gradle **8.8** |
+| `forge-1.16.5-36.2.42-mdk.zip` | `id 'net.minecraftforge.gradle' version '[6.0,6.2)'` | Gradle **8.4** |
+
+Both apply FG6 through `plugins { }` resolved from the MinecraftForge maven in
+`pluginManagement`, not the `buildscript { classpath }` form, and both set
+`copyIdeResources = true`. ForgeGradle **6.0.54**'s
+`EnvironmentChecks.checkEnvironment` calls `checkGradleRange(version("8.1"), version("9.0"))`
+(confirmed by `javap -c`), so FG6 accepts Gradle `[8.1, 9.0)` — and the repo-root wrapper is
+8.11.1, inside that window. FG 5.1 was the FG line the 1.18 *scaffold* happened to be written
+against, not the only one that works.
+
+**Change made.** `test-mods/forge-example-1.18` was ported to the 1.18.2 MDK's shape and is
+now an ordinary composite-included test mod, like `forge-example-1.20`: FG6 via `plugins {}`,
+`includeBuild("../..")`, the root wrapper. Deleted with it: the committed `gradlew` /
+`gradlew.bat` / `gradle/wrapper/*`, the `mavenLocal()`-first project repositories, the
+`mavenLocal()` and Sonatype-snapshot entries in `pluginManagement`, the explicit
+`version "0.1.0-SNAPSHOT"` on the `de.lhns.mcdp` plugin id, and the
+`resolutionStrategy.cacheChangingModulesFor(0, "seconds")` block — all of which existed only
+because the mod was a standalone Gradle 7.6 build. The `forge-1.18` CI cell's `daemon_jdk`
+override is gone too; its `toolchain { languageVersion = 17 }` is now satisfied as a toolchain
+from `JAVA_HOME_17_X64` on the default JDK-21 daemon, so `17` stays in the `setup-java` list.
+
+**Why this is an erratum and not a superseding ADR.** Nothing here reverses a decision. The
+multi-band publication model, the band table and the plugin's Java-17 target are all unchanged;
+only a factual claim about ForgeGradle's version support was wrong, in the same way as the two
+corrections above it. ADR-0031 already flagged it as an aside ("the *current*
+`forge-1.18.2-40.3.12-mdk.zip` also declares FG `[6.0,6.2)` + Gradle 8.8 … it would need its
+own verification"); this is that verification.
+
+**What is NOT covered.** `test-mods/forge-example-1.17` keeps the FG 5.1 / Gradle 7.6 shape.
+Forge published no FG6 MDK for 1.17, and the mod has an independent JDK-16 toolchain pin. It is
+therefore still the build that sets the Gradle-7.6 floor for `:gradle-plugin`'s Java-17 target.
 
 ## Operational findings (added during runtime verification)
 

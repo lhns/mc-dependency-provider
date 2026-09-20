@@ -13,7 +13,7 @@ rootProject.name = "fabric-example-26.3"
 //
 // Instead, exactly like the ForgeGradle bands:
 //     cd ../.. ; ./gradlew :mcdp-26:publishToMavenLocal :gradle-plugin:publishToMavenLocal
-//     cd test-mods/fabric-example-26.3 ; ./gradlew build     # this mod's own Gradle 9.6 wrapper
+//     cd test-mods/fabric-example-26.3 ; ./gradlew build     # this mod's own Gradle 9.7.1 wrapper
 //
 // `de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT` and the `de.lhns.mcdp` plugin marker then resolve
 // from mavenLocal (project `repositories` below and in build.gradle.kts).

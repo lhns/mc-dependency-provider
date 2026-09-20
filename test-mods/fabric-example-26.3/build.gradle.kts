@@ -1,6 +1,6 @@
 // Fabric test mod for MC 26.3 (released 2026-09-15), consuming the single `mcdp-26` band.
 //
-// Runs on this directory's OWN Gradle 9.6 wrapper + a JDK 25 daemon — see
+// Runs on this directory's OWN Gradle 9.7.1 wrapper + a JDK 25 daemon — see
 // settings.gradle.kts for why it cannot be composite-included into the root build.
 
 plugins {
@@ -12,7 +12,10 @@ plugins {
     // Loom 1.17.21 is the last line that still declares jvm.version 21. It does NOT help:
     // Loom separately refuses a MC version whose required Java exceeds the daemon JVM, and
     // MC 26.x requires 25. So the daemon must be 25 either way, and 1.18.2 is the newer
-    // line. Drop to 1.17.21 only if 1.18.x turns out to reject Gradle 9.6.
+    // line. Loom 1.18.x also declares `org.gradle.plugin.api-version = 9.7.0`, which is
+    // why this directory's wrapper pins 9.7.1 — a 9.6 consumer is rejected at variant
+    // selection. Drop to 1.17.21 (plugin.api-version 9.5.0, jvm.version 21) only if
+    // 1.18.x turns out to be unusable here for some other reason.
     id("fabric-loom") version "1.18.2"
     // No includeBuild("../..") here, so the plugin needs an explicit version. Populate it
     // with `../../gradlew :gradle-plugin:publishToMavenLocal`, or let it resolve from the

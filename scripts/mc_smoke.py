@@ -88,6 +88,18 @@ def main() -> int:
     if not (wrapper_dir / wrapper_name).exists():
         print(f"error: no {wrapper_name} at or above {project}", file=sys.stderr)
         return 1
+    # A mod that pins its own distribution but ships no launcher would silently run an
+    # ancestor's Gradle — gradlew reads gradle-wrapper.properties from its OWN directory,
+    # so the mod's pin would be ignored entirely. Fail instead of booting the wrong Gradle.
+    if wrapper_dir != project and (project / "gradle/wrapper/gradle-wrapper.properties").exists():
+        print(
+            f"error: {project} pins its own Gradle in gradle/wrapper/gradle-wrapper.properties "
+            f"but has no {wrapper_name}; the walk-up would use {wrapper_dir / wrapper_name}, "
+            f"which reads its own properties and ignores this pin. "
+            f"Commit gradlew, gradlew.bat and gradle/wrapper/gradle-wrapper.jar here.",
+            file=sys.stderr,
+        )
+        return 1
 
     gradlew = str(wrapper_dir / wrapper_name)
     cmd = [gradlew, args.task, "--no-daemon", "--stacktrace"]

@@ -26,18 +26,18 @@ See [`docs/`](docs/) for the full architecture and the [ADRs](docs/adr/) for the
 
 mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod's target MC version.
 
-**Read the Status column literally.** Every band's adapter is *implemented* — none is a stub. What differs is how much of it has been proven: **CI-verified** = a real server for that loader/band boots to first tick through mcdp in CI, asserted on the mod's marker line; **compile-verified** = compiles against that band's real SPI coordinates and shares source with a CI-verified band, but no server of this band has booted; **never built** = wired into `settings.gradle.kts`, sources exist, no build or boot yet — treat as unproven.
+**Read the Status column literally.** Every band's adapter is *implemented* — none is a stub. What differs is how much of it has been proven: **CI-verified** = a real server for that loader/band boots to first tick through mcdp in CI, asserted on the mod's marker line; **boot-verified** = a real server of that band booted through mcdp on a developer machine, and a CI cell exists but has not yet run a full nightly; **compile-verified** = compiles against that band's real SPI coordinates and shares source with a CI-verified band, but no server of this band has booted; **never built** = wired into `settings.gradle.kts`, sources exist, no build or boot yet — treat as unproven.
 
 | Artifact | MC versions | JDK | Loaders | Status |
 |---|---|---|---|---|
 | `de.lhns.mcdp:mcdp-1.17` | 1.17.1 | 16 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge **compile-verified** — shares the 1.18 adapter (ADR-0029); no CI cell yet (runners ship no JDK 16) |
-| `de.lhns.mcdp:mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge implemented and has a CI cell, but **that cell has never passed** |
-| `de.lhns.mcdp:mcdp-1.19` | 1.19.2 | 17 | Fabric + Forge | **New — never built, never booted.** Forge half shares the 1.18 adapter against forgespi 6.0.x (ADR-0031) |
+| `de.lhns.mcdp:mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge **boot-verified** — booted locally for the first time once the mod moved off ForgeGradle 5.1 onto FG6 and the repo wrapper; CI cell pending |
+| `de.lhns.mcdp:mcdp-1.19` | 1.19.2 | 17 | Fabric + Forge | Fabric **and** Forge **boot-verified** — both booted a real server locally; CI cells added, first nightly pending. Forge half shares the 1.18 adapter against forgespi 6.0.x (ADR-0031) |
 | `de.lhns.mcdp:mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** — both booted a real server (run 35526039405) |
 | `de.lhns.mcdp:mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **CI-verified** (run 35526039405) |
 | `de.lhns.mcdp:mcdp-1.21` | **1.21.1 only** | 21 | Fabric + NeoForge | **CI-verified, server *and* client.** Shipped (v0.1.x as `mcdp:VERSION`; v0.2+ as `mcdp-1.21:VERSION`) |
-| `de.lhns.mcdp:mcdp-1.21.11` | 1.21.10, 1.21.11 | 21 | Fabric + NeoForge | **New — never built.** Own NeoForge source for the FML-10 SPI (ADR-0030) |
-| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | **New — never built.** One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
+| `de.lhns.mcdp:mcdp-1.21.11` | 1.21.10, 1.21.11 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **boot-verified** locally; CI cells added, first nightly pending. Own NeoForge source for the FML-10 SPI (ADR-0030) |
+| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | **Never built.** CI cells now exist (own Gradle 9.7.1 wrapper, JDK 25 daemon) but have not yet run. One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
 
 ### Gaps and caveats
 
@@ -185,7 +185,7 @@ Any library whose URL does not start with one of the prefixes is rejected **befo
 cd test-mods/scala-example && ../../gradlew generateMcdpManifest jar  # composite manifest smoke
 ```
 
-Java 21 Temurin is assumed for the root build. Individual test mods need other JDKs on the Gradle *daemon*: the ForgeGradle 5.1 bands (`forge-example-1.17` / `-1.18`) run their own Gradle 7.6 wrapper on JDK 17 (1.17 additionally wants a JDK 16 toolchain), and the MC 26.x mods need Gradle 9.6.1 on JDK 25. See [`test-mods/README.md`](test-mods/README.md).
+Java 21 Temurin is assumed for the root build. Two test mods need other JDKs on the Gradle *daemon*: `forge-example-1.17` runs its own Gradle 7.6 wrapper on JDK 17 (and wants a JDK 16 toolchain) because Forge never published a ForgeGradle 6 MDK for 1.17, and the MC 26.x mods run their own committed Gradle 9.7.1 wrapper on JDK 25 (9.7.0 is a hard floor — Loom 1.18.x declares `org.gradle.plugin.api-version = 9.7.0`). Everything else builds on the root wrapper — including `forge-example-1.18`, whose official MDK is ForgeGradle 6 / Gradle 8.8; it only needs a JDK 17 *toolchain*. See [`test-mods/README.md`](test-mods/README.md).
 
 The build works on Linux, macOS, and Windows (the library cache path adapts per OS).
 
