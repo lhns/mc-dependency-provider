@@ -32,9 +32,11 @@ include("mcdp-1.21")
 project(":mcdp-1.21").projectDir = file("multi")
 
 // Forge bands. forge-1.18 carries the real adapter (McdpLanguageProvider +
-// McdpModContainer); forge-1.20 shares that source via srcDirs and only pins its own
-// forgespi coordinates. forge-1.17 is still a stub (getFileVisitor() throws).
-//   forge-1.17: Java 16, forgespi 3.2.x
+// McdpModContainer); forge-1.17 and forge-1.20 both share that source via srcDirs and
+// only pin their own forgespi/fmlcore coordinates. 1.17 shares it because Forge
+// 1.17.1-37.1.2 runs forgespi 4.0.x, not the 3.2.x the band was originally pinned to
+// (ADR-0029) -- so the 4.0 adapter is correct for it verbatim.
+//   forge-1.17: Java 16, forgespi 4.0.x  (1.17.1)
 //   forge-1.18: Java 17, forgespi 4.0.x
 //   forge-1.20: Java 17, forgespi 7.x  (1.20.1)
 include("forge-1.17")

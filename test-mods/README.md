@@ -71,12 +71,13 @@ did not, for two reasons; only one of them was ever real:
 
 `forge-example-1.18` is therefore in the nightly `runserver-smoke-bands` matrix.
 
-`forge-example-1.17` is **not**, and the reason is the adapter, not the plugin:
-forgespi 3.2.x's `loadMod` predates `ModuleLayer` and `IModFileInfo.getFile()` is
-missing, so `forge-1.17`'s `McdpLanguageProvider` is still a stub that throws
-`UnsupportedOperationException`. A CI cell could only assert "this fails", which is
-not worth a nightly runner; add the row when the real port lands. Note that row will
-also need a JDK **16** in the workflow's `setup-java` list, because
+`forge-example-1.17` is **not**, but no longer because of the adapter. That band was
+long believed to be stuck on forgespi 3.2.x, whose `loadMod` predates `ModuleLayer`
+and whose `IModFileInfo` lacks `getFile()`. It isn't: Forge 1.17.1-37.1.2 requires
+`forgespi 4.0.+`, so `forge-1.17` now shares the same working adapter as 1.18 and
+1.20 (see [ADR-0029](../docs/adr/0029-forge-1-17-shares-the-4-0-adapter.md)). The one
+thing still holding the row back is toolchain: it needs a JDK **16** in the
+workflow's `setup-java` list, because
 `forge-example-1.17` pins `toolchain { languageVersion = 16 }` and GitHub runners
 ship no JDK 16. ADR-0023 also notes the `mcdp-1.17` aggregator leaves `FMLModType`
 unset for the same stub-adapter reason.

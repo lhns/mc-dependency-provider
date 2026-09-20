@@ -35,7 +35,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 - `core/` and `deps-lib/`: target Java 16. Single source tree, all bands consume.
 - `fabric/` (renamed `:fabric-1.21`): canonical Fabric adapter source. Other Fabric bands (`fabric-1.17/`, `fabric-1.18/`, `fabric-1.20/`, `fabric-1.20.6/`, `fabric-26.1/`) share this source via `sourceSets.main.java.setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))` — *set*, not the additive `srcDirs(...)`: the band's own `src/main/java` must be replaced, not added to, or a stale tree would compile in silently. They differ only in `mcdpBand.javaRelease` (which the `mcdp.shaded-jar` convention feeds to `options.release`; `targetCompatibility` is not used anywhere in this build) and in the two `fabric.mod.json` floors. The Fabric `LanguageAdapter` + `PreLaunchEntrypoint` SPI surface is stable across fabric-loader 0.14+.
 - `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). It *is* shared with `:neoforge-26.1` via `setSrcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.
-- `forge-1.17/`, `forge-1.18/`, `forge-1.20/`: each has its own minimal source tree (currently a stub `McdpLanguageProvider`). Forge `IModLanguageProvider`'s top-level shape is stable across forgespi 3.2 (1.17), 4.0 (1.18), 7.x (1.20), so once one band's adapter is implemented the others mostly clone it.
+- `forge-1.18/`: the canonical Forge adapter (`McdpLanguageProvider` + `McdpModContainer`). `forge-1.17/` and `forge-1.20/` carry no Java source of their own — both point `srcDirs` at it and pin only their own forgespi/fmlcore coordinates. 1.17 can share it because Forge 1.17.1-37.1.2 actually runs **forgespi 4.0.x**, not the 3.2.x this ADR originally assumed (see [ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)); the 7.x surface the 1.20 band uses is compatible for everything the adapter calls.
 - `multi-<band>/` (Gradle path `:mcdp-<band>`): aggregator subproject. Bundles the band's adapters' shadowJars into one runtime artifact. Vanniktech maven-publish wired with `automaticRelease=true` per [ADR-0026](0026-automatic-release.md) (ADR-0020 originally specified `false`).
 
 ### Rejected alternatives
@@ -93,7 +93,7 @@ The aggregator jar's MANIFEST attribute that tells FML how to route the jar:
 
 | Band aggregator | `FMLModType` | Why |
 |---|---|---|
-| `mcdp-1.17` | *(unset)* | forge-1.17 adapter is still a stub; setting LANGPROVIDER would make FML try to load a service that throws. |
+| `mcdp-1.17` | `LANGPROVIDER` | Was *(unset)* while forge-1.17 was a stub that would have thrown on service load. The band now shares the working 4.0 adapter (ADR-0029), so FML routes it like the other Forge-bundling bands. |
 | `mcdp-1.18` | `LANGPROVIDER` | Forge 4.0.x recognizes the explicit hint; LIBRARY routing pre-dates the cpw module-layer reshuffle. |
 | `mcdp-1.20` | `LANGPROVIDER` | Same as 1.18. |
 | `mcdp-1.20.6` | `LIBRARY` | NeoForge 8.0.x uses `cpw.mods.securejarhandler`'s PLUGIN module layer — LIBRARY routes the jar there, where service-load picks up `IModLanguageLoader` automatically. |
