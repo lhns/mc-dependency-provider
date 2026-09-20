@@ -250,9 +250,20 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     "validateSharedPackages", ValidateSharedPackagesTask.class, t -> {
                         t.setGroup("verification");
                         t.setDescription("Validates sharedPackages content (ADR-0024).");
+                        // dependsOn(bridgeTask) — not for its output (see below) but because the
+                        // task rewrites the mixins IN PLACE in the compile outputs we do scan;
+                        // validating the pre-rewrite form would flag refs the bridge removes.
                         t.dependsOn(bridgeTask);
+                        // Deliberately NOT bridgeTask.outputClassesDir. The codegen auto-adds its
+                        // own bridge package to sharedPackages (see above), so validator A would
+                        // scan the generated interfaces — whose method descriptors name the
+                        // mod-private types they exist to reach across the loader boundary
+                        // (`get_INSTANCE()Lcom/mod/Config;`) — and report OVER_SHARE against a
+                        // file the user cannot edit, suggesting they share the mod's own package:
+                        // exactly the over-share ADR-0024 exists to prevent. Bridges ARE the
+                        // mechanism that makes those refs safe; validating them as user code is a
+                        // category error.
                         t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
-                        t.getCompiledClassesDirs().from(bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
                         t.getSharedPackages().set(ext.getSharedPackages());
                         t.getCrossLoaderAnnotations().set(ext.getBridges().getCrossLoaderAnnotations());
                     });
@@ -301,7 +312,8 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     t.getSharedPackages().set(ext.getSharedPackages());
                     t.getBridgedAnnotations().set(ext.getBridges().getBridgedAnnotations());
                     // Class-file version for emitted bridges = project's targetCompatibility
-                    // mapped via JavaVersion ordinal + 44 (Java 8 = 52, Java 21 = 65). Reading at
+                    // mapped via JavaVersion ordinal + 45 (VERSION_1_8.ordinal() == 7 → 52,
+                    // VERSION_21.ordinal() == 20 → 65). Reading at
                     // configure time inside the closure keeps the value lazy w.r.t. user overrides.
                     t.getClassFileVersion().set(project.provider(() -> {
                         JavaPluginExtension je = project.getExtensions().findByType(JavaPluginExtension.class);

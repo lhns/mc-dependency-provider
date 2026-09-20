@@ -69,9 +69,17 @@ public abstract class GenerateMcdpManifestTask extends DefaultTask {
     /**
      * Absolute paths to the source-set output dirs that hold the mod's compiled classes plus
      * the bridge codegen output. Captured at build time so the runtime adapter doesn't have to
-     * walk the filesystem to find {@code build/}. Empty for production-jar builds (the
-     * {@code processResources} flow strips the field there); populated by the plugin from the
-     * project's {@code main} source set in dev builds.
+     * walk the filesystem to find {@code build/}.
+     *
+     * <p>The same task output feeds both {@code processResources} and the {@code Jar}, so these
+     * absolute build-machine paths DO ship in published jars. That is the cost ADR-0022
+     * accepted explicitly: suppressing them for jar builds would require the plugin to know
+     * whether it is producing a dev or a production artifact, which Loom/MDG don't telegraph
+     * cleanly. The runtime filters every entry through {@code Files.isDirectory}, so paths that
+     * don't exist on the consumer's machine drop out and the adapter falls back to the mod's
+     * own root paths. Downsides are real but bounded: the manifest is not byte-reproducible
+     * across machines, this task input is not relocatable, and the jar discloses the build
+     * directory layout.
      */
     @Input
     public abstract ListProperty<String> getDevRoots();

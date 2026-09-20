@@ -4,7 +4,9 @@ import de.lhns.mcdp.deps.Manifest;
 import de.lhns.mcdp.deps.ManifestIo;
 import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -54,8 +56,19 @@ final class RunTaskClasspathPatch {
             // Make sure the manifest exists before the patcher runs — the run task consumes it.
             exec.dependsOn(generate);
 
+            // Everything the action needs is resolved to configuration-cache-safe state HERE:
+            // a Provider for the manifest file. The action must not capture `project`, the
+            // `TaskProvider`, or the `exec` task itself — all three are serialization failures
+            // under --configuration-cache, and this path (patchRunTasks non-empty, ADR-0025) is
+            // opt-in, so a violation only ever bites the users who asked for strict parity.
+            // Inside the action we use the passed-in `Task t` for the logger and the classpath.
+            Provider<RegularFile> manifestProvider =
+                    generate.flatMap(GenerateMcdpManifestTask::getOutputFile);
+            exec.getInputs().file(manifestProvider).withPropertyName("mcdpManifest");
+
             exec.doFirst("mcdpProviderPatchClasspath", t -> {
-                Path manifestFile = generate.get().getOutputFile().get().getAsFile().toPath();
+                JavaExec je = (JavaExec) t;
+                Path manifestFile = manifestProvider.get().getAsFile().toPath();
                 Set<String> manifestShas;
                 try {
                     Manifest manifest = ManifestIo.read(manifestFile);
@@ -68,7 +81,7 @@ final class RunTaskClasspathPatch {
                                     + manifestFile, e);
                 }
 
-                FileCollection original = exec.getClasspath();
+                FileCollection original = je.getClasspath();
                 FileCollection filtered = original.filter(f -> {
                     if (!f.isFile() || !f.getName().endsWith(".jar")) return true;
                     String sha;
@@ -76,7 +89,7 @@ final class RunTaskClasspathPatch {
                         sha = sha256(f.toPath());
                     } catch (IOException ioe) {
                         // Can't hash → keep on classpath, safer than removing.
-                        project.getLogger().warn(
+                        t.getLogger().warn(
                                 "mcdepprovider: failed to hash {} for classpath filtering; keeping on run-task classpath",
                                 f, ioe);
                         return true;
@@ -85,11 +98,11 @@ final class RunTaskClasspathPatch {
                 });
 
                 int removed = original.getFiles().size() - filtered.getFiles().size();
-                project.getLogger().lifecycle(
+                t.getLogger().lifecycle(
                         "mcdepprovider: stripped {} manifest-listed jars from {} classpath (ADR-0007 dev-mode parity)",
-                        removed, exec.getName());
+                        removed, t.getName());
 
-                exec.setClasspath(filtered);
+                je.setClasspath(filtered);
             });
         });
     }
