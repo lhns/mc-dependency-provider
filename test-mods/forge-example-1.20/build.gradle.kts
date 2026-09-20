@@ -34,6 +34,11 @@ configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
         create("server") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")
+            // Forge 1.20.1 has no mixin integration of its own and never reads a [[mixins]]
+            // block out of mods.toml — registration is Mixin's own ModLauncher option, which
+            // is also exactly what MixinGradle emits for userdev runs. Dev-only; the jar
+            // manifest attribute below covers a production launch.
+            args("--mixin.config", "forge_example_120.mixins.json")
             mods {
                 create("forge_example_120") { source(sourceSets.main.get()) }
             }
@@ -41,7 +46,15 @@ configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     }
 }
 
+// Production registration path (Mixin's MixinPlatformAgentDefault reads this attribute off the
+// container manifest). Unused by the dev runServer, which finds the config via --mixin.config.
+tasks.jar {
+    manifest { attributes("MixinConfigs" to "forge_example_120.mixins.json") }
+}
+
 dependencies {
+    // Brings org.spongepowered:mixin:0.8.5 transitively at compile scope — hence no explicit
+    // mixin dependency here. 0.8.5's highest compatibilityLevel is JAVA_17.
     "minecraft"("net.minecraftforge:forge:1.20.1-47.4.20")
     implementation("de.lhns.mcdp:mcdp-1.20:0.1.0-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")

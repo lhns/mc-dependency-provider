@@ -40,6 +40,9 @@ FATAL_PATTERNS = [
     re.compile(r"java\.lang\.NoClassDefFoundError"),
     re.compile(r"java\.lang\.ClassCastException"),
     re.compile(r"mcdepprovider: .*failed to"),
+    # An empty bridge registry at mixin-injection time. Without this the mod dies inside a
+    # Mixin handler and the run hangs to the timeout instead of reporting in seconds.
+    re.compile(r"mcdepprovider: no auto-bridge registered"),
 ]
 
 

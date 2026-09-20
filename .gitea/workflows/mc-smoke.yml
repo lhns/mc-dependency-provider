@@ -421,6 +421,56 @@ jobs:
             exit 1
           }
 
+      - name: Assert Forge lifecycle + mixin-bridge markers (forge-1.20 only)
+        # forge-example-1.20 is the only Forge cell carrying a mixin, and it is the only
+        # end-to-end proof of three things that are otherwise verified by javap alone:
+        # the lazy bridge populator, the CONSTRUCT staging in McdpModContainer.activityMap,
+        # and acceptEvent actually forwarding mod-bus events.
+        if: matrix.cell.name == 'forge-1.20'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+          echo "=== [mcdp-smoke] lines ==="
+          grep '\[mcdp-smoke\]' "$LOG" | sort -u
+
+          MISSING=0
+          # The mixin runs inside Blocks.<clinit> (Bootstrap.bootStrap), long before FML's
+          # loadMod sweep — so its marker is also the proof the bridge registry is populated
+          # on demand rather than eagerly at container construction.
+          grep -q 'mixin=BlocksClinitMixin ok' "$LOG" || {
+            echo "ERROR: mixin marker missing — lazy bridge populator did not fire"; MISSING=1; }
+          # dist=DEDICATED_SERVER (not 'null') proves forgespi's Environment.get() resolved.
+          grep -qE 'stage=CONSTRUCT mod=forge_example_120 dist=[A-Z_]+' "$LOG" || {
+            echo "ERROR: CONSTRUCT marker missing or dist was null"; MISSING=1; }
+          grep -q 'stage=FMLCommonSetupEvent mod=forge_example_120' "$LOG" || {
+            echo "ERROR: FMLCommonSetupEvent never arrived — acceptEvent is not forwarding"; MISSING=1; }
+          [ "$MISSING" = 0 ] || exit 1
+
+          # Ordering: Blocks.<clinit> must precede the entry constructor. If CONSTRUCT came
+          # first the mixin would be resolving against an already-populated registry and would
+          # no longer be evidence for the lazy path.
+          MIXIN_LINE=$(grep -n 'mixin=BlocksClinitMixin ok' "$LOG" | head -1 | cut -d: -f1)
+          CTOR_LINE=$(grep -n 'stage=CONSTRUCT mod=forge_example_120' "$LOG" | head -1 | cut -d: -f1)
+          echo "mixin@$MIXIN_LINE construct@$CTOR_LINE"
+          [ "$MIXIN_LINE" -lt "$CTOR_LINE" ] || {
+            echo "ERROR: mixin fired after CONSTRUCT — not exercising the lazy populator"; exit 1; }
+
+      - name: Assert bridge codegen actually emitted (forge-1.20 only)
+        # Guards the way this cell is most likely to pass for the wrong reason: codegen
+        # silently emitting nothing, leaving the mixin calling its handler directly.
+        if: matrix.cell.name == 'forge-1.20'
+        working-directory: ${{ matrix.cell.dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR=$(ls build/libs/*.jar | grep -v sources | head -1)
+          unzip -l "$JAR" | grep -q 'META-INF/mcdp-bridges\.toml' || {
+            echo "ERROR: META-INF/mcdp-bridges.toml missing — no bridge was generated"; exit 1; }
+          COUNT=$(unzip -p "$JAR" META-INF/mcdp-bridges.toml | grep -c '^\[\[bridge\]\]')
+          echo "toml-bridges=$COUNT"
+          [ "$COUNT" -ge 1 ] || { echo "ERROR: no [[bridge]] entries"; exit 1; }
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
