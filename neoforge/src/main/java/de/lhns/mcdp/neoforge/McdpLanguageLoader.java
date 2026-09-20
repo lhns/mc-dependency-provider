@@ -72,10 +72,10 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     @Override
     public ModContainer loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
         String modId = info.getModId();
-        // Idempotent path: classloader + bridges may already be registered if the eager static
-        // block at the bottom of this class walked LoadingModList successfully (the only way
-        // mods whose mixins fire during MC's Bootstrap.bootStrap can register before
-        // Blocks.<clinit>). loadMod is still called by FML; we just skip the redundant work.
+        // Idempotent path: classloader + bridges may already be registered if the lazy populator
+        // installed at the bottom of this class walked LoadingModList first (the only way mods
+        // whose mixins fire during MC's Bootstrap.bootStrap can register before Blocks.<clinit>).
+        // loadMod is still called by FML; we just skip the redundant work.
         Registered reg = ensureRegistered(info);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
@@ -98,14 +98,15 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
      *
      * <p>This method is called from two places:
      * <ol>
-     *   <li>The eager static block at the bottom of this class, which walks {@link
-     *       LoadingModList} during early FML init. Mods whose mixins fire during MC's
-     *       {@code Bootstrap.bootStrap} (i.e. before FML reaches the {@link #loadMod} dispatch
-     *       phase) need their bridges registered before {@code Blocks.<clinit>} runs.
-     *   <li>{@link #loadMod} itself, which FML calls per-mod after MC bootstrap. For mods whose
-     *       eager-walk path completed, this is a cache hit; for mods that arrived too late for
-     *       the eager walk (e.g. PLUGIN-layer libraries discovered post-init), this is the
-     *       canonical registration.
+     *   <li>The lazy populator installed at the bottom of this class, which walks {@link
+     *       LoadingModList} on the first auto-bridge registry miss during early FML init. Mods
+     *       whose mixins fire during MC's {@code Bootstrap.bootStrap} (i.e. before FML reaches
+     *       the {@link #loadMod} dispatch phase) need their bridges registered before
+     *       {@code Blocks.<clinit>} runs.
+     *   <li>{@link #loadMod} itself, which FML calls per-mod after MC bootstrap. For mods the
+     *       populator already walked, this is a cache hit; for mods that arrived too late for it
+     *       (e.g. PLUGIN-layer libraries discovered post-init), this is the canonical
+     *       registration.
      * </ol>
      */
     private static Registered ensureRegistered(IModInfo info) {

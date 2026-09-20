@@ -56,8 +56,8 @@ import java.util.Map;
  *       {@code FMLEnvironment.getDist()} — handled in {@link McdpModContainer}.</li>
  * </ol>
  *
- * <p>Everything else — the LIBRARY jar type, the PLUGIN-layer ServiceLoader discovery, the
- * eager {@link LoadingModList} walk, {@code AutomaticEventSubscriber.inject} — is unchanged.
+ * <p>Everything else — the LIBRARY jar type, the PLUGIN-layer ServiceLoader discovery, the lazy
+ * populator's {@link LoadingModList} walk, {@code AutomaticEventSubscriber.inject} — is unchanged.
  * The jar carrying this class must declare {@code FMLModType: LIBRARY} and must <em>not</em>
  * ship a {@code neoforge.mods.toml}. Mods opt in via {@code modLoader = "mcdepprovider"}.
  */
@@ -278,11 +278,10 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     }
 
     /**
-     * Read {@code META-INF/mcdepprovider.toml} out of the mod's {@link JarContents}. Covers dev
-     * runs (content roots are source-set output directories) and production jars alike, since
-     * {@code JarContents} abstracts over both. The {@code modFile} fallback only fires if
-     * {@code JarContents} somehow does not see the entry but the file on disk does — the same
-     * belt-and-braces the 1.21.1 adapter carries for {@code findResource}.
+     * Read {@code META-INF/mcdepprovider.toml} out of the mod's {@link JarContents}, which
+     * abstracts over dev runs (source-set output directories) and production jars alike. The
+     * {@code modFile} fallback only fires if {@code JarContents} does not see the entry but the
+     * jar on disk has it.
      */
     private static Manifest readManifest(JarContents contents, Path modFile, String modId) {
         try {
@@ -291,7 +290,8 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                     return ManifestIo.read(in);
                 }
             }
-            if (modFile != null && Files.isRegularFile(modFile)) {
+            // Fallback: open the jar ourselves. Only valid when modFile is a regular file.
+            if (!Files.isDirectory(modFile)) {
                 try (var fs = java.nio.file.FileSystems.newFileSystem(modFile, (ClassLoader) null);
                      InputStream in = Files.newInputStream(fs.getPath(MANIFEST_PATH))) {
                     return ManifestIo.read(in);
@@ -316,8 +316,9 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
 
     /**
      * Discover the entry class via {@code @Mod("modid")} annotation in the mod's scan results —
-     * the same mechanism FML's vanilla {@code javafmlmod} loader uses. {@code getAnnotatedBy} is
-     * unchanged between FML 4.0.x and 10.0.x, so this is verbatim from the canonical adapter.
+     * the same mechanism FML's vanilla {@code javafmlmod} loader uses. Mods declare exactly as
+     * they would on a regular NeoForge mod; the only difference vs vanilla is
+     * {@code modLoader = "mcdepprovider"} in {@code neoforge.mods.toml}.
      */
     private static Class<?> loadEntryClass(ModFileScanData scanResults, ModClassLoader loader, String modId) {
         String fqn = scanResults.getAnnotatedBy(Mod.class, ElementType.TYPE)

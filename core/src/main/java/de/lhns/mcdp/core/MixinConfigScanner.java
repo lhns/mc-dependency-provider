@@ -3,7 +3,6 @@ package de.lhns.mcdp.core;
 import de.lhns.mcdp.api.McdpProvider;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,23 +50,17 @@ public final class MixinConfigScanner {
     public static List<String> registerMixinOwnersFromConfigs(String modId,
                                                               List<Path> modRoots,
                                                               List<String> configRelativePaths) {
-        List<String> registered = new ArrayList<>();
+        List<String> contents = new ArrayList<>(configRelativePaths.size());
         for (String cfg : configRelativePaths) {
             Path resolved = resolveInRoots(modRoots, cfg);
-            if (resolved == null || !Files.exists(resolved)) continue;
-            try (InputStream in = Files.newInputStream(resolved)) {
-                String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                List<String> fqns = extractFqnsFromConfig(text);
-                for (String fqn : fqns) {
-                    McdpProvider.registerMixinOwner(fqn, modId);
-                    registered.add(fqn);
-                }
-            } catch (IOException | IllegalArgumentException ignored) {
+            if (resolved == null) continue;
+            try {
+                contents.add(Files.readString(resolved, StandardCharsets.UTF_8));
+            } catch (IOException ignored) {
                 // best-effort; annotation-modId path still works.
-                // IOException: read failure. IllegalArgumentException: MiniJson parse error.
             }
         }
-        return registered;
+        return registerMixinOwnersFromConfigContents(modId, contents);
     }
 
     /**

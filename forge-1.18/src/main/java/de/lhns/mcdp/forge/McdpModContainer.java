@@ -54,7 +54,6 @@ public final class McdpModContainer extends ModContainer {
     private static final Logger LOG = Logger.getLogger("mcdepprovider");
 
     private final String entryFqn;
-    private final ModClassLoader modLoader;
     private final Class<?> entryClass;
     private final String lang;
     private final IEventBus eventBus;
@@ -62,21 +61,16 @@ public final class McdpModContainer extends ModContainer {
 
     McdpModContainer(IModInfo info, String entryFqn) {
         super(info);
-        // Forge's ModContainer carries a protected Supplier<?> contextExtension that
-        // ModLoadingContext.setActiveContainer.get()s during lifecycle transitions.
-        // FMLModContainer wires it to FMLJavaModLoadingContext; that ctor is package-
-        // private so we use a non-null sentinel — entry classes calling
-        // FMLJavaModLoadingContext.get() won't work through mcdp on Forge 1.18/1.20, but
-        // mods that don't call it boot fine.
+        // ModLoadingContext.setActiveContainer .get()s contextExtension during every lifecycle
+        // transition, so it must be non-null; see the "Known limitation" note above for why it
+        // cannot be the real FMLJavaModLoadingContext.
         this.contextExtension = () -> this;
         this.entryFqn = entryFqn;
 
-        // Manifest read, library resolution (with progress logging), ADR-0010 stdlib promotion,
-        // ModClassLoader construction, McdpProvider.registerMod and auto-bridge registration all
-        // live in McdpLanguageProvider.ensureRegistered — the same idempotent entry point the
-        // lazy populator uses when a mixin <clinit> beats FML's loadMod sweep (ADR-0028).
+        // ensureRegistered is idempotent: the lazy populator may already have run it when a
+        // mixin <clinit> beat FML's loadMod sweep (ADR-0028).
         McdpLanguageProvider.Registered reg = McdpLanguageProvider.ensureRegistered(info);
-        this.modLoader = reg.loader();
+        ModClassLoader modLoader = reg.loader();
         this.lang = reg.manifest().lang();
         try {
             // Resolve the entry class without initializing it — static init belongs to the
@@ -163,13 +157,5 @@ public final class McdpModContainer extends ModContainer {
     @Override
     public Object getMod() {
         return mod;
-    }
-
-    public String getEntryFqn() {
-        return entryFqn;
-    }
-
-    public ModClassLoader getModLoader() {
-        return modLoader;
     }
 }

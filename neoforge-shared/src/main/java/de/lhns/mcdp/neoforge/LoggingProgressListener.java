@@ -7,7 +7,7 @@ import org.slf4j.Logger;
  * SLF4J-backed {@link ProgressListener} for the NeoForge adapter. Mirrors the Fabric variant's
  * log shape, plus pushes a short message into FML's startup notification rail when available.
  *
- * <p>The eager-static download path fires before FML's loading screen is up, so
+ * <p>Downloads fire before FML's loading screen is up, so
  * {@code StartupNotificationManager} is reflectively gated: if loading the class throws (or its
  * static {@code addModMessage} call raises), the UI side no-ops and we fall back to log-only.
  * The dispatch path ({@code loadMod}) runs after the screen is up and the call lands cleanly.
@@ -39,7 +39,7 @@ final class LoggingProgressListener implements ProgressListener {
     private void notifyUi(String message) {
         if (!snmAvailable) return;
         try {
-            // Reflective call avoids a hard link on the eager-static path: even with the class
+            // Reflective call avoids a hard link: even with the class
             // loadable, addModMessage may throw if FML's notification rail isn't initialized yet.
             Class<?> snm = Class.forName(SNM_FQN);
             snm.getMethod("addModMessage", String.class).invoke(null, message);

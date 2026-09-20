@@ -71,7 +71,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 The "Consequences — negative" bullet above gave two reasons the mcdp `gradle-plugin` could not load under ForgeGradle 5.1 / Gradle 7. Re-checked against the source:
 
 - **"compiles to Java 21 bytecode" — true, and it was the whole blocker.** `java-gradle-plugin` publishes Gradle Module Metadata carrying `org.gradle.jvm.version`. At target 21, a Gradle 7.6 daemon (JDK ≤ 19) has no matching variant and refuses the plugin before loading a single class.
-- **"against Gradle 8 APIs" — false.** An exhaustive inventory of `org.gradle.*` imports across `gradle-plugin/src/main/java/**` yields 34 types, all of which predate Gradle 8: `DefaultTask`, `GradleException`, `Plugin`, `Project`, `JavaVersion`, `Action`, `artifacts.{Configuration, ModuleVersionIdentifier, ResolvedArtifact}`, `artifacts.repositories.{ArtifactRepository, MavenArtifactRepository}`, `file.{ConfigurableFileCollection, DirectoryProperty, DuplicatesStrategy, FileCollection, ProjectLayout, RegularFile, RegularFileProperty}`, `logging.Logger`, `model.ObjectFactory`, `plugins.JavaPluginExtension`, `provider.{ListProperty, Property, Provider}`, `tasks.{Input, InputFile, InputFiles, JavaExec, Optional, OutputDirectory, OutputFile, PathSensitive, PathSensitivity, SourceSet, TaskAction, TaskProvider}`, `tasks.bundling.Jar`, `language.jvm.tasks.ProcessResources`. The behavioural surface was checked too, not just the types: no `ConfigurationRole` / `consumable()` / `resolvable()` / `dependencyScope()` factories, no `Problems` API, no `DependencyCollector` or `getDependencyFactory()`, no `MapProperty`, no `Provider.zip`, no build services, no `JvmTestSuite`. Configuration wiring still goes through the 7.x-era `maybeCreate` + `setCanBeResolved`/`setCanBeConsumed` path.
+- **"against Gradle 8 APIs" — false.** An exhaustive inventory of `org.gradle.*` imports across `gradle-plugin/src/main/java/**` yields 34 types, **all of which predate Gradle 8** (`Plugin`, `Project`, `Configuration`, `ResolvedArtifact`, `MavenArtifactRepository`, `RegularFileProperty`, `ListProperty`, `JavaPluginExtension`, `SourceSet`, `JavaExec`, `ProcessResources`, the task-annotation set, …). The behavioural surface was checked too, not just the types: no `ConfigurationRole` / `consumable()` / `resolvable()` / `dependencyScope()` factories, no `Problems` API, no `DependencyCollector`, no `MapProperty`, no `Provider.zip`, no build services, no `JvmTestSuite`. Configuration wiring still goes through the 7.x-era `maybeCreate` + `setCanBeResolved`/`setCanBeConsumed` path.
 
 **Change made.** `:gradle-plugin` now compiles with `options.release = 17` instead of 21 (root `build.gradle.kts`); band adapters are unaffected, since `mcdp.shaded-jar` already overrides `options.release` per band from `mcdpBand.javaRelease`. No plugin source changed.
 
@@ -153,13 +153,14 @@ Two mechanical notes for anyone touching this: `expand()` runs Groovy's `SimpleT
 ## Amendments (2026-09-20)
 
 Four later ADRs each corrected one particular of this one. Rather than edit the reasoning above,
-this section states the current position in one place. Where it conflicts with the original text,
-**this section wins**, and the ADR that made the change is named.
+this section states the current position in one place; the reasoning for each correction lives in
+the ADR named against it. Where this section conflicts with the original text, **it wins**.
 
 ### Current supported bands
 
-Read off `settings.gradle.kts` and each band's `build.gradle.kts` on `band/phase4-new-bands`.
-**Eight bands**, not six:
+Read off `settings.gradle.kts` and each band's `build.gradle.kts`. **Eight bands**, not six. The
+MC column names the point release each band actually pins and tests, which is narrower than the
+original table's `1.17.x` / `1.18.x` wording — that narrowing is deliberate, not a conflict.
 
 | Band | MC versions | `javaRelease` | Loaders | Adapter source | Established / changed by |
 |---|---|---|---|---|---|
@@ -192,13 +193,9 @@ claimed; they are likely to work (same forgespi 7.x line) but that is **unverifi
 
 ### Deliberate gaps
 
-- **MC 1.21.2 – 1.21.9: uncovered on purpose.** They span FML 5.0 / 6.0 / 7.0 / 8.0 / 9.0 — five
-  loader lines, each needing its own compile pin and possibly its own port — for versions that are
-  neither the line's entry point (1.21.1, where the modded ecosystem sits) nor its tail
-  (1.21.10/1.21.11, covered by `mcdp-1.21.11`). If demand appears, **the 9.0 line (1.21.5–1.21.8) is
-  the cheapest add**: it still has `IModFile.findResource` and the `FMLEnvironment.dist` field, so
-  the canonical `neoforge/` source compiles against it unmodified — a pure `setSrcDirs` band.
-  ([ADR-0030](0030-mc-1-21-11-band.md).)
+- **MC 1.21.2 – 1.21.9: uncovered on purpose** — five loader lines (FML 5.0 … 9.0) for versions
+  that are neither the line's entry point nor its tail. The 9.0 line (1.21.5–1.21.8) is the
+  cheapest add if demand appears. ([ADR-0030](0030-mc-1-21-11-band.md).)
 - **1.15.2, 1.16.x: still out**, for the original reasons (Java 8 backport of `core/`; Mixin 0.7).
 - **1.19 is no longer a gap** — [ADR-0031](0031-mc-1-19-band.md) adds it. The record contains no
   reason it was ever excluded; ADR-0031 does not invent one.
@@ -206,26 +203,20 @@ claimed; they are likely to work (same forgespi 7.x line) but that is **unverifi
 ### Adapter status
 
 No band ships a stub. Fabric and NeoForge adapters were complete before this ADR's errata; the
-**Forge** adapter reached parity today:
-
-- [ADR-0027](0027-forge-lifecycle-staging.md) — the mod lifecycle is wired. Before it, no
-  `IModBusEvent` reached an mcdp-loaded mod on Forge, and the ADR-0017 `(IEventBus, ModContainer,
-  Dist)` constructor bag was empty.
-- [ADR-0028](0028-forge-cross-mod-registration.md) — ADR-0010 stdlib promotion, the ADR-0018/0019
-  lazy bridge populator and download progress reporting now all work on Forge. All three were
-  silently inert there before.
-- **Remaining Forge gap:** `@EventBusSubscriber` auto-registration (NeoForge gets this via
-  `AutomaticEventSubscriber.inject`; Forge does not yet).
+**Forge** adapter reached parity via [ADR-0027](0027-forge-lifecycle-staging.md) (mod lifecycle
+wired — before it, no `IModBusEvent` reached an mcdp-loaded mod) and
+[ADR-0028](0028-forge-cross-mod-registration.md) (stdlib promotion, the lazy bridge populator and
+download progress, all previously inert on Forge). **Remaining Forge gap:** `@EventBusSubscriber`
+auto-registration, which NeoForge gets via `AutomaticEventSubscriber.inject`.
 
 ### Subproject / CI-cell arithmetic
 
 The "six bands → a lot of `build.gradle.kts` files / up to 18 CI cells" consequences above scale
-with the table: eight bands × three subprojects (fabric-X, forge-X|neoforge-X, multi-X) = 24 band
-subprojects, plus `core`, `deps-lib`, `gradle-plugin`, `cli`. CI has **not** grown to match — the
-nightly `runserver-smoke-bands` matrix is 7 cells × 2 OSes, and the bands added today have no cells
-(their test mods are unbuilt, and the 26.x ones are unbuildable on the current root toolchain).
-`mc-smoke.yml`'s "Excluded from coverage" comment is the authoritative account of what is and is
-not covered.
+with the table: eight bands × three subprojects = 24 band subprojects, plus `core`, `deps-lib`,
+`gradle-plugin`, `cli`. CI has **not** grown to match — the nightly `runserver-smoke-bands` matrix
+is 7 cells × 2 OSes, and the bands added today have no cells (their test mods are unbuilt, and the
+26.x ones are unbuildable on the current root toolchain). `mc-smoke.yml`'s "Excluded from coverage"
+comment is the authoritative account of what is and is not covered.
 
 ## Cross-references
 

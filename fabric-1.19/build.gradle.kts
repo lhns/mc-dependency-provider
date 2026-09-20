@@ -11,9 +11,8 @@ repositories {
 // versions, so only the bytecode target and the `fabric.mod.json` floors differ per band.
 mcdpBand {
     javaRelease.set(17)
-    // fabric-loader 0.14.x is the line that shipped throughout MC 1.19's life (0.14.0 predates
-    // 1.19; 0.15.0 only landed in Dec 2023, half a year after 1.19.4 was superseded). The floor
-    // is the same as the 1.18 band's — a 0.15 floor would reject every contemporary 1.19 install.
+    // 0.14.x is the loader line that shipped throughout MC 1.19's life (0.15.0 only landed in
+    // Dec 2023, after 1.19.4 was superseded). A 0.15 floor would reject every 1.19 install.
     fabricLoaderVersion.set("0.14")
 }
 

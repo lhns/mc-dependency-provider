@@ -11,18 +11,16 @@ repositories {
 // NeoForge for MC 1.21.11 (NeoForge 21.11.x, fancymodloader:loader 10.0.x).
 //
 // This band keeps its OWN source tree rather than pointing srcDirs at neoforge/ (the 1.21.1
-// band, FML 4.0.x). The core SPI types are in fact unchanged — IModLanguageLoader, IModInfo,
-// ModFileScanData (including getAnnotatedBy) and ModContainer have identical javap output on
-// loader 4.0.42 and 10.0.36 — but two surfaces the adapter depends on broke at FML 10.0
-// (i.e. at MC 1.21.10; 9.0.18, which pairs with 1.21.8, still has both):
+// band, FML 4.0.x). The core SPI types are unchanged; what forced the fork is two surfaces
+// that broke at FML 10.0 (i.e. at MC 1.21.10; 9.0.18, paired with 1.21.8, still has both),
+// both link-time failures:
 //
 //   1. `IModFile.findResource(String...)` removed. The cpw.mods.jarhandling.SecureJar view was
 //      replaced by net.neoforged.fml.jarcontents.JarContents, which is stream-addressed and
 //      offers no java.nio Path for a jar entry.
 //   2. `FMLEnvironment.dist` (public static field) became `FMLEnvironment.getDist()`.
 //
-// Both are link-time failures, not soft ones, so one shared tree cannot serve both bands.
-// See ADR-0030 for the full evidence.
+// ADR-0030 has the javap evidence.
 mcdpBand {
     javaRelease.set(21)
     fmlModType.set("LIBRARY")
@@ -38,4 +36,14 @@ dependencies {
     // net.neoforged:neoforge:21.11.45 (the newest 21.11 release) declares in its POM.
     compileOnly(libs.neoforge.fml.loader.mc12111)
     compileOnly(libs.neoforge.bus)
+}
+
+// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
+// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
+// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
+// compiled into each band's own jar so it stays package-private.
+sourceSets {
+    main {
+        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
+    }
 }

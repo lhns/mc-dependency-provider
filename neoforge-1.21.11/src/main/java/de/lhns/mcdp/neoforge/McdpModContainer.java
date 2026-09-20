@@ -65,7 +65,8 @@ public final class McdpModContainer extends ModContainer {
     /**
      * Mod instance after {@link #constructMod()} has run; {@code null} beforehand. Vanilla
      * {@code FMLModContainer} discards the instance once the ctor's side effects have run;
-     * we keep it for parity with the 1.21.1 band's tests. Production paths do not reference it.
+     * we keep it because the 1.21.1 band's {@code McdpModContainerTest} asserts on it. Production
+     * paths do not reference this.
      */
     public Object getModInstance() {
         return modInstance;
@@ -98,9 +99,8 @@ public final class McdpModContainer extends ModContainer {
     }
 
     /**
-     * FML 10.0.x exposes the dist as {@code FMLEnvironment.getDist()}; the pre-10 public static
-     * {@code dist} field is gone. Outside FML init (unit tests) the accessor can throw rather
-     * than return null, so it is guarded here exactly where the old field read was null-checked.
+     * FML 10.0.x replaced the {@code FMLEnvironment.dist} field with this accessor, which throws
+     * rather than returning null outside FML init (unit tests) — hence the guard.
      */
     private static Dist currentDist() {
         try {
