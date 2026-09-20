@@ -122,9 +122,11 @@ class BridgeRewriterEndToEndTest {
         // anywhere (call site replaced; no header reference). It SHOULD contain the bridge
         // interface FQN.
         String dump = new String(rewritten);
-        assertTrue(dump.contains(BRIDGE_PKG.replace('.', '/') + "/TargetBridge"),
-                "expected bridge interface reference");
-        assertTrue(!dump.contains("com/example/Target") || dump.contains("TargetBridge"),
+        String bridgeInternal = BridgePolicy.toInternal(
+                new BridgeInterfaceEmitter(BRIDGE_PKG).interfaceFqn("com/example/Target"));
+        assertTrue(dump.contains(bridgeInternal), "expected bridge interface reference");
+        assertTrue(!dump.contains("com/example/Target")
+                        || dump.contains(BridgeRewriter.bridgeSimpleName("com/example/Target")),
                 "expected no bare reference to com/example/Target");
     }
 
@@ -250,9 +252,10 @@ class BridgeRewriterEndToEndTest {
         byte[] iface = new BridgeInterfaceEmitter(BRIDGE_PKG)
                 .emit("com/example/Target", List.of(bm));
         // Define and inspect.
+        String ifaceFqn = new BridgeInterfaceEmitter(BRIDGE_PKG).interfaceFqn("com/example/Target");
         InMemLoader loader = new InMemLoader(
-                Map.of(BRIDGE_PKG + ".TargetBridge", iface), getClass().getClassLoader());
-        Class<?> ifaceClass = loader.loadClass(BRIDGE_PKG + ".TargetBridge");
+                Map.of(ifaceFqn, iface), getClass().getClassLoader());
+        Class<?> ifaceClass = loader.loadClass(ifaceFqn);
         assertTrue(ifaceClass.isInterface());
         Method m = ifaceClass.getDeclaredMethod("doubleIt", int.class);
         assertNotNull(m);

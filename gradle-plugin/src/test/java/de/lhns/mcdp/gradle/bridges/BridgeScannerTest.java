@@ -145,7 +145,7 @@ class BridgeScannerTest {
     void checkcastOnModPrivateOwnerEmitsBridgeModelLimitWarning() {
         // CHECKCAST/INSTANCEOF/ANEWARRAY of mod-private types are formally documented as
         // bridge-model limits (ADR-0018 v2 docs). The warning text must point at the user's
-        // only options — sharedPackages or restructuring — and reference docs/mixin-bridge.md
+        // only options — sharedPackages or restructuring — and reference docs/bridges.md
         // so the build output gives the user something concrete to read.
         byte[] bytes = mixinWith(mv -> {
             mv.visitVarInsn(Opcodes.ALOAD, 0);
@@ -155,7 +155,7 @@ class BridgeScannerTest {
         }, "(Ljava/lang/Object;)V");
         BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         assertTrue(r.warnings().stream().anyMatch(w ->
-                w.contains("bridge-model limit") && w.contains("docs/mixin-bridge.md")
+                w.contains("bridge-model limit") && w.contains("docs/bridges.md")
                         && w.contains("sharedPackages")));
     }
 
@@ -259,6 +259,67 @@ class BridgeScannerTest {
         }, "()I");
         BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
         assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
+    }
+
+    @Test
+    void abstractAccessorReturningModPrivateTypeIsUnsupported() {
+        // The classic @Accessor: no body, so nothing for the rewriter to touch and the class
+        // would otherwise be SKIPPED -- but the merged descriptor names a mod-private type on
+        // the game loader, i.e. a NoClassDefFoundError the moment anything resolves it.
+        byte[] bytes = mixinWithAbstractMethod("getThing", "()Lcom/example/mod/MyModThing;");
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.UNSUPPORTED, r.status());
+        assertTrue(r.errors().stream().anyMatch(e ->
+                        e.contains("getThing") && e.contains("com.example.mod.MyModThing")
+                                && e.contains("sharedPackages")),
+                "expected an actionable method-signature error, got: " + r.errors());
+    }
+
+    @Test
+    void modPrivateParameterTypeIsUnsupported() {
+        byte[] bytes = mixinWithAbstractMethod("setThing", "(Lcom/example/mod/MyModThing;)V");
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.UNSUPPORTED, r.status());
+    }
+
+    @Test
+    void sharedAndPlatformTypesInMethodSignaturesAreFine() {
+        // com/example/api is in sharedPackages; CallbackInfo and MC types are platform.
+        byte[] bytes = mixinWithAbstractMethod("ok",
+                "(Lcom/example/api/Thing;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)"
+                        + "Lnet/minecraft/world/level/Level;");
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
+    }
+
+    @Test
+    void syntheticMethodSignaturesAreExempt() {
+        // Lambda bodies legitimately carry mod-private types; the ADR-0021 path moves them to a
+        // wrapper on the mod-side loader, so they must not fail the build here.
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/mod/mixin/MixinFoo", null,
+                "java/lang/Object", null);
+        MethodVisitor mv = cw.visitMethod(
+                Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
+                "lambda$body$0", "(Lcom/example/mod/MyModThing;)V", null, null);
+        mv.visitCode();
+        mv.visitInsn(Opcodes.RETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+        cw.visitEnd();
+        BridgeScanResult r = new BridgeScanner(policy).scan(cw.toByteArray());
+        assertEquals(BridgeScanResult.Status.SKIPPED, r.status());
+    }
+
+    /** Build a class declaring one abstract method with the given descriptor. */
+    private static byte[] mixinWithAbstractMethod(String name, String desc) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                "com/example/mod/mixin/MixinFoo", null, "java/lang/Object", null);
+        cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, name, desc, null, null)
+                .visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
     }
 
     /** Build a minimal class with one method whose body the caller writes via {@code body}. */

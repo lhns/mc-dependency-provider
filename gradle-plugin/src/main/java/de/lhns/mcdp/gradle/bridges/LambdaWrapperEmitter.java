@@ -81,7 +81,17 @@ public final class LambdaWrapperEmitter {
     }
 
     public Artifacts emit(ClassNode containerCn, LambdaSite site, MethodNode synthetic) {
-        String simple = BridgeRewriter.simpleName(containerCn.name);
+        if (site.implMethod().getTag() != Opcodes.H_INVOKESTATIC) {
+            // Defence in depth: BridgeScanner refuses to record such a site in the first place
+            // (see its handleIndy). Reaching here would mean emitting a wrapper whose embedded
+            // body reads a receiver slot that does not exist — a VerifyError at first use.
+            throw new IllegalArgumentException(
+                    "lambda site has a non-static implementation method and cannot be wrapped: "
+                            + site);
+        }
+        // Package-qualified: two mixins with the same simple name in different packages must
+        // not collide on one wrapper class or one LAMBDA_* field. See BridgeRewriter#bridgeSimpleName.
+        String simple = BridgeRewriter.bridgeSimpleName(containerCn.name);
         String suffix = "$Lambda" + site.siteIndex();
         String bridgeIfaceInternal = bridgePackageInternal + "/" + simple + suffix + "Bridge";
         String bridgeImplInternal = implPackageInternal + "/" + simple + suffix + "BridgeImpl";
@@ -148,39 +158,23 @@ public final class LambdaWrapperEmitter {
             make.visitVarInsn(t.getOpcode(Opcodes.ILOAD), local);
             local += t.getSize();
         }
-        Handle metafactoryBsm = new Handle(
-                Opcodes.H_INVOKESTATIC,
-                "java/lang/invoke/LambdaMetafactory",
-                "metafactory",
-                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
-                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
-                        + "Ljava/lang/invoke/CallSite;",
-                false);
-        // The implementation method is a private-static synthetic on THIS impl class.
-        Handle implMethod = new Handle(
-                Opcodes.H_INVOKESTATIC, implInternal,
-                site.implMethod().getName(), site.implMethod().getDesc(), false);
-        // samMethodType / instantiatedMethodType: derive from the original synthetic descriptor
-        // minus the leading captures. The simplest correct value is the synthetic's full
-        // descriptor minus capture parameters — i.e., the SAM method type the JVM expects.
-        Type samMethodType = computeSamMethodType(site, captures);
-        // The indy returns the SAM type, taking captures.
-        String indyDesc = makeDesc;
-        // Read the SAM method name from the original site (LambdaMetafactory expects this).
-        // We don't know the SAM method name from the bsm args alone; pass the synthetic's name
-        // as a placeholder — LambdaMetafactory uses the indy NAME slot for the SAM method name.
-        // We need it from the original indy. The LambdaSite doesn't carry it explicitly; the
-        // synthetic's expected SAM name is also used in the original indy. Since the SAM method
-        // is determined by the SAM interface, JVM looks at the SAM type's lone abstract method.
-        // The "name" arg to the metafactory IS the SAM method name; not optional. We pass it
-        // through from where the rewriter knows it (rewriter passes via Artifacts caller).
+        // Replay the ORIGINAL bootstrap verbatim, with only the implementation method
+        // re-pointed at the copy embedded below. Nothing here is reconstructed:
+        //   - the bootstrap handle keeps its exact name+descriptor pairing (metafactory is the
+        //     fixed 6-arg form, altMetafactory the varargs one; a MethodHandle constant
+        //     resolves by both, so a mismatched pair is an unlinkable call site);
+        //   - samMethodType stays erased and instantiatedMethodType stays specific (deriving
+        //     one value for both slots is an AbstractMethodError on every generic SAM);
+        //   - altMetafactory's trailing args (FLAG_SERIALIZABLE, marker interfaces, bridge
+        //     signatures) come along for free.
+        // See LambdaSite's class doc.
+        Object[] bsmArgs = site.relocatedBsmArgs(implInternal);
+        // The indy takes the captures and returns the SAM — the same shape as the original.
         make.visitInvokeDynamicInsn(
                 site.samMethodName(),
-                indyDesc,
-                metafactoryBsm,
-                samMethodType,
-                implMethod,
-                samMethodType);
+                makeDesc,
+                site.bsm(),
+                bsmArgs);
         make.visitInsn(Opcodes.ARETURN);
         make.visitMaxs(0, 0);
         make.visitEnd();
@@ -198,25 +192,6 @@ public final class LambdaWrapperEmitter {
 
         cw.visitEnd();
         return cw.toByteArray();
-    }
-
-    /**
-     * Compute the SAM method type from the lambda site's information. The metafactory needs
-     * a {@code MethodType} whose parameters are the SAM method's parameters and whose return
-     * is the SAM method's return — not including captures.
-     *
-     * <p>We derive it by taking the original synthetic's descriptor and stripping the leading
-     * capture parameters: synthetic = {@code (cap0, cap1, ..., samArg0, samArg1, ...)R},
-     * SAM method type = {@code (samArg0, samArg1, ...)R}.</p>
-     */
-    private static Type computeSamMethodType(LambdaSite site, Type[] captures) {
-        Type[] syntheticArgs = Type.getArgumentTypes(site.implMethod().getDesc());
-        Type returnType = Type.getReturnType(site.implMethod().getDesc());
-        int samArgCount = syntheticArgs.length - captures.length;
-        if (samArgCount < 0) samArgCount = 0;
-        Type[] samArgs = new Type[samArgCount];
-        System.arraycopy(syntheticArgs, captures.length, samArgs, 0, samArgCount);
-        return Type.getMethodType(returnType, samArgs);
     }
 
     public static String logicFieldName(String containerSimpleName, int siteIndex) {

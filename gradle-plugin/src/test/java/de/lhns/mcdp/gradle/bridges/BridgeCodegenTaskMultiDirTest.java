@@ -81,7 +81,9 @@ class BridgeCodegenTaskMultiDirTest {
         var entries = (java.util.List<java.util.Map<String, String>>) parsed.get("bridge");
         assertEquals(1, entries.size(), "expected exactly one [[bridge]] entry");
         assertEquals(MIXIN_FQN, entries.get(0).get("mixin"));
-        assertEquals("LOGIC_Target", entries.get(0).get("field"));
+        // Derived, not spelled out: the field name is package-qualified (BridgeRewriter
+        // #bridgeSimpleName) so two same-named targets in different packages can't collide.
+        assertEquals(BridgeRewriter.logicFieldName(TARGET_INTERNAL), entries.get(0).get("field"));
 
         // Report lists the mixin and no "not found" warning was raised.
         String reportText = Files.readString(report);

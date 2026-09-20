@@ -76,7 +76,12 @@ public final class BridgeRewriter {
                           List<LambdaSite> lambdaSites,
                           Map<Integer, LambdaWrapperEmitter.Artifacts> lambdaArtifactsBySite) {
         ClassNode cn = new ClassNode();
-        new ClassReader(classBytes).accept(cn, 0);
+        // SKIP_FRAMES on purpose, matching BridgeScanner#scan(byte[]): the two passes must see
+        // the same shape of instruction list, and the ClassWriter below recomputes frames
+        // anyway (COMPUTE_FRAMES), so keeping the originals would be wasted work. Lambda sites
+        // are keyed by indy ordinal rather than raw instruction index (see LambdaSite), so this
+        // alignment is belt-and-braces rather than load-bearing — do not un-align it regardless.
+        new ClassReader(classBytes).accept(cn, ClassReader.SKIP_FRAMES);
         rewrite(cn, targets, lambdaSites, lambdaArtifactsBySite);
         ClassWriter cw = new ClasspathAwareClassWriter(
                 ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, frameLookup);
@@ -94,7 +99,7 @@ public final class BridgeRewriter {
         Map<String, String> targetToBridge = new LinkedHashMap<>();
         List<ClinitInit> inits = new ArrayList<>();
         for (String target : targets.keySet()) {
-            String bridgeInternal = bridgePackageInternal + "/" + simpleName(target) + "Bridge";
+            String bridgeInternal = bridgePackageInternal + "/" + bridgeSimpleName(target) + "Bridge";
             targetToBridge.put(target, bridgeInternal);
             String fieldName = logicFieldName(target);
             // Skip if a previous run already added the field — codegen is incremental.
@@ -127,13 +132,14 @@ public final class BridgeRewriter {
             }
             inits.add(new ClinitInit(art.logicFieldName, art.bridgeIfaceInternal));
         }
-        // Index lambda sites by (methodId, instructionIndex) for the rewriter to look them up
-        // during the method walk.
+        // Index lambda sites by (methodId, indyOrdinal) for the rewriter to look them up during
+        // the method walk. See LambdaSite#indyOrdinal for why this is an ordinal among the
+        // method's INVOKEDYNAMIC instructions and not a position in the instruction list.
         Map<String, Map<Integer, LambdaSite>> sitesByMethod = new LinkedHashMap<>();
         for (LambdaSite site : lambdaSites) {
             sitesByMethod
                     .computeIfAbsent(site.ownerMethodId(), k -> new LinkedHashMap<>())
-                    .put(site.instructionIndex(), site);
+                    .put(site.indyOrdinal(), site);
         }
         for (MethodNode m : cn.methods) {
             if (m.instructions == null || m.instructions.size() == 0) continue;
@@ -232,7 +238,8 @@ public final class BridgeRewriter {
         }
 
         AbstractInsnNode insn = m.instructions.getFirst();
-        int instructionIndex = 0;
+        // Counted exactly as BridgeScanner#walkMethod counts it. Keep the two in step.
+        int indyOrdinal = 0;
         while (insn != null) {
             AbstractInsnNode next = insn.getNext();
             int op = insn.getOpcode();
@@ -255,17 +262,17 @@ public final class BridgeRewriter {
                     && targets.containsKey(t.getInternalName())) {
                 rewriteClassLiteral(cn, m, ldc, targetToBridge.get(t.getInternalName()));
             } else if (op == Opcodes.INVOKEDYNAMIC && insn instanceof InvokeDynamicInsnNode indy
-                    && sitesInThisMethod.containsKey(instructionIndex)) {
-                LambdaSite site = sitesInThisMethod.get(instructionIndex);
+                    && sitesInThisMethod.containsKey(indyOrdinal)) {
+                LambdaSite site = sitesInThisMethod.get(indyOrdinal);
                 LambdaWrapperEmitter.Artifacts art = artifactsBySite.get(site.siteIndex());
                 if (art != null) {
                     rewriteLambdaIndy(cn, m, indy, site, art);
                 }
             }
+            if (op == Opcodes.INVOKEDYNAMIC) indyOrdinal++;
             // NEW/DUP nodes consumed by ctorTriplets are removed inside rewriteConstructor;
             // anything we didn't recognize is left untouched.
             insn = next;
-            instructionIndex++;
         }
     }
 
@@ -608,7 +615,49 @@ public final class BridgeRewriter {
     }
 
     public static String logicFieldName(String targetInternalName) {
-        return "LOGIC_" + simpleName(targetInternalName).replace('$', '_');
+        return "LOGIC_" + bridgeSimpleName(targetInternalName);
+    }
+
+    /**
+     * The name stem every generated artifact for {@code internalOrDotted} is built from: the
+     * bridge interface ({@code <stem>Bridge}), the impl ({@code <stem>BridgeImpl}), the
+     * per-lambda wrapper, and the {@code LOGIC_<stem>} / {@code LAMBDA_<stem>_<n>} fields.
+     *
+     * <p>Deriving that stem from the simple name alone is not safe: {@code com.mod.a.Config}
+     * and {@code com.mod.b.Config} would both map to {@code ConfigBridge} and to the field
+     * {@code LOGIC_Config}. Across mixins the second emitted class silently overwrites the
+     * first; within a single mixin the rewriter would reuse one field — typed as one of the two
+     * bridge interfaces — for both targets, i.e. a {@code VerifyError} or a
+     * {@code ClassCastException} at runtime.</p>
+     *
+     * <p>So the stem is {@code <SimpleName>_<hash>}, where the hash is the first
+     * {@value #NAME_HASH_LENGTH} hex digits of the SHA-256 of the full dotted name. That keeps
+     * the readable part in front (stack traces and the bridge manifest stay greppable), is
+     * stable across builds, JVMs and platforms (unlike {@code String.hashCode()}-style
+     * shortcuts, it is a specified digest of a specified byte encoding), and collides only on a
+     * 24-bit digest coincidence between two types that a build actually bridges.</p>
+     */
+    public static String bridgeSimpleName(String internalOrDotted) {
+        String dotted = BridgePolicy.toDotted(internalOrDotted);
+        return simpleName(dotted).replace('$', '_') + "_" + shortHash(dotted);
+    }
+
+    /** Hex digits of the SHA-256 digest kept in a generated name. */
+    private static final int NAME_HASH_LENGTH = 6;
+
+    private static String shortHash(String dotted) {
+        byte[] digest;
+        try {
+            digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(dotted.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required of every JRE", e);
+        }
+        StringBuilder sb = new StringBuilder(NAME_HASH_LENGTH);
+        for (int i = 0; sb.length() < NAME_HASH_LENGTH; i++) {
+            sb.append(String.format("%02x", digest[i]));
+        }
+        return sb.substring(0, NAME_HASH_LENGTH);
     }
 
     public static String simpleName(String internalOrDotted) {

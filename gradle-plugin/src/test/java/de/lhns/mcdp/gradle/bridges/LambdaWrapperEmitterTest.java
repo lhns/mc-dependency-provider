@@ -15,7 +15,9 @@ import java.util.ArrayList;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -94,6 +96,41 @@ class LambdaWrapperEmitterTest {
     }
 
     @Test
+    void wrapperNamesArePackageQualified() {
+        // Two mixins with the same simple name in different packages must not collide on one
+        // wrapper class or one LAMBDA_* field (H3).
+        ClassNode a = container("com/mod/a/Config");
+        ClassNode b = container("com/mod/b/Config");
+        MethodNode sa = staticSynthetic(a, "lambda$body$0", "()Ljava/lang/Object;");
+        MethodNode sb = staticSynthetic(b, "lambda$body$0", "()Ljava/lang/Object;");
+        LambdaWrapperEmitter.Artifacts artA = emitter.emit(a,
+                site(a, "handler()V", new Handle(Opcodes.H_INVOKESTATIC, a.name,
+                        "lambda$body$0", "()Ljava/lang/Object;", false),
+                        "()Ljava/util/function/Supplier;"), sa);
+        LambdaWrapperEmitter.Artifacts artB = emitter.emit(b,
+                site(b, "handler()V", new Handle(Opcodes.H_INVOKESTATIC, b.name,
+                        "lambda$body$0", "()Ljava/lang/Object;", false),
+                        "()Ljava/util/function/Supplier;"), sb);
+        assertNotEquals(artA.bridgeIfaceInternal, artB.bridgeIfaceInternal);
+        assertNotEquals(artA.bridgeImplInternal, artB.bridgeImplInternal);
+        assertNotEquals(artA.logicFieldName, artB.logicFieldName);
+        assertTrue(artA.bridgeIfaceInternal.contains("Config"),
+                "the readable part must survive: " + artA.bridgeIfaceInternal);
+    }
+
+    @Test
+    void instanceSyntheticIsRefusedRatherThanCopiedAsStatic() {
+        ClassNode container = container("com/example/mod/MixinFoo");
+        MethodNode synthetic = staticSynthetic(container, "lambda$body$0", "()Ljava/lang/Object;");
+        Handle instanceHandle = new Handle(Opcodes.H_INVOKESPECIAL, container.name,
+                "lambda$body$0", "()Ljava/lang/Object;", false);
+        LambdaSite bad = site(container, "handler()V", instanceHandle,
+                "(Lcom/example/mod/MixinFoo;)Ljava/util/function/Supplier;");
+        assertThrows(IllegalArgumentException.class,
+                () -> emitter.emit(container, bad, synthetic));
+    }
+
+    @Test
     void logicFieldNameIsStable() {
         assertEquals("LAMBDA_MixinFoo_0",
                 LambdaWrapperEmitter.logicFieldName("MixinFoo", 0));
@@ -113,14 +150,30 @@ class LambdaWrapperEmitterTest {
                 "(Ljava/lang/String;)Ljava/lang/Object;");
         Handle implHandle = new Handle(Opcodes.H_INVOKESTATIC, container.name,
                 "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/Object;", false);
-        LambdaSite site = new LambdaSite(container.name, "method()V", 0,
-                "java/util/function/Supplier", "get", implHandle,
-                "(Ljava/lang/String;)Ljava/util/function/Supplier;", 0);
+        LambdaSite site = site(container, "method()V", implHandle,
+                "(Ljava/lang/String;)Ljava/util/function/Supplier;");
 
         LambdaWrapperEmitter.Artifacts art = emitter.emit(container, site, synthetic);
         ClassNode iface = parse(art.bridgeIfaceBytes);
         MethodNode make = iface.methods.get(0);
         assertEquals("(Ljava/lang/String;)Ljava/util/function/Supplier;", make.desc);
+    }
+
+    /**
+     * A {@code Supplier} site whose bootstrap metadata is spelled the way the JVM spells it:
+     * the fixed 6-arg {@code metafactory} handle, an erased {@code samMethodType} and a
+     * specific {@code instantiatedMethodType}. The emitter replays exactly this.
+     */
+    private static LambdaSite site(ClassNode container, String ownerMethodId,
+                                   Handle implHandle, String indyDesc) {
+        return new LambdaSite(container.name, ownerMethodId, 0,
+                "java/util/function/Supplier", "get",
+                BridgeScannerLambdaTest.metafactoryBsm(),
+                new Object[]{
+                        Type.getType("()Ljava/lang/Object;"),
+                        implHandle,
+                        Type.getType("()Ljava/lang/Object;")},
+                indyDesc, 0);
     }
 
     private static MethodNode findMethod(ClassNode cn, String name, String desc) {
@@ -142,9 +195,8 @@ class LambdaWrapperEmitterTest {
         MethodNode synthetic = staticSynthetic(container, "lambda$body$0", "()Ljava/lang/Object;");
         Handle implHandle = new Handle(Opcodes.H_INVOKESTATIC, container.name,
                 "lambda$body$0", "()Ljava/lang/Object;", false);
-        LambdaSite site = new LambdaSite(container.name, "handler()V", 0,
-                "java/util/function/Supplier", "get", implHandle,
-                "()Ljava/util/function/Supplier;", 0);
+        LambdaSite site = site(container, "handler()V", implHandle,
+                "()Ljava/util/function/Supplier;");
         LambdaWrapperEmitter.Artifacts art = emitter.emit(container, site, synthetic);
         return new Result(art);
     }
