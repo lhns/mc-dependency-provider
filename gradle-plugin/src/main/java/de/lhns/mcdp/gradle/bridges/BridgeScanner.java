@@ -25,11 +25,14 @@ import java.util.Set;
  * mod-private types — cannot rewrite without sharedPackages), or {@code REWRITABLE} (every
  * cross-classloader reference is grouped per target type).
  *
- * <p>The rewriter only touches method bodies. Class headers (interfaces, super, declared
- * field types) are validated against the policy: any mod-private reference in the header
+ * <p>The rewriter only touches method bodies. Everything else the mixin merge copies
+ * verbatim — interfaces, super, declared field types <em>and the mixin's own method
+ * descriptors</em> — is validated against the policy instead: any mod-private reference there
  * fails the build with an actionable error pointing at {@code sharedPackages}, since
- * header rewriting is an explicit non-goal of ADR-0018 (Sponge would copy the bad
- * reference onto the target class regardless of what the rewriter did).</p>
+ * rewriting them is an explicit non-goal of ADR-0018 (Sponge would copy the bad reference onto
+ * the target class regardless of what the rewriter did). Method signatures matter even when a
+ * class is otherwise {@code SKIPPED}: an {@code @Accessor MyModThing getThing();} has no body
+ * to rewrite, yet the merged descriptor names a mod-private type on the game loader.</p>
  *
  * <p>Supported instruction set: INVOKESTATIC / INVOKEVIRTUAL / INVOKEINTERFACE,
  * GETSTATIC / GETFIELD, PUTSTATIC / PUTFIELD, LDC of a {@code Class<?>} constant, and
@@ -79,6 +82,30 @@ public final class BridgeScanner {
                             + "never rewrites (ADR-0018). Type the field with a bridge interface "
                             + "(in sharedPackages) instead, or add the package to "
                             + "mcdepprovider.sharedPackages.");
+                }
+            }
+        }
+        if (cn.methods != null) {
+            for (MethodNode m : cn.methods) {
+                // Same reasoning as the field check above, for the mixin's own method
+                // signatures. Sponge copies a merged method's descriptor onto the target class
+                // verbatim, and the rewriter only ever touches instruction lists — so a
+                // mod-private parameter or return type is a NoClassDefFoundError waiting for
+                // the first resolution of that method, even for members the scanner otherwise
+                // has nothing to do with. `@Accessor MyModThing getThing();` is the headline
+                // case: no body to rewrite, so the class is SKIPPED and the breakage ships.
+                //
+                // Compiler-generated synthetics are exempt: lambda bodies legitimately carry
+                // mod-private types in their descriptors and are handled by the lambda path
+                // (ADR-0021), which moves the body to a wrapper on the mod-side loader.
+                if ((m.access & org.objectweb.asm.Opcodes.ACC_SYNTHETIC) != 0) continue;
+                for (String bad : modPrivateTypesIn(m.desc, cn.name)) {
+                    errors.add("mcdp-bridges: " + mixinFqn + " declares method '"
+                            + m.name + m.desc + "' whose signature names the mod-private type "
+                            + bad + ". Method descriptors are copied onto the target class by "
+                            + "the mixin merge and the codegen never rewrites them (ADR-0018). "
+                            + "Use a bridge interface or a platform type in the signature, or "
+                            + "add the package to mcdepprovider.sharedPackages.");
                 }
             }
         }
@@ -139,7 +166,13 @@ public final class BridgeScanner {
         String methodId = m.name + m.desc;
         AbstractInsnNode insn = m.instructions.getFirst();
         AbstractInsnNode prev = null;
-        int instructionIndex = 0;
+        // Lambda sites are keyed by the indy's ordinal among this method's INVOKEDYNAMIC
+        // instructions, NOT by its position in the instruction list. The rewriter re-parses the
+        // class independently, and an InsnList's pseudo-nodes (FrameNode above all) come and go
+        // with the ClassReader flags each pass uses — a raw index drifts by one per frame ahead
+        // of the site, so a lambda after an `if` silently failed to match. BridgeRewriter counts
+        // the same way; keep the two in step.
+        int indyOrdinal = 0;
         while (insn != null) {
             switch (insn.getOpcode()) {
                 case org.objectweb.asm.Opcodes.INVOKESTATIC,
@@ -228,7 +261,7 @@ public final class BridgeScanner {
                                 + "would still reference the type directly. Add the package to "
                                 + "`mcdepprovider.sharedPackages` so the type is visible to both "
                                 + "loaders, or restructure the mixin to keep this operation "
-                                + "inside mod code. See docs/mixin-bridge.md.");
+                                + "inside mod code. See docs/bridges.md.");
                     }
                 }
                 case org.objectweb.asm.Opcodes.LDC -> {
@@ -242,15 +275,15 @@ public final class BridgeScanner {
                 }
                 case org.objectweb.asm.Opcodes.INVOKEDYNAMIC -> {
                     if (insn instanceof InvokeDynamicInsnNode indy) {
-                        handleIndy(mixinFqn, m, methodId, indy, instructionIndex,
+                        handleIndy(mixinFqn, m, methodId, indy, indyOrdinal,
                                 targets, lambdaSites, warnings, ctx);
                     }
+                    indyOrdinal++;
                 }
                 default -> { /* nothing */ }
             }
             prev = insn;
             insn = insn.getNext();
-            instructionIndex++;
         }
     }
 
@@ -261,7 +294,7 @@ public final class BridgeScanner {
      * for the rewriter (ADR-0021 lambda-site coverage).
      */
     private void handleIndy(String mixinFqn, MethodNode containingMethod, String containingMethodId,
-                            InvokeDynamicInsnNode indy, int instructionIndex,
+                            InvokeDynamicInsnNode indy, int indyOrdinal,
                             Map<String, List<BridgeMember>> targets,
                             List<LambdaSite> lambdaSites,
                             List<String> warnings, SiteContext ctx) {
@@ -281,8 +314,10 @@ public final class BridgeScanner {
         }
         // bsm args are: [samMethodType, implMethod, instantiatedMethodType] (metafactory)
         // or [samMethodType, implMethod, instantiatedMethodType, flags, ...] (altMetafactory).
-        // Index 1 is the implementation method handle in both shapes.
-        if (indy.bsmArgs == null || indy.bsmArgs.length < 2 || !(indy.bsmArgs[1] instanceof Handle implHandle)) {
+        // Index 1 is the implementation method handle in both shapes. All three leading args are
+        // required — the wrapper emitter replays them verbatim (see LambdaSite).
+        if (indy.bsmArgs == null || indy.bsmArgs.length < 3
+                || !(indy.bsmArgs[1] instanceof Handle implHandle)) {
             warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
                     + " has an INVOKEDYNAMIC LambdaMetafactory site with an unexpected bsm-arg "
                     + "shape — skipping. (Report at the project tracker.)");
@@ -335,9 +370,39 @@ public final class BridgeScanner {
             walkMethod(mixinFqn, synthetic, targets, lambdaSites, warnings, ctx);
         }
 
+        // Only a STATIC implementation method can be relocated onto the generated wrapper.
+        // A lambda that captures `this` compiles to an instance synthetic (REF_invokeVirtual /
+        // REF_invokeSpecial) whose body reads the receiver out of local 0 and touches the
+        // container's fields; copying it onto the wrapper as static would produce a VerifyError
+        // at first use, and its only possible receiver type is the mixin class itself — a type
+        // the mod-side loader cannot name, so the wrapper's factory signature is unexpressible
+        // in the first place. There is no correct rewrite, so refuse the site outright: no
+        // LAMBDA_* field, no <clinit> entry, no wrapper class, no manifest entry. The indy is
+        // left exactly as javac emitted it, and the synthetic's own body still gets the ordinary
+        // member-bridge treatment from the recursive walk above.
+        if (implHandle.getTag() != org.objectweb.asm.Opcodes.H_INVOKESTATIC) {
+            warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
+                    + " declares a lambda that captures `this` (implementation method "
+                    + implHandle.getName() + implHandle.getDesc() + ", handle kind "
+                    + implHandle.getTag() + "). Instance-capturing lambdas cannot be moved into "
+                    + "a bridge wrapper — the wrapper would have to name the mixin class in its "
+                    + "factory signature, and the mixin class does not exist on the mod-side "
+                    + "loader. This lambda is left unbridged: if its body touches mod-private or "
+                    + "Scala/Kotlin types it will fail at runtime. Make the lambda non-capturing "
+                    + "(copy the fields it needs into locals first), or add the packages it "
+                    + "touches to mcdepprovider.sharedPackages. See docs/bridges.md.");
+            return;
+        }
+        if (!(indy.bsmArgs[0] instanceof Type) || !(indy.bsmArgs[2] instanceof Type)) {
+            warnings.add("mcdp-bridges: " + mixinFqn + "#" + containingMethod.name
+                    + " has a LambdaMetafactory site whose samMethodType/instantiatedMethodType "
+                    + "args are not MethodTypes — skipping. (Report at the project tracker.)");
+            return;
+        }
+
         int siteIndex = ctx.nextSiteIndex++;
-        lambdaSites.add(new LambdaSite(ctx.cn.name, containingMethodId, instructionIndex,
-                samInternal, indy.name, implHandle, indy.desc, siteIndex));
+        lambdaSites.add(new LambdaSite(ctx.cn.name, containingMethodId, indyOrdinal,
+                samInternal, indy.name, bsm, indy.bsmArgs, indy.desc, siteIndex));
     }
 
     private static MethodNode findMethod(ClassNode cn, String name, String desc) {
@@ -388,6 +453,23 @@ public final class BridgeScanner {
             // Other mod-private types in the descriptor mean the bridge interface itself can't
             // express the call — log as a warning so the mod author sees the gap.
         }
+    }
+
+    /** Dotted names of every mod-private class mentioned in a method descriptor, in order. */
+    private List<String> modPrivateTypesIn(String methodDesc, String selfInternal) {
+        List<String> found = new ArrayList<>();
+        List<Type> all = new ArrayList<>(List.of(Type.getArgumentTypes(methodDesc)));
+        all.add(Type.getReturnType(methodDesc));
+        for (Type t : all) {
+            Type elem = t;
+            while (elem.getSort() == Type.ARRAY) elem = elem.getElementType();
+            if (elem.getSort() != Type.OBJECT) continue;
+            if (needsBridgeFromBody(elem.getInternalName(), selfInternal)) {
+                String dot = BridgePolicy.toDotted(elem.getInternalName());
+                if (!found.contains(dot)) found.add(dot);
+            }
+        }
+        return found;
     }
 
     private static String ownerInternalNameOfDescriptor(String desc) {

@@ -1,5 +1,6 @@
 package de.lhns.mcdp.gradle.bridges;
 
+import de.lhns.mcdp.deps.Sha256;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -41,7 +42,9 @@ import java.util.stream.Stream;
  */
 public abstract class BridgeCodegenTask extends DefaultTask {
 
-    public BridgeCodegenTask() {
+    @javax.inject.Inject
+    public BridgeCodegenTask(org.gradle.api.file.ProjectLayout layout) {
+        getSourceCacheDir().convention(layout.getBuildDirectory().dir("mcdp-bridges/source-cache"));
         // The task mutates files in the main source-set output dirs — the in-place rewrite
         // (ADR-0018 §Errata). Gradle's up-to-date check fingerprints @InputFiles BEFORE the
         // task action runs, then compares against the next run's input fingerprint. Problem:
@@ -59,6 +62,17 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         // Force re-run every build. The rewriter is idempotent (BridgeRewriter's LOGIC field
         // check is a no-op on already-rewritten bytecode), and the cost is sub-second on a
         // typical mixin set since the work is pure ASM read+write.
+        //
+        // Re-running on its own is not enough, though: the run CLEANS both output dirs and then
+        // regenerates them from a scan of the compile outputs. If the compile output still holds
+        // the PREVIOUS run's rewritten bytecode (nothing recompiled it — a `FROM-CACHE` compile
+        // task, a partial output restore, or an invocation that simply doesn't include the
+        // compile task), the scanner finds no cross-classloader refs left to bridge and returns
+        // SKIPPED, so the freshly wiped dirs would stay empty while the rewritten mixin still
+        // does INVOKEINTERFACE against a bridge interface that no longer exists →
+        // NoClassDefFoundError at runtime. See getSourceCacheDir(): the pre-rewrite bytes are
+        // cached so every run reconstructs the full plan from ORIGINAL bytecode, independent of
+        // whether a compile task happened to restore the originals for us.
         getOutputs().upToDateWhen(t -> false);
     }
 
@@ -116,6 +130,29 @@ public abstract class BridgeCodegenTask extends DefaultTask {
     @OutputFile
     public abstract RegularFileProperty getReportFile();
 
+    /**
+     * Cache of the PRE-rewrite bytecode of every class this task rewrote in place, keyed by the
+     * class's internal name, plus a {@code .rewritten-sha256} stamp holding the SHA-256 of the
+     * bytes we wrote back over the compile output.
+     *
+     * <p>Why it exists: the in-place rewrite (see {@link #run()}) makes the task's own input
+     * lossy. Once a mixin has been rewritten, re-scanning it yields {@code SKIPPED} — the
+     * cross-classloader refs the plan is built from are gone, replaced by bridge calls. A run
+     * that starts from that state would clean both output dirs and have nothing to put back.
+     * The stamp lets the task tell "this is our own output" from "the compiler wrote fresh
+     * bytecode here", and the cached copy gives the scanner the original input either way, so
+     * the emitted bridges + manifest are a function of the mod's sources alone.
+     *
+     * <p>Trade-off vs. the alternatives: teaching {@code BridgeScanner} to reconstruct targets
+     * from already-rewritten bytecode would need no extra state, but the rewrite is lossy for
+     * lambda sites (the {@code INVOKEDYNAMIC} is gone) and would leave the scanner with two
+     * input dialects to keep in sync forever. Persisting the plan itself (target map + lambda
+     * sites) is a schema this task would have to version. Caching the input bytes keeps exactly
+     * one pipeline, needs no schema, and costs a few KiB per mixin.
+     */
+    @OutputDirectory
+    public abstract DirectoryProperty getSourceCacheDir();
+
     @TaskAction
     public void run() throws IOException {
         Logger log = getLogger();
@@ -126,6 +163,8 @@ public abstract class BridgeCodegenTask extends DefaultTask {
         Path outClassesDir = getOutputClassesDir().get().getAsFile().toPath();
         Path manifestDir = getManifestOutputDir().get().getAsFile().toPath();
         Path manifestFile = manifestDir.resolve("META-INF").resolve("mcdp-bridges.toml");
+        Path sourceCacheDir = getSourceCacheDir().get().getAsFile().toPath();
+        Files.createDirectories(sourceCacheDir);
 
         cleanDirectory(outClassesDir);
         cleanDirectory(manifestDir);
@@ -196,7 +235,20 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                         + " — skipping. (Was the build clean?)");
                 continue;
             }
-            byte[] bytes = Files.readAllBytes(classFile);
+            byte[] onDisk = Files.readAllBytes(classFile);
+            // Prefer the cached pre-rewrite bytes whenever the file on disk is byte-identical
+            // to what we wrote there last run: nothing recompiled it, so scanning it would
+            // just rediscover our own bridge calls and report SKIPPED (see the constructor).
+            Path cachedOriginal = sourceCacheDir.resolve(relPath);
+            Path rewrittenStamp = sourceCacheDir.resolve(relPath + ".rewritten-sha256");
+            boolean fromCache = false;
+            byte[] bytes = onDisk;
+            if (Files.isRegularFile(cachedOriginal) && Files.isRegularFile(rewrittenStamp)
+                    && Files.readString(rewrittenStamp, StandardCharsets.UTF_8).trim()
+                            .equals(Sha256.hex(onDisk))) {
+                bytes = Files.readAllBytes(cachedOriginal);
+                fromCache = true;
+            }
             BridgeScanResult result = scanner.scan(bytes);
             warnings.addAll(result.warnings());
             switch (result.status()) {
@@ -205,6 +257,15 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                 }
                 case SKIPPED -> {
                     log.info("mcdp-bridges: " + fqn + " has no cross-classloader refs.");
+                    if (fromCache) {
+                        // The class was rewritten by an earlier run but its ORIGINAL form no
+                        // longer needs bridging — typically because the user added the target's
+                        // package to sharedPackages. Put the original bytecode back, otherwise
+                        // the stale rewrite keeps calling bridges we are about to stop emitting.
+                        Files.write(classFile, bytes);
+                        Files.deleteIfExists(rewrittenStamp);
+                        Files.deleteIfExists(cachedOriginal);
+                    }
                 }
                 case REWRITABLE -> {
                     // Lambda sites: emit one bridge interface + impl pair per site, write
@@ -270,14 +331,26 @@ public abstract class BridgeCodegenTask extends DefaultTask {
                     // Mutating another task's declared output is technically a Gradle
                     // anti-pattern, but it's tolerated here because (a) the rewriter is
                     // idempotent — re-running on already-rewritten bytecode is a no-op via
-                    // the LOGIC field check in BridgeRewriter; (b) Java/Scala/Kotlin compile
-                    // tasks track source-file state for up-to-date checks, not output
-                    // state, so the post-hoc mutation doesn't trigger unnecessary recompiles;
-                    // and (c) there's precedent in the mixin-tooling ecosystem — Sponge
-                    // mixin's refmap remap and Loom's remapping tasks similarly mutate
-                    // compile output. New classes (bridge interface, impl, lambda wrappers)
-                    // still go to outClassesDir, which is properly declared.
+                    // the LOGIC field check in BridgeRewriter; (b) there's precedent in the
+                    // mixin-tooling ecosystem — Sponge mixin's refmap remap and Loom's
+                    // remapping tasks similarly mutate compile output. New classes (bridge
+                    // interface, impl, lambda wrappers) still go to outClassesDir, which is
+                    // properly declared.
+                    //
+                    // It does have a real cost: Gradle snapshots task OUTPUTS as well as
+                    // sources, so the mutation dirties the compile task and the next build
+                    // recompiles it in full. (An earlier version of this comment claimed the
+                    // opposite — that compile tasks only track source state — which is wrong.)
+                    // That recompile used to be load-bearing, because it was the only thing
+                    // restoring the original bytecode this task needs to rebuild its plan
+                    // from. It isn't any more: getSourceCacheDir() keeps the pre-rewrite bytes
+                    // so a build in which the compile task does NOT re-run (FROM-CACHE, a
+                    // partial restore, a task-graph that excludes it) still regenerates every
+                    // bridge and the manifest.
                     Files.write(classFile, rewritten);
+                    Files.createDirectories(cachedOriginal.getParent());
+                    Files.write(cachedOriginal, bytes);
+                    Files.writeString(rewrittenStamp, Sha256.hex(rewritten), StandardCharsets.UTF_8);
                     rewrittenMixins.add(fqn);
                     perMixinTargets.put(fqn, result.targets());
                     for (var e : result.targets().entrySet()) {

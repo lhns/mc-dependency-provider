@@ -46,14 +46,18 @@ public final class BridgePolicy {
     private final String bridgePackageDot;
 
     public BridgePolicy(List<String> sharedPackages, String bridgePackage) {
-        // Normalize incoming sharedPackages to dotted form so the matcher can compare uniformly,
-        // regardless of whether the user wrote {@code "com.example.api"} (typical) or
-        // {@code "com/example/api/"} (internal-form). Trailing dot is normalized too — the
-        // ModClassLoader treats prefix entries as a {@code startsWith} test, and we mirror that
-        // here.
+        // Normalize incoming sharedPackages to dotted form WITH a trailing dot so the matcher
+        // compares uniformly, regardless of whether the user wrote "com.example.api" (typical),
+        // "com.example.api." or "com/example/api/" (internal-form). The trailing dot matters:
+        // without it, a bare "com.example.api" entry also matches "com.example.apiextra.Foo"
+        // via startsWith. ModClassLoader applies the same normalization in its constructor, and
+        // SharedPackageContentValidator / CrossLoaderCastValidator do the same — one rule in all
+        // four places, so the codegen bridges exactly what the runtime does not share.
         List<String> normalized = new java.util.ArrayList<>();
         for (String p : sharedPackages) {
-            normalized.add(toDotted(p));
+            String dotted = toDotted(p);
+            if (!dotted.endsWith(".")) dotted = dotted + ".";
+            normalized.add(dotted);
         }
         this.sharedPackages = List.copyOf(normalized);
         this.bridgePackageDot = Objects.requireNonNull(bridgePackage) + ".";

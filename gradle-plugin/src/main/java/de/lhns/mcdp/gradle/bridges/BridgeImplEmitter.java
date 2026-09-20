@@ -51,7 +51,7 @@ public final class BridgeImplEmitter {
     }
 
     public byte[] emit(String targetInternalName, List<BridgeMember> members) {
-        String simple = BridgeRewriter.simpleName(targetInternalName);
+        String simple = BridgeRewriter.bridgeSimpleName(targetInternalName);
         String ifaceInternal = bridgePackageInternal + "/" + simple + "Bridge";
         String implInternal = implPackageInternal + "/" + simple + "BridgeImpl";
 
@@ -167,6 +167,6 @@ public final class BridgeImplEmitter {
 
     public String implFqn(String targetInternalName) {
         return BridgePolicy.toDotted(implPackageInternal) + "."
-                + BridgeRewriter.simpleName(targetInternalName) + "BridgeImpl";
+                + BridgeRewriter.bridgeSimpleName(targetInternalName) + "BridgeImpl";
     }
 }

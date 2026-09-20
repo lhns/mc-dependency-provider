@@ -4,8 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import java.util.List;
 
@@ -115,6 +118,162 @@ class BridgeScannerLambdaTest {
         assertEquals("Ljava/lang/String;", caps[0].getDescriptor());
     }
 
+    @Test
+    void siteCarriesTheOriginalBootstrapVerbatim() {
+        // The wrapper emitter replays this metadata instead of re-deriving it, so the scanner
+        // must hand it over untouched -- including the erased/instantiated MethodType split.
+        byte[] bytes = mixinWithLambda(
+                "com/example/mod/MixinFoo",
+                "java/util/function/Supplier",
+                "()Ljava/util/function/Supplier;",
+                false);
+        LambdaSite site = new BridgeScanner(policy).scan(bytes).lambdaSites().get(0);
+        assertEquals(metafactoryBsm(), site.bsm());
+        Object[] args = site.bsmArgs();
+        assertEquals(3, args.length);
+        assertEquals(Type.getType("()Ljava/lang/Object;"), args[0]);
+        assertEquals(Type.getType("()Ljava/lang/Object;"), args[2]);
+
+        Object[] moved = site.relocatedBsmArgs("some/impl/Wrapper");
+        assertEquals("some/impl/Wrapper", ((Handle) moved[1]).getOwner());
+        assertEquals(site.implMethod().getName(), ((Handle) moved[1]).getName());
+        assertEquals(site.implMethod().getDesc(), ((Handle) moved[1]).getDesc());
+        assertEquals(args[0], moved[0]);
+        assertEquals(args[2], moved[2]);
+    }
+
+    @Test
+    void altMetafactoryTrailingArgsSurviveRelocation() {
+        byte[] bytes = mixinWithLambda(
+                "com/example/mod/MixinFoo",
+                "java/util/function/Supplier",
+                "()Ljava/util/function/Supplier;",
+                true);
+        LambdaSite site = new BridgeScanner(policy).scan(bytes).lambdaSites().get(0);
+        Object[] moved = site.relocatedBsmArgs("some/impl/Wrapper");
+        assertEquals(5, moved.length, "altMetafactory's flags word must be carried over");
+        assertEquals(5, moved[3]);
+        assertEquals(0, moved[4]);
+    }
+
+    @Test
+    void instanceSyntheticLambdaIsRejectedWithAWarningNamingItsParts() {
+        // A lambda capturing the receiver compiles to an instance synthetic. There is no sound
+        // way to move it onto a wrapper class (the factory signature would have to name the
+        // mixin), so the scanner must refuse the site rather than emit a static copy whose
+        // ALOAD 0 reads a slot that no longer exists.
+        byte[] bytes = mixinWithInstanceCapturingLambda("com/example/mod/MixinFoo");
+        BridgeScanResult r = new BridgeScanner(policy).scan(bytes);
+        assertEquals(0, r.lambdaSites().size(), "instance synthetic must not yield a site");
+        String w = r.warnings().stream().filter(x -> x.contains("captures"))
+                .findFirst().orElse(null);
+        assertTrue(w != null, "expected a rejection warning, got: " + r.warnings());
+        assertTrue(w.contains("com.example.mod.MixinFoo"), w);
+        assertTrue(w.contains("handler"), w);
+        assertTrue(w.contains("lambda$body$0"), w);
+    }
+
+    @Test
+    void indyOrdinalIsIndependentOfClassReaderFlags() {
+        // The scanner reads with SKIP_FRAMES; the rewriter historically read with flags=0, and
+        // a raw instruction index therefore drifted by one per FrameNode ahead of the site. The
+        // recorded position must be identical under both.
+        byte[] bytes = mixinWithBranchThenLambda("com/example/mod/MixinFoo");
+
+        ClassNode skipped = new ClassNode();
+        new ClassReader(bytes).accept(skipped, ClassReader.SKIP_FRAMES);
+        ClassNode withFrames = new ClassNode();
+        new ClassReader(bytes).accept(withFrames, 0);
+
+        assertTrue(countFrames(withFrames) > 0,
+                "fixture must actually carry StackMapTable frames or it proves nothing");
+        assertEquals(0, countFrames(skipped));
+
+        int a = new BridgeScanner(policy).scan(skipped).lambdaSites().get(0).indyOrdinal();
+        int b = new BridgeScanner(policy).scan(withFrames).lambdaSites().get(0).indyOrdinal();
+        assertEquals(a, b, "lambda site position must not depend on reader flags");
+    }
+
+    private static int countFrames(ClassNode cn) {
+        int n = 0;
+        for (MethodNode m : cn.methods) {
+            for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+                if (insn instanceof org.objectweb.asm.tree.FrameNode) n++;
+            }
+        }
+        return n;
+    }
+
+    /** {@code handler()} whose lambda body is an INSTANCE synthetic capturing the receiver. */
+    private static byte[] mixinWithInstanceCapturingLambda(String containerInternal) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, containerInternal, null,
+                "java/lang/Object", null);
+        ctor(cw);
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC,
+                "handler", "()Ljava/util/function/Supplier;", null, null);
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ALOAD, 0);   // capture #0 is the receiver
+        Handle impl = new Handle(Opcodes.H_INVOKESPECIAL, containerInternal,
+                "lambda$body$0", "()Ljava/lang/Object;", false);
+        mv.visitInvokeDynamicInsn("get",
+                "(L" + containerInternal + ";)Ljava/util/function/Supplier;",
+                metafactoryBsm(),
+                Type.getType("()Ljava/lang/Object;"),
+                impl,
+                Type.getType("()Ljava/lang/Object;"));
+        mv.visitInsn(Opcodes.ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+
+        MethodVisitor synth = cw.visitMethod(
+                Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC,   // NOT static
+                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+        synth.visitCode();
+        synth.visitVarInsn(Opcodes.ALOAD, 0);
+        synth.visitInsn(Opcodes.ARETURN);
+        synth.visitMaxs(0, 0);
+        synth.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /** A branch (hence a StackMapTable frame) ahead of the lambda site. */
+    private static byte[] mixinWithBranchThenLambda(String containerInternal) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, containerInternal, null,
+                "java/lang/Object", null);
+        ctor(cw);
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                "handler", "(Z)Ljava/util/function/Supplier;", null, null);
+        mv.visitCode();
+        org.objectweb.asm.Label join = new org.objectweb.asm.Label();
+        mv.visitVarInsn(Opcodes.ILOAD, 0);
+        mv.visitJumpInsn(Opcodes.IFEQ, join);
+        mv.visitInsn(Opcodes.NOP);
+        mv.visitLabel(join);
+        Handle impl = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
+                "lambda$body$0", "()Ljava/lang/Object;", false);
+        mv.visitInvokeDynamicInsn("get", "()Ljava/util/function/Supplier;", metafactoryBsm(),
+                Type.getType("()Ljava/lang/Object;"), impl,
+                Type.getType("()Ljava/lang/Object;"));
+        mv.visitInsn(Opcodes.ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+
+        MethodVisitor synth = cw.visitMethod(
+                Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
+                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+        synth.visitCode();
+        synth.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/MyMod", "compute",
+                "()Ljava/lang/Object;", false);
+        synth.visitInsn(Opcodes.ARETURN);
+        synth.visitMaxs(0, 0);
+        synth.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
     /**
      * Build a class with one method containing a single LambdaMetafactory indy. The
      * implementation method is a synthetic that INVOKESTATICs {@code com/example/mod/MyMod.compute}
@@ -130,19 +289,24 @@ class BridgeScannerLambdaTest {
         MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
                 "handler", "()L" + samInternal + ";", null, null);
         mv.visitCode();
-        Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
-                "java/lang/invoke/LambdaMetafactory",
-                alt ? "altMetafactory" : "metafactory",
-                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
-                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
-                        + "Ljava/lang/invoke/CallSite;",
-                false);
+        Handle bsm = alt ? altMetafactoryBsm() : metafactoryBsm();
         Handle implMethod = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
                 "lambda$body$0", "()Ljava/lang/Object;", false);
-        mv.visitInvokeDynamicInsn("get", indyDesc, bsm,
-                Type.getType("()Ljava/lang/Object;"),
-                implMethod,
-                Type.getType("()Ljava/lang/Object;"));
+        if (alt) {
+            // altMetafactory takes the same three leading args plus a flags word (and, per
+            // flag, further trailing args). FLAG_SERIALIZABLE | FLAG_MARKERS = 5, with a
+            // marker-interface count of 0.
+            mv.visitInvokeDynamicInsn("get", indyDesc, bsm,
+                    Type.getType("()Ljava/lang/Object;"),
+                    implMethod,
+                    Type.getType("()Ljava/lang/Object;"),
+                    5, 0);
+        } else {
+            mv.visitInvokeDynamicInsn("get", indyDesc, bsm,
+                    Type.getType("()Ljava/lang/Object;"),
+                    implMethod,
+                    Type.getType("()Ljava/lang/Object;"));
+        }
         mv.visitInsn(Opcodes.ARETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
@@ -170,13 +334,7 @@ class BridgeScannerLambdaTest {
         MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
                 "handler", "()Ljava/util/function/Supplier;", null, null);
         mv.visitCode();
-        Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
-                "java/lang/invoke/LambdaMetafactory",
-                "metafactory",
-                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
-                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
-                        + "Ljava/lang/invoke/CallSite;",
-                false);
+        Handle bsm = metafactoryBsm();
         // impl handle points at a DIFFERENT class — that's a method reference, not an inline lambda
         Handle implMethod = new Handle(Opcodes.H_INVOKESTATIC, referencedOwner,
                 "compute", "()Ljava/lang/Object;", false);
@@ -222,13 +380,7 @@ class BridgeScannerLambdaTest {
         MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
                 "handler", "()V", null, null);
         mv.visitCode();
-        Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
-                "java/lang/invoke/LambdaMetafactory",
-                "metafactory",
-                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
-                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
-                        + "Ljava/lang/invoke/CallSite;",
-                false);
+        Handle bsm = metafactoryBsm();
         Handle implA = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
                 "lambda$body$0", "()Ljava/lang/Object;", false);
         Handle implB = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
@@ -279,13 +431,7 @@ class BridgeScannerLambdaTest {
                 "handler", "()V", null, null);
         mv.visitCode();
         mv.visitLdcInsn("captured");
-        Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
-                "java/lang/invoke/LambdaMetafactory",
-                "metafactory",
-                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
-                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
-                        + "Ljava/lang/invoke/CallSite;",
-                false);
+        Handle bsm = metafactoryBsm();
         Handle impl = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
                 "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/Object;", false);
         mv.visitInvokeDynamicInsn("get", "(Ljava/lang/String;)Ljava/util/function/Supplier;", bsm,
@@ -308,6 +454,35 @@ class BridgeScannerLambdaTest {
 
         cw.visitEnd();
         return cw.toByteArray();
+    }
+
+    /**
+     * The real {@code LambdaMetafactory.metafactory}: a fixed 6-arg signature. A
+     * {@code MethodHandle} constant resolves by exact name <em>and</em> descriptor, so a
+     * fixture that pairs this name with {@code altMetafactory}'s varargs descriptor describes
+     * a call site the JVM could never link — and then agrees with an emitter that makes the
+     * same mistake. Both spellings live here so they cannot drift apart again.
+     */
+    static Handle metafactoryBsm() {
+        return new Handle(Opcodes.H_INVOKESTATIC,
+                "java/lang/invoke/LambdaMetafactory",
+                "metafactory",
+                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
+                        + "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;"
+                        + "Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
+                        + "Ljava/lang/invoke/CallSite;",
+                false);
+    }
+
+    /** {@code LambdaMetafactory.altMetafactory}: the varargs form. */
+    static Handle altMetafactoryBsm() {
+        return new Handle(Opcodes.H_INVOKESTATIC,
+                "java/lang/invoke/LambdaMetafactory",
+                "altMetafactory",
+                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
+                        + "Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
+                        + "Ljava/lang/invoke/CallSite;",
+                false);
     }
 
     private static void ctor(ClassWriter cw) {
