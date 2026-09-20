@@ -27,8 +27,6 @@ import java.util.Map;
  */
 public final class MiniToml {
 
-    static final String LIBRARIES_KEY = "libraries";
-
     private MiniToml() {}
 
     /**

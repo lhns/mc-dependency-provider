@@ -142,18 +142,12 @@ public final class McdpProvider {
             // First miss → invoke the platform adapter's eager-populate hook. Only run once;
             // subsequent misses are real (impl missing or codegen incomplete).
             Runnable p = lazyPopulator;
-            if (p != null && !lazyPopulatorRan) {
-                synchronized (McdpProvider.class) {
-                    if (!lazyPopulatorRan) {
-                        lazyPopulatorRan = true;
-                        try {
-                            p.run();
-                        } catch (Throwable t) {
-                            throw new IllegalStateException(
-                                    "mcdepprovider: lazy bridge-registry populator failed", t);
-                        }
-                    }
-                }
+            if (p != null) {
+                runLazyPopulatorOnce(p);
+                // Unconditional re-read: we get here either because we ran the populator or
+                // because another thread did. Mixin <clinit>s fire from several game threads
+                // during bootstrap, so a second thread must see the entry the first one
+                // registered rather than the miss it read before the populate started.
                 e = AUTO_BRIDGE_REGISTRY.get(key);
             }
         }
@@ -171,6 +165,27 @@ public final class McdpProvider {
         } catch (ReflectiveOperationException ex) {
             throw new IllegalStateException("mcdepprovider: failed to instantiate auto-bridge impl "
                     + e.implFqn() + " for " + mixinFqn + "." + fieldName, ex);
+        }
+    }
+
+    /**
+     * Run the lazy populator at most once, holding the lock for the whole populate so that a
+     * concurrent caller <em>waits</em> for it instead of racing past a half-filled registry.
+     * The flag is only set once {@code p.run()} has returned normally — a populator that blew up
+     * (adapter not ready yet, transient I/O) must be retryable, otherwise every later miss would
+     * be reported as "no auto-bridge registered" and hide the real cause.
+     */
+    private static void runLazyPopulatorOnce(Runnable p) {
+        if (lazyPopulatorRan) return;
+        synchronized (McdpProvider.class) {
+            if (lazyPopulatorRan) return;
+            try {
+                p.run();
+            } catch (Throwable t) {
+                throw new IllegalStateException(
+                        "mcdepprovider: lazy bridge-registry populator failed", t);
+            }
+            lazyPopulatorRan = true;
         }
     }
 
@@ -241,8 +256,11 @@ public final class McdpProvider {
             throw new IllegalStateException("loadMixinImpl: failed to instantiate " + implCls.getName(), e);
         }
 
-        MIXIN_IMPL_CACHE.put(iface, instance);
-        return iface.cast(instance);
+        // putIfAbsent, not put: two mixin <clinit>s racing on the same interface would otherwise
+        // each publish their own instance into a `static final` field, so the losing object stays
+        // live with mod state nobody else can see. First writer wins for everyone.
+        Object existing = MIXIN_IMPL_CACHE.putIfAbsent(iface, instance);
+        return iface.cast(existing != null ? existing : instance);
     }
 
     private static ModClassLoader resolveLoader(Class<?> mixin, String annModId) {
@@ -282,10 +300,7 @@ public final class McdpProvider {
         MOD_LOADERS_BY_MIXIN_FQN.clear();
         AUTO_BRIDGE_REGISTRY.clear();
         AUTO_BRIDGE_IMPL_CACHE.clear();
-    }
-
-    /** Package-private (exposed for tests) — clears just the impl cache. */
-    static void clearImplCacheForTests() {
-        MIXIN_IMPL_CACHE.clear();
+        lazyPopulator = null;
+        lazyPopulatorRan = false;
     }
 }

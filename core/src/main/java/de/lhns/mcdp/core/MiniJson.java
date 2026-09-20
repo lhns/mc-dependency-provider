@@ -65,7 +65,7 @@ final class MiniJson {
             Object v = value();
             out.put(key, v);
             skipWs();
-            char c = s.charAt(i++);
+            char c = next();
             if (c == ',') continue;
             if (c == '}') return out;
             throw err("expected , or }");
@@ -80,7 +80,7 @@ final class MiniJson {
         while (true) {
             out.add(value());
             skipWs();
-            char c = s.charAt(i++);
+            char c = next();
             if (c == ',') continue;
             if (c == ']') return out;
             throw err("expected , or ]");
@@ -139,6 +139,17 @@ final class MiniJson {
     private void expect(char c) {
         if (i >= s.length() || s.charAt(i) != c) throw err("expected " + c);
         i++;
+    }
+
+    /**
+     * Consume one char. Bounds-checked so a truncated document (e.g. a {@code *.mixins.json}
+     * cut short by a partial download) surfaces as our own {@link IllegalArgumentException}
+     * rather than a {@link StringIndexOutOfBoundsException} — callers like
+     * {@code MixinConfigScanner} catch the former to keep their best-effort contract.
+     */
+    private char next() {
+        if (i >= s.length()) throw err("unexpected end");
+        return s.charAt(i++);
     }
 
     private char peek() {

@@ -93,4 +93,24 @@ class MixinConfigScannerTest {
             assertEquals(List.of(), registered);
         }
     }
+
+    /**
+     * A config truncated mid-document (partial download, interrupted write) must stay on the
+     * best-effort path: the parser has to report it as an {@link IllegalArgumentException},
+     * which is what the scanner catches. A raw {@code StringIndexOutOfBoundsException} would
+     * escape and turn this into a boot crash.
+     */
+    @Test
+    void bestEffortSilentOnTruncatedConfig(@TempDir Path tmp) throws Exception {
+        Path root = Files.createDirectories(tmp.resolve("mod-root"));
+        Files.writeString(root.resolve("cut.mixins.json"),
+                "{\"package\":\"com.example.mixin\",\"mixins\":[\"FooMixin\"]");
+
+        try (var loader = new ModClassLoader("m1", new URL[0], getClass().getClassLoader(), List.of())) {
+            McdpProvider.registerMod("m1", loader);
+            List<String> registered = MixinConfigScanner.registerMixinOwnersFromConfigs(
+                    "m1", List.of(root), List.of("cut.mixins.json"));
+            assertEquals(List.of(), registered);
+        }
+    }
 }

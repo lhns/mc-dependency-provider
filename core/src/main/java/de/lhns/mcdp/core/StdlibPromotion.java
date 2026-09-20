@@ -125,11 +125,39 @@ public final class StdlibPromotion {
     }
 
     private static int comparePart(String a, String b) {
-        boolean na = a.matches("\\d+"), nb = b.matches("\\d+");
-        if (na && nb) return Integer.compare(Integer.parseInt(a), Integer.parseInt(b));
+        boolean na = isDigits(a), nb = isDigits(b);
+        if (na && nb) return compareNumeric(a, b);
         if (na) return 1;   // numeric > non-numeric qualifier ("3.5.2" > "3.5-alpha")
         if (nb) return -1;
         return Integer.compare(qualifierRank(a.toLowerCase()), qualifierRank(b.toLowerCase()));
+    }
+
+    private static boolean isDigits(String s) {
+        if (s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') return false;
+        }
+        return true;
+    }
+
+    /**
+     * Compare two all-digit components without parsing them: a timestamped snapshot component
+     * like {@code 1.0-20240101120000-1} overflows {@code int}, and the resulting
+     * {@code NumberFormatException} would kill boot. With leading zeros stripped, the longer
+     * digit string is the larger number and equal-length strings compare lexicographically —
+     * identical ordering to the arithmetic compare, minus the range limit.
+     */
+    private static int compareNumeric(String a, String b) {
+        String x = stripLeadingZeros(a), y = stripLeadingZeros(b);
+        if (x.length() != y.length()) return Integer.compare(x.length(), y.length());
+        return x.compareTo(y);
+    }
+
+    private static String stripLeadingZeros(String s) {
+        int i = 0;
+        while (i < s.length() - 1 && s.charAt(i) == '0') i++;
+        return s.substring(i);
     }
 
     private static int qualifierRank(String q) {

@@ -4,6 +4,7 @@ import de.lhns.mcdp.api.McdpProvider;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public final class MixinConfigScanner {
             Path resolved = resolveInRoots(modRoots, cfg);
             if (resolved == null || !Files.exists(resolved)) continue;
             try (InputStream in = Files.newInputStream(resolved)) {
-                String text = new String(in.readAllBytes());
+                String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
                 List<String> fqns = extractFqnsFromConfig(text);
                 for (String fqn : fqns) {
                     McdpProvider.registerMixinOwner(fqn, modId);

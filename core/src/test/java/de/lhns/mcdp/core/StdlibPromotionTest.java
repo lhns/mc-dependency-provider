@@ -100,4 +100,22 @@ class StdlibPromotionTest {
         assertThrows(IllegalArgumentException.class,
                 () -> StdlibPromotion.stemOf("com.example:lib"));
     }
+
+    /**
+     * Timestamped snapshot components ("1.0-20240101120000-1") exceed Integer.MAX_VALUE.
+     * Comparing them must still work — and must not throw NumberFormatException, which used to
+     * kill boot during dependency resolution.
+     */
+    @Test
+    void versionCompareHandlesOversizedNumericComponents() {
+        assertTrue(StdlibPromotion.compareVersions("1.0-20240101120000-2",
+                "1.0-20240101120000-1") > 0);
+        assertTrue(StdlibPromotion.compareVersions("1.0-20240102120000-1",
+                "1.0-20240101120000-1") > 0);
+        assertEquals(0, StdlibPromotion.compareVersions("1.0-20240101120000-1",
+                "1.0-20240101120000-1"));
+        assertTrue(StdlibPromotion.compareVersions("99999999999999999999", "9999999999999999999") > 0);
+        // Leading zeros are not significant.
+        assertEquals(0, StdlibPromotion.compareVersions("3.05.2", "3.5.2"));
+    }
 }

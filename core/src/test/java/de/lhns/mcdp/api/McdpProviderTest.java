@@ -10,6 +10,13 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -284,6 +291,138 @@ class McdpProviderTest {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> McdpProvider.resolveAutoBridgeImpl("com.example.Nope", "LOGIC_None"));
         assertTrue(ex.getMessage().contains("no auto-bridge registered"), ex.getMessage());
+    }
+
+    /**
+     * Two mixin {@code <clinit>}s racing into {@link McdpProvider#resolveAutoBridgeImpl} while a
+     * slow populator is running: the second thread must WAIT for the populate and then see the
+     * entry, not sail past a "populator already started" flag and report the bridge as missing.
+     * This was a flaky boot failure — the losing thread threw "no auto-bridge registered" for a
+     * mod whose codegen was perfectly fine.
+     */
+    @Test
+    void concurrentResolveWaitsForSlowLazyPopulator(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path tomlFile = writeBridgeToml(tmp, """
+                [[bridge]]
+                mixin = "com.example.SlowMixin"
+                field = "LOGIC_S"
+                interface = "de.lhns.mcdp.api.FakeImplBridge"
+                impl = "de.lhns.mcdp.api.FakeImpl"
+                """);
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "slow-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            McdpProvider.registerMod("slow-mod", mod);
+
+            AtomicInteger runs = new AtomicInteger();
+            McdpProvider.installLazyPopulator(() -> {
+                runs.incrementAndGet();
+                try {
+                    Thread.sleep(300); // wide enough for the second thread to arrive mid-populate
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+                McdpProvider.registerAutoBridgeManifestToml(mod, tomlFile);
+            });
+
+            CyclicBarrier start = new CyclicBarrier(2);
+            Callable<Object> task = () -> {
+                start.await(10, TimeUnit.SECONDS);
+                return McdpProvider.resolveAutoBridgeImpl("com.example.SlowMixin", "LOGIC_S");
+            };
+
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Future<Object> f1 = pool.submit(task);
+                Future<Object> f2 = pool.submit(task);
+                Object a = f1.get(30, TimeUnit.SECONDS);
+                Object b = f2.get(30, TimeUnit.SECONDS);
+                assertNotNull(a);
+                assertSame(a, b, "both threads must share one impl instance");
+                assertEquals(1, runs.get(), "populator must run exactly once");
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    /**
+     * A populator that blew up must stay retryable — otherwise the first transient failure
+     * strands the registry and every later miss is misreported as "no auto-bridge registered".
+     */
+    @Test
+    void lazyPopulatorIsRetriedAfterFailure(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path tomlFile = writeBridgeToml(tmp, """
+                [[bridge]]
+                mixin = "com.example.RetryMixin"
+                field = "LOGIC_R"
+                interface = "de.lhns.mcdp.api.FakeImplBridge"
+                impl = "de.lhns.mcdp.api.FakeImpl"
+                """);
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "retry-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            McdpProvider.registerMod("retry-mod", mod);
+
+            AtomicInteger runs = new AtomicInteger();
+            McdpProvider.installLazyPopulator(() -> {
+                if (runs.incrementAndGet() == 1) throw new RuntimeException("adapter not ready");
+                McdpProvider.registerAutoBridgeManifestToml(mod, tomlFile);
+            });
+
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> McdpProvider.resolveAutoBridgeImpl("com.example.RetryMixin", "LOGIC_R"));
+            assertTrue(ex.getMessage().contains("populator failed"), ex.getMessage());
+
+            assertNotNull(McdpProvider.resolveAutoBridgeImpl("com.example.RetryMixin", "LOGIC_R"));
+            assertEquals(2, runs.get());
+        }
+    }
+
+    /**
+     * Two threads resolving the same bridge interface must end up with the SAME instance: the
+     * loser of a {@code put} race would otherwise stay live in a mixin's {@code static final}
+     * field, holding mod state nobody else can see.
+     */
+    @Test
+    void concurrentLoadMixinImplReturnsOneInstance(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+
+        try (ModClassLoader mod = new ModClassLoader(
+                "test-mod",
+                new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(),
+                List.of())) {
+            McdpProvider.registerMod("test-mod", mod);
+
+            CyclicBarrier start = new CyclicBarrier(2);
+            Callable<Logic> task = () -> {
+                start.await(10, TimeUnit.SECONDS);
+                return FakeMixin.load();
+            };
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Future<Logic> f1 = pool.submit(task);
+                Future<Logic> f2 = pool.submit(task);
+                Logic a = f1.get(30, TimeUnit.SECONDS);
+                Logic b = f2.get(30, TimeUnit.SECONDS);
+                assertNotNull(a);
+                assertSame(a, b);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
     }
 
     /**
