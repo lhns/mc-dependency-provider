@@ -23,7 +23,7 @@
   },
 
   "depends": {
-    "fabricloader": ">=0.16.0",
-    "java": ">=21"
+    "fabricloader": ">=${fabricLoader}",
+    "java": ">=${javaRelease}"
   }
 }

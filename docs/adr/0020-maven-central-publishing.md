@@ -1,6 +1,9 @@
 # ADR-0020: Maven Central publishing strategy
 
-**Status:** Accepted — pre-v0.1.0 release-readiness work. The *publishing mechanism* (vanniktech + Central Portal) is unchanged; the "only two artifacts" constraint below is superseded by [ADR-0023](0023-multi-mc-band-publication.md), which publishes one aggregator per Minecraft band (six today: `mcdp-1.17`, `-1.18`, `-1.20`, `-1.20.6`, `-1.21`, `-26.1`) alongside `:gradle-plugin`.
+**Status:** Accepted — pre-v0.1.0 release-readiness work. The *publishing mechanism* (vanniktech + Central Portal) is unchanged. Two parts of this ADR are superseded:
+
+- the "only two artifacts" constraint, by [ADR-0023](0023-multi-mc-band-publication.md), which publishes one aggregator per Minecraft band (six today: `mcdp-1.17`, `-1.18`, `-1.20`, `-1.20.6`, `-1.21`, `-26.1`) alongside `:gradle-plugin`;
+- the `automaticRelease = false` staging gate, by [ADR-0026](0026-automatic-release.md). **There is no manual Portal click today** — releases auto-publish, gated on CI instead.
 
 ## Context
 
@@ -24,17 +27,22 @@ Use the community-maintained `com.vanniktech.maven.publish` Gradle plugin to han
 - GPG signing via in-memory key (no on-disk keyring needed; CI passes the armored key as an env var).
 - Central Portal staging-bundle upload.
 
-Apply at **root level** with `apply false`, then in each publishable subproject (`:mcdp`, `:gradle-plugin`) so both subprojects share one classloader. Without this, the plugin's `SonatypeRepositoryBuildService` is loaded twice and Gradle rejects the cross-classloader build-service handoff (`Cannot set the value of task '…createStagingRepository' property 'buildService' of type ….SonatypeRepositoryBuildService using a provider of type ….SonatypeRepositoryBuildService`).
+The plugin must be loaded exactly **once**, in one classloader, across every publishable subproject. Without that, the plugin's `SonatypeRepositoryBuildService` is loaded twice and Gradle rejects the cross-classloader build-service handoff (`Cannot set the value of task '…createStagingRepository' property 'buildService' of type ….SonatypeRepositoryBuildService using a provider of type ….SonatypeRepositoryBuildService`).
 
-### `automaticRelease = false`
+As originally shipped that meant applying it at root level with `apply false` and then in each publishable subproject. The *reason* still holds, but the mechanism has since moved: the plugin is declared on `buildSrc`'s classpath (`buildSrc/build.gradle.kts`) and applied by the `mcdp.band-aggregator` convention plugin, which puts it on every build script's classpath in one classloader. `:gradle-plugin`, which is not a band, requests the same already-on-classpath plugin directly. See the Consequences note below for the version-less-`id(...)` requirement this imposes.
 
-Bundles land in Central Portal staging (`https://central.sonatype.com/publishing`). The maintainer reviews and clicks "publish" manually. Avoids accidental releases from a misfired CI run; trades convenience for an audit checkpoint we want during pre-1.0.
+### `automaticRelease = false` *(superseded by [ADR-0026](0026-automatic-release.md))*
+
+As decided here: bundles land in Central Portal staging (`https://central.sonatype.com/publishing`), and the maintainer reviews and clicks "publish" manually. Avoids accidental releases from a misfired CI run; trades convenience for an audit checkpoint we wanted during pre-1.0.
+
+**This is no longer what the build does.** ADR-0026 flipped the flag to `true` once the publish workflow grew a Tier 1 + Tier 2 green-CI gate to stand in for the manual review; the setting now lives in `buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts` and `gradle-plugin/build.gradle.kts`.
 
 ### CI workflow: `.github/workflows/publish.yml`
 
-- Trigger: `release: published` (cuts a GitHub release → publishes to staging) plus `workflow_dispatch` for manual reruns.
+- Trigger: `release: published` (cutting a GitHub release publishes) plus `workflow_dispatch` for manual reruns.
 - Concurrency group `publish-${ref}`, `cancel-in-progress: false` — never cancel an in-flight upload.
 - One job: checkout, JDK 21 (Temurin), Gradle home cache, `./gradlew build` (sanity gate), `./gradlew publishToMavenCentral` with credentials in env. `--no-configuration-cache` to keep vanniktech happy.
+- Since ADR-0026 the workflow also publishes `-SNAPSHOT`s on green `main` builds, and gates every `workflow_run` firing on Tier 1 + Tier 2 having succeeded for the same commit.
 
 ### Secret namespace
 
@@ -55,7 +63,7 @@ The Gradle property names vanniktech reads (`mavenCentralUsername`, `signingInMe
 **Positive**
 
 - Cutting a GitHub release is the only action needed to ship: the workflow handles bundling, signing, and upload in one run.
-- Central Portal staging is the human-review chokepoint. Misfires don't reach consumers.
+- ~~Central Portal staging is the human-review chokepoint. Misfires don't reach consumers.~~ Per ADR-0026 the chokepoint is the CI gate instead: a release only uploads if Tier 1 and Tier 2 were green for that commit.
 - Only two artifacts (`:mcdp`, `:gradle-plugin`) — easy mental model for what's published vs internal.
 - Single plugin (vanniktech) handles every task in the bundle pipeline. No hand-rolled curl uploads or multi-plugin orchestration.
 
@@ -74,6 +82,6 @@ The Gradle property names vanniktech reads (`mavenCentralUsername`, `signingInMe
 
 **Sonatype-published official Gradle plugin.** Doesn't exist for Central Portal. Sonatype ships `central-publishing-maven-plugin` (Maven) but for Gradle they direct users to community options. Nothing to switch to.
 
-**`automaticRelease = true`.** Skips the staging-review checkpoint. Rejected for now — pre-1.0, we want every release to pass through human review. Revisit post-1.0 once the workflow has a track record.
+**`automaticRelease = true`.** Skips the staging-review checkpoint. Rejected *at the time* — pre-1.0, we wanted every release to pass through human review. **Subsequently adopted: see [ADR-0026](0026-automatic-release.md).**
 
 **Publish all subprojects (`:fabric`, `:neoforge`, `:core`, `:deps-lib`) individually.** Rejected per ADR-0016: those are internal, shaded into `:mcdp`, and have no consumer-facing API surface of their own.

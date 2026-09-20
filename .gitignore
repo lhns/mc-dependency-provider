@@ -2,6 +2,8 @@
 build/
 */build/
 .idea/
+.kotlin/
+*/.kotlin/
 *.iml
 .vscode/
 .DS_Store

@@ -33,10 +33,10 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 ### Source structure
 
 - `core/` and `deps-lib/`: target Java 16. Single source tree, all bands consume.
-- `fabric/` (renamed `:fabric-1.21`): canonical Fabric adapter source. Other Fabric bands (`fabric-1.17/`, `fabric-1.18/`, `fabric-1.20/`, `fabric-1.20.6/`, `fabric-26.1/`) share this source via `sourceSets.main.java.srcDirs(rootProject.file("fabric/src/main/java"))` and only differ in their `targetCompatibility`. The Fabric `LanguageAdapter` + `PreLaunchEntrypoint` SPI surface is stable across fabric-loader 0.14+.
-- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). It *is* shared with `:neoforge-26.1` via `srcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.
+- `fabric/` (renamed `:fabric-1.21`): canonical Fabric adapter source. Other Fabric bands (`fabric-1.17/`, `fabric-1.18/`, `fabric-1.20/`, `fabric-1.20.6/`, `fabric-26.1/`) share this source via `sourceSets.main.java.setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))` — *set*, not the additive `srcDirs(...)`: the band's own `src/main/java` must be replaced, not added to, or a stale tree would compile in silently. They differ only in `mcdpBand.javaRelease` (which the `mcdp.shaded-jar` convention feeds to `options.release`; `targetCompatibility` is not used anywhere in this build) and in the two `fabric.mod.json` floors. The Fabric `LanguageAdapter` + `PreLaunchEntrypoint` SPI surface is stable across fabric-loader 0.14+.
+- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). It *is* shared with `:neoforge-26.1` via `setSrcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.
 - `forge-1.17/`, `forge-1.18/`, `forge-1.20/`: each has its own minimal source tree (currently a stub `McdpLanguageProvider`). Forge `IModLanguageProvider`'s top-level shape is stable across forgespi 3.2 (1.17), 4.0 (1.18), 7.x (1.20), so once one band's adapter is implemented the others mostly clone it.
-- `multi-<band>/` (Gradle path `:mcdp-<band>`): aggregator subproject. Bundles the band's adapters' shadowJars into one runtime artifact. Vanniktech maven-publish wired with `automaticRelease=true` per ADR-0020.
+- `multi-<band>/` (Gradle path `:mcdp-<band>`): aggregator subproject. Bundles the band's adapters' shadowJars into one runtime artifact. Vanniktech maven-publish wired with `automaticRelease=true` per [ADR-0026](0026-automatic-release.md) (ADR-0020 originally specified `false`).
 
 ### Rejected alternatives
 
@@ -49,7 +49,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 **Positive.**
 
 - Each band is independently versioned and released. Bumping `mcdp-1.21` doesn't force a re-cut of `mcdp-1.20.6`.
-- Source sharing via `srcDirs` (Fabric, where the SPI is stable) avoids duplicated maintenance for the common case.
+- Source sharing via `setSrcDirs` (Fabric, where the SPI is stable) avoids duplicated maintenance for the common case — and, since the `fabric.mod.json` template landed, the metadata too.
 - Forge SPI's stability across 3.2/4.0/7.x means once one Forge adapter is implemented properly, fanning out to the other bands is mostly mechanical.
 - New bands are addable without disturbing existing ones (e.g. when Mojang ships 26.2 or later, adding `mcdp-26.2` is a copy-and-tweak of the existing `mcdp-26.1` scaffold).
 
@@ -70,7 +70,7 @@ NeoForge fancymodloader 3.0.x (MC 1.20.6) and Forge fmlcore 4.0/7.x (MC 1.18, 1.
 
 NeoForge 4.0.x (MC 1.21) **dropped the field entirely**. So `McdpModContainer` worked unchanged on 1.21 but NPE'd on every earlier band the moment FML ran the lifecycle.
 
-**Decision.** On bands that have the field, set `this.contextExtension = () -> this;` in the McdpModContainer constructor. The supplier value is never inspected for our use case — FML only uses it to populate `ModLoadingContext`, which entry classes read via `FMLJavaModLoadingContext.get()`. Mods that call that helper won't see a real context, but mods that don't (which is the common case for mcdp-loaded mods — they receive their `ModContainer` directly via the constructor bag, ADR-0017) boot fine. Applied in `forge-1.18/.../McdpModContainer.java`, `forge-1.20/.../McdpModContainer.java`, `neoforge-1.20.6/.../McdpModContainer.java`. Skipped on the 1.21 canonical and on `neoforge-26.1` (same SPI line as 1.21, no field).
+**Decision.** On bands that have the field, set `this.contextExtension = () -> this;` in the McdpModContainer constructor. The supplier value is never inspected for our use case — FML only uses it to populate `ModLoadingContext`, which entry classes read via `FMLJavaModLoadingContext.get()`. Mods that call that helper won't see a real context, but mods that don't (which is the common case for mcdp-loaded mods — they receive their `ModContainer` directly via the constructor bag, ADR-0017) boot fine. Applied in `forge-1.18/.../McdpModContainer.java` — which `:forge-1.20` compiles too, since it has no source tree of its own and points its `srcDirs` at forge-1.18's — and in `neoforge-1.20.6/.../McdpModContainer.java`. Skipped on the 1.21 canonical and on `neoforge-26.1` (same SPI line as 1.21, no field).
 
 ### `FMLModType` per-band: LANGPROVIDER vs LIBRARY
 
@@ -87,20 +87,26 @@ The aggregator jar's MANIFEST attribute that tells FML how to route the jar:
 
 Getting the type wrong is silent: FML won't surface an error, the language provider just never gets discovered, and consumer mods fail with `Missing language mcdepprovider`. Recorded here so future band additions know to pick before runtime tells them.
 
-### Per-band `fabric.mod.json` overrides
+### Per-band `fabric.mod.json` floors
 
-ADR-0023 above states "Fabric bands share source via `srcDirs(rootProject.file("fabric/src/main/java"))`". That share covers Java source only. Each Fabric band keeps its **own** `src/main/resources/fabric.mod.json` because the `depends.fabricloader` and `depends.java` floors diverge per band:
+ADR-0023 above states that Fabric bands share source via `setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))`. The resources are shared the same way, but `fabric.mod.json` is a **template**: its `version` has to be filled in at build time, and the two `depends` floors are per-band:
 
 ```
 1.17    fabricloader >=0.14, java >=16
 1.18    fabricloader >=0.14, java >=17
 1.20    fabricloader >=0.15, java >=17
 1.20.6  fabricloader >=0.15, java >=21
-1.21    fabricloader >=0.16, java >=21    (canonical fabric/, unchanged)
+1.21    fabricloader >=0.16.0, java >=21    (canonical fabric/)
 26.1    fabricloader >=0.16, java >=21
 ```
 
-The shared `fabric/src/main/resources/fabric.mod.json` was originally consumed by every band via `resources.setSrcDirs(listOf(rootProject.file(...)))`. Its hard-pinned `fabricloader >=0.16.0` / `java >=21` made every pre-1.20.6 band fail at mod resolution: "Replace mod 'Fabric Loader' (fabricloader) 0.15.11 with version 0.16.0 or later". Per-band overrides fix it cleanly. This is the only file that's per-band rather than shared inside the Fabric source-set.
+A band that hard-pins the 1.21 floors fails at mod resolution on every older band: "Replace mod 'Fabric Loader' (fabricloader) 0.15.11 with version 0.16.0 or later". The original fix was one copy of the file per band — six 29-line files whose only differences were those two lines.
+
+**Decision.** One template in `fabric/src/main/resources/fabric.mod.json`, expanded by `processResources` in the `mcdp.band-adapter` convention plugin from `mcdpBand.fabricLoaderVersion` (the only new per-band knob; `depends.java` reuses `mcdpBand.javaRelease`, which is the same number by construction) and `project.version`.
+
+The `version` field is the reason this is wired at all rather than left as six literals: it has to be the real project version. Shipping a literal `${version}` — which every band's jar did before this — means Fabric's loader cannot parse it as semver, falls back to a `StringVersion`, and no consumer's `depends: { mcdepprovider: ">=0.1" }` can ever be satisfied. That shipped to Maven Central snapshots before it was caught.
+
+Two mechanical notes for anyone touching this: `expand()` runs Groovy's `SimpleTemplateEngine` over the file, which fails on *any* stray `$` in the resource, so it is scoped with `filesMatching("fabric.mod.json")` — the only other resources in these source sets are `META-INF/services/` entries. And the property map is a `Provider`, absent when `fabricLoaderVersion` is unset, so the Forge and NeoForge adapters (which have no `fabric.mod.json`) go through the same convention plugin untouched.
 
 ### MDG ↔ NeoForge version pairing
 

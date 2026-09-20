@@ -41,9 +41,10 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0017](0017-modcontainer-as-ctor-arg.md) | NeoForge mod construction inside `ModContainer.constructMod()` (enables `ModContainer` in entry ctor) | Accepted; supersedes part of 0013 |
 | [0018](0018-automatic-mixin-bridge-codegen.md) | Automatic Mixin → mod-private bridge codegen via bytecode rewriting | Accepted; refines 0008 |
 | [0019](0019-bridge-manifest-format-and-registration.md) | Bridge manifest format (TOML) and runtime registration | Accepted; supersedes 0018's runtime-wiring/manifest-discovery errata |
-| [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted |
+| [0020](0020-maven-central-publishing.md) | Maven Central publishing via vanniktech-maven-publish + Central Portal staging | Accepted; staging-gate decision superseded by 0026 |
 | [0021](0021-generalized-bridge-codegen.md) | Generalized bridge codegen — arbitrary annotation seeding + lambda-site coverage | Accepted; refines 0008/0018 |
 | [0022](0022-devroots-source-set-output-contract.md) | `dev_roots` is the plugin's contract for the per-mod ModClassLoader's URL list | Accepted; refines 0007 |
 | [0023](0023-multi-mc-band-publication.md) | Multi-Minecraft-band publication model (`mcdp-1.17` … `mcdp-26.1`) | Accepted; supersedes 0016's single-artifact assumption |
 | [0024](0024-sharedpackages-discipline.md) | `sharedPackages` discipline — build-time validators for cross-classloader granularity | Accepted |
 | [0025](0025-run-task-stripping-opt-in.md) | Run-task classpath stripping is opt-in, not the default | Accepted; supersedes 0007's stripping default |
+| [0026](0026-automatic-release.md) | `automaticRelease = true` — green CI gate replaces the Portal click | Accepted; supersedes 0020's staging gate |

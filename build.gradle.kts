@@ -13,8 +13,9 @@ allprojects {
     group = "de.lhns.mcdp"
     // Default to a snapshot version for local + push:main builds; the publish workflow
     // overrides via -Pversion=<tag> when triggered by a `release: published` event so
-    // vanniktech routes to the release endpoint (and automaticRelease=true below auto-
-    // publishes without a Portal click).
+    // vanniktech routes to the release endpoint. automaticRelease=true (set in
+    // buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts, not here — see ADR-0026)
+    // then publishes without a Portal click.
     version = providers.gradleProperty("version").orElse("0.1.0-SNAPSHOT").get()
 }
 

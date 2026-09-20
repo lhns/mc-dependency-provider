@@ -1,9 +1,11 @@
 name: Publish to Maven Central
 
 # Triggered on:
-#   (a) GitHub release publication — uploads release bundles to Central Portal staging for
-#       manual review (automaticRelease=false in build.gradle.kts → maintainer clicks "publish"
-#       at https://central.sonatype.com/publishing).
+#   (a) GitHub release publication — uploads release bundles to Central Portal staging and
+#       immediately releases them (automaticRelease=true in
+#       buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts for the band artifacts and
+#       in gradle-plugin/build.gradle.kts for the plugin; no Portal click — see ADR-0026).
+#       The Tier 1 + Tier 2 gate below is what stands in for the manual review.
 #   (b) push to `main` — publishes the current `-SNAPSHOT` to Central Portal's snapshots repo
 #       (no staging gate; snapshots are mutable and replace any prior copy of the same version).
 #
@@ -155,8 +157,9 @@ jobs:
           set -euo pipefail
           # vanniktech routes by version suffix: -SNAPSHOT → snapshots repo;
           # otherwise → release-staging bundle. With automaticRelease=true in
-          # multi/ + gradle-plugin/ build.gradle.kts, release uploads also call the
-          # Portal's release-now API so the artifact lands on Maven Central without a click.
+          # buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts + gradle-plugin/build.gradle.kts,
+          # release uploads also call the Portal's release-now API so the artifact lands on
+          # Maven Central without a click.
           ./gradlew publishToMavenCentral --no-daemon --stacktrace --no-configuration-cache \
             -Pversion=${{ steps.ver.outputs.version }}
           echo "Published version ${{ steps.ver.outputs.version }}."
