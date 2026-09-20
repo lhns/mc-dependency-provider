@@ -33,13 +33,7 @@ public final class SharedPackageContentValidator {
      *                       both accepted, normalized internally to dotted-with-dot)
      */
     public SharedPackageContentValidator(List<String> sharedPackages) {
-        List<String> normalized = new ArrayList<>();
-        for (String p : sharedPackages) {
-            String dotted = BridgePolicy.toDotted(p);
-            if (!dotted.endsWith(".")) dotted = dotted + ".";
-            normalized.add(dotted);
-        }
-        this.sharedPackages = List.copyOf(normalized);
+        this.sharedPackages = BridgePolicy.normalizeSharedPackages(sharedPackages);
     }
 
     /**

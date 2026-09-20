@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -22,6 +23,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the rewriter.
  */
 class BridgeScannerLambdaTest {
+
+    /**
+     * The two {@code MethodType} slots of a {@code LambdaMetafactory} bsm-arg array, spelled
+     * the way real javac spells them for {@code Supplier<String> s = () -> "x"} (checked
+     * against {@code javap -v}; {@link LambdaBridgeRuntimeTest} compiles the real thing):
+     * {@code bsmArgs[0]} carries the SAM's <em>erased</em> signature, {@code bsmArgs[2]} the
+     * <em>instantiated</em> one, and the implementation method's own descriptor matches the
+     * instantiated type.
+     *
+     * <p>These two MUST stay different values. A fixture that spells both slots
+     * {@code ()Ljava/lang/Object;} agrees with an emitter that swaps or conflates them, and
+     * that is precisely how ADR-0021 shipped broken with this suite green.</p>
+     */
+    private static final Type SAM_ERASED = Type.getType("()Ljava/lang/Object;");
+    private static final Type SAM_INSTANTIATED = Type.getType("()Ljava/lang/String;");
 
     private final BridgePolicy policy = new BridgePolicy(
             List.of("com/example/api/"),
@@ -131,8 +147,12 @@ class BridgeScannerLambdaTest {
         assertEquals(metafactoryBsm(), site.bsm());
         Object[] args = site.bsmArgs();
         assertEquals(3, args.length);
-        assertEquals(Type.getType("()Ljava/lang/Object;"), args[0]);
-        assertEquals(Type.getType("()Ljava/lang/Object;"), args[2]);
+        assertEquals(SAM_ERASED, args[0],
+                "samMethodType is the ERASED signature -- Supplier.get() erases to ()Object");
+        assertEquals(SAM_INSTANTIATED, args[2],
+                "instantiatedMethodType is the SPECIFIC one -- Supplier<String> gives ()String");
+        assertNotEquals(args[0], args[2],
+                "the two slots must hold different values, or this test cannot see them swapped");
 
         Object[] moved = site.relocatedBsmArgs("some/impl/Wrapper");
         assertEquals("some/impl/Wrapper", ((Handle) moved[1]).getOwner());
@@ -215,22 +235,22 @@ class BridgeScannerLambdaTest {
         mv.visitCode();
         mv.visitVarInsn(Opcodes.ALOAD, 0);   // capture #0 is the receiver
         Handle impl = new Handle(Opcodes.H_INVOKESPECIAL, containerInternal,
-                "lambda$body$0", "()Ljava/lang/Object;", false);
+                "lambda$body$0", "()Ljava/lang/String;", false);
         mv.visitInvokeDynamicInsn("get",
                 "(L" + containerInternal + ";)Ljava/util/function/Supplier;",
                 metafactoryBsm(),
-                Type.getType("()Ljava/lang/Object;"),
+                SAM_ERASED,
                 impl,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.ARETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
 
         MethodVisitor synth = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC,   // NOT static
-                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+                "lambda$body$0", "()Ljava/lang/String;", null, null);
         synth.visitCode();
-        synth.visitVarInsn(Opcodes.ALOAD, 0);
+        synth.visitLdcInsn("v");
         synth.visitInsn(Opcodes.ARETURN);
         synth.visitMaxs(0, 0);
         synth.visitEnd();
@@ -253,20 +273,20 @@ class BridgeScannerLambdaTest {
         mv.visitInsn(Opcodes.NOP);
         mv.visitLabel(join);
         Handle impl = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
-                "lambda$body$0", "()Ljava/lang/Object;", false);
+                "lambda$body$0", "()Ljava/lang/String;", false);
         mv.visitInvokeDynamicInsn("get", "()Ljava/util/function/Supplier;", metafactoryBsm(),
-                Type.getType("()Ljava/lang/Object;"), impl,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_ERASED, impl,
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.ARETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
 
         MethodVisitor synth = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
-                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+                "lambda$body$0", "()Ljava/lang/String;", null, null);
         synth.visitCode();
         synth.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/MyMod", "compute",
-                "()Ljava/lang/Object;", false);
+                "()Ljava/lang/String;", false);
         synth.visitInsn(Opcodes.ARETURN);
         synth.visitMaxs(0, 0);
         synth.visitEnd();
@@ -291,21 +311,21 @@ class BridgeScannerLambdaTest {
         mv.visitCode();
         Handle bsm = alt ? altMetafactoryBsm() : metafactoryBsm();
         Handle implMethod = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
-                "lambda$body$0", "()Ljava/lang/Object;", false);
+                "lambda$body$0", "()Ljava/lang/String;", false);
         if (alt) {
             // altMetafactory takes the same three leading args plus a flags word (and, per
             // flag, further trailing args). FLAG_SERIALIZABLE | FLAG_MARKERS = 5, with a
             // marker-interface count of 0.
             mv.visitInvokeDynamicInsn("get", indyDesc, bsm,
-                    Type.getType("()Ljava/lang/Object;"),
+                    SAM_ERASED,
                     implMethod,
-                    Type.getType("()Ljava/lang/Object;"),
+                    SAM_INSTANTIATED,
                     5, 0);
         } else {
             mv.visitInvokeDynamicInsn("get", indyDesc, bsm,
-                    Type.getType("()Ljava/lang/Object;"),
+                    SAM_ERASED,
                     implMethod,
-                    Type.getType("()Ljava/lang/Object;"));
+                    SAM_INSTANTIATED);
         }
         mv.visitInsn(Opcodes.ARETURN);
         mv.visitMaxs(0, 0);
@@ -314,10 +334,10 @@ class BridgeScannerLambdaTest {
         // Synthetic lambda body: INVOKESTATIC MyMod.compute(); ARETURN
         MethodVisitor synth = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
-                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+                "lambda$body$0", "()Ljava/lang/String;", null, null);
         synth.visitCode();
         synth.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/MyMod", "compute",
-                "()Ljava/lang/Object;", false);
+                "()Ljava/lang/String;", false);
         synth.visitInsn(Opcodes.ARETURN);
         synth.visitMaxs(0, 0);
         synth.visitEnd();
@@ -337,11 +357,11 @@ class BridgeScannerLambdaTest {
         Handle bsm = metafactoryBsm();
         // impl handle points at a DIFFERENT class — that's a method reference, not an inline lambda
         Handle implMethod = new Handle(Opcodes.H_INVOKESTATIC, referencedOwner,
-                "compute", "()Ljava/lang/Object;", false);
+                "compute", "()Ljava/lang/String;", false);
         mv.visitInvokeDynamicInsn("get", "()Ljava/util/function/Supplier;", bsm,
-                Type.getType("()Ljava/lang/Object;"),
+                SAM_ERASED,
                 implMethod,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.ARETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
@@ -382,16 +402,16 @@ class BridgeScannerLambdaTest {
         mv.visitCode();
         Handle bsm = metafactoryBsm();
         Handle implA = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
-                "lambda$body$0", "()Ljava/lang/Object;", false);
+                "lambda$body$0", "()Ljava/lang/String;", false);
         Handle implB = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
-                "lambda$body$1", "()Ljava/lang/Object;", false);
+                "lambda$body$1", "()Ljava/lang/String;", false);
         mv.visitInvokeDynamicInsn("get", "()Ljava/util/function/Supplier;", bsm,
-                Type.getType("()Ljava/lang/Object;"), implA,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_ERASED, implA,
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.POP);
         mv.visitInvokeDynamicInsn("get", "()Ljava/util/function/Supplier;", bsm,
-                Type.getType("()Ljava/lang/Object;"), implB,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_ERASED, implB,
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.POP);
         mv.visitInsn(Opcodes.RETURN);
         mv.visitMaxs(0, 0);
@@ -399,20 +419,20 @@ class BridgeScannerLambdaTest {
 
         MethodVisitor synthA = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
-                "lambda$body$0", "()Ljava/lang/Object;", null, null);
+                "lambda$body$0", "()Ljava/lang/String;", null, null);
         synthA.visitCode();
         synthA.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/MyMod", "compute",
-                "()Ljava/lang/Object;", false);
+                "()Ljava/lang/String;", false);
         synthA.visitInsn(Opcodes.ARETURN);
         synthA.visitMaxs(0, 0);
         synthA.visitEnd();
 
         MethodVisitor synthB = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
-                "lambda$body$1", "()Ljava/lang/Object;", null, null);
+                "lambda$body$1", "()Ljava/lang/String;", null, null);
         synthB.visitCode();
         synthB.visitMethodInsn(Opcodes.INVOKESTATIC, "com/example/mod/MyMod", "compute",
-                "()Ljava/lang/Object;", false);
+                "()Ljava/lang/String;", false);
         synthB.visitInsn(Opcodes.ARETURN);
         synthB.visitMaxs(0, 0);
         synthB.visitEnd();
@@ -433,11 +453,11 @@ class BridgeScannerLambdaTest {
         mv.visitLdcInsn("captured");
         Handle bsm = metafactoryBsm();
         Handle impl = new Handle(Opcodes.H_INVOKESTATIC, containerInternal,
-                "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+                "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/String;", false);
         mv.visitInvokeDynamicInsn("get", "(Ljava/lang/String;)Ljava/util/function/Supplier;", bsm,
-                Type.getType("()Ljava/lang/Object;"),
+                SAM_ERASED,
                 impl,
-                Type.getType("()Ljava/lang/Object;"));
+                SAM_INSTANTIATED);
         mv.visitInsn(Opcodes.POP);
         mv.visitInsn(Opcodes.RETURN);
         mv.visitMaxs(0, 0);
@@ -445,7 +465,7 @@ class BridgeScannerLambdaTest {
 
         MethodVisitor synth = cw.visitMethod(
                 Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC,
-                "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/Object;", null, null);
+                "lambda$body$0", "(Ljava/lang/String;)Ljava/lang/String;", null, null);
         synth.visitCode();
         synth.visitVarInsn(Opcodes.ALOAD, 0);
         synth.visitInsn(Opcodes.ARETURN);

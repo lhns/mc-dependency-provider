@@ -28,7 +28,3 @@ pluginManagement {
         mavenCentral()
     }
 }
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
-}

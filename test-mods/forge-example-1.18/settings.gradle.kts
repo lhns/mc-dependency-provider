@@ -10,8 +10,9 @@ rootProject.name = "forge-example-1.18"
 // Then build this test mod on Gradle 7.6:
 //     cd test-mods/forge-example-1.18 ; ./gradlew build
 //
-// The mcdp-1.18 jar resolves from mavenLocal via `dependencyResolutionManagement`
-// below; the de.lhns.mcdp gradle-plugin resolves from the snapshot repo + mavenLocal.
+// The mcdp-1.18 jar resolves from mavenLocal via the project `repositories` block in
+// build.gradle.kts; the de.lhns.mcdp gradle-plugin resolves from the snapshot repo +
+// mavenLocal.
 
 pluginManagement {
     repositories {
@@ -22,8 +23,4 @@ pluginManagement {
         gradlePluginPortal()
         mavenCentral()
     }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
 }

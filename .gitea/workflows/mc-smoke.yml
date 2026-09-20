@@ -459,15 +459,17 @@ jobs:
       - name: Assert bridge codegen actually emitted (forge-1.20 only)
         # Guards the way this cell is most likely to pass for the wrong reason: codegen
         # silently emitting nothing, leaving the mixin calling its handler directly.
+        # Reads the processResources output rather than the jar — `:runServer` never builds one,
+        # and the exploded resources dir is what the dev run actually loads the manifest from.
         if: matrix.cell.name == 'forge-1.20'
         working-directory: ${{ matrix.cell.dir }}
         shell: bash
         run: |
           set -euo pipefail
-          JAR=$(ls build/libs/*.jar | grep -v sources | head -1)
-          unzip -l "$JAR" | grep -q 'META-INF/mcdp-bridges\.toml' || {
-            echo "ERROR: META-INF/mcdp-bridges.toml missing — no bridge was generated"; exit 1; }
-          COUNT=$(unzip -p "$JAR" META-INF/mcdp-bridges.toml | grep -c '^\[\[bridge\]\]')
+          TOML=build/resources/main/META-INF/mcdp-bridges.toml
+          test -f "$TOML" || {
+            echo "ERROR: $TOML missing — no bridge was generated"; exit 1; }
+          COUNT=$(grep -c '^\[\[bridge\]\]' "$TOML")
           echo "toml-bridges=$COUNT"
           [ "$COUNT" -ge 1 ] || { echo "ERROR: no [[bridge]] entries"; exit 1; }
 

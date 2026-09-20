@@ -13,7 +13,3 @@ pluginManagement {
 plugins { id("org.gradle.toolchains.foojay-resolver-convention") }
 
 includeBuild("../..")
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
-}

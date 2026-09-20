@@ -1,5 +1,6 @@
 package de.lhns.mcdp.gradle.bridges;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -46,21 +47,30 @@ public final class BridgePolicy {
     private final String bridgePackageDot;
 
     public BridgePolicy(List<String> sharedPackages, String bridgePackage) {
-        // Normalize incoming sharedPackages to dotted form WITH a trailing dot so the matcher
-        // compares uniformly, regardless of whether the user wrote "com.example.api" (typical),
-        // "com.example.api." or "com/example/api/" (internal-form). The trailing dot matters:
-        // without it, a bare "com.example.api" entry also matches "com.example.apiextra.Foo"
-        // via startsWith. ModClassLoader applies the same normalization in its constructor, and
-        // SharedPackageContentValidator / CrossLoaderCastValidator do the same — one rule in all
-        // four places, so the codegen bridges exactly what the runtime does not share.
-        List<String> normalized = new java.util.ArrayList<>();
+        this.sharedPackages = normalizeSharedPackages(sharedPackages);
+        this.bridgePackageDot = Objects.requireNonNull(bridgePackage) + ".";
+    }
+
+    /**
+     * Canonical {@code sharedPackages} normalization for the whole plugin: dotted form with a
+     * trailing dot, order and duplicates preserved. Every prefix match in this plugin is a raw
+     * {@code startsWith}, so the trailing dot is what stops a bare {@code "com.example.api"}
+     * entry from also swallowing {@code com.example.apiextra.Foo}; the slash translation is what
+     * lets a user write the internal form {@code "com/example/api/"}.
+     *
+     * <p>{@code de.lhns.mcdp.core.ModClassLoader} applies the equivalent rule at runtime but
+     * keeps its own copy, because {@code :gradle-plugin} must not depend on {@code :core} (see
+     * the class javadoc). {@code SharedPackagePrefixParityTest} guards that pair against drift —
+     * including the one place they differ on purpose: the runtime drops {@code null}/blank
+     * entries, this one does not.</p>
+     */
+    public static List<String> normalizeSharedPackages(List<String> sharedPackages) {
+        List<String> normalized = new ArrayList<>(sharedPackages.size());
         for (String p : sharedPackages) {
             String dotted = toDotted(p);
-            if (!dotted.endsWith(".")) dotted = dotted + ".";
-            normalized.add(dotted);
+            normalized.add(dotted.endsWith(".") ? dotted : dotted + ".");
         }
-        this.sharedPackages = List.copyOf(normalized);
-        this.bridgePackageDot = Objects.requireNonNull(bridgePackage) + ".";
+        return List.copyOf(normalized);
     }
 
     /**

@@ -74,9 +74,9 @@ Fatal patterns (already wired):
 
 - Loom resolves mappings (`net.fabricmc:yarn:1.21.1+build.3:v2`) on first boot
   — ~30 MB. Sensitive to Maven repo outages; the run will fail hard in
-  `Task :downloadMappings`. Mitigation: `dependencyResolutionManagement` in
-  `settings.gradle.kts` already includes Fabric Maven + Maven Central, so both
-  need to be reachable the first time.
+  `Task :downloadMappings`. Mitigation: each `fabric-*` subproject declares
+  Fabric Maven in its own `repositories` block and the root build adds Maven
+  Central, so both need to be reachable the first time.
 - The `run/` directory is relative to the project root when `gradlew` is
   invoked there. `mc_smoke.py` already does `cd` via `--cwd`.
 - Loom spins a Gradle daemon by default. We pass `--no-daemon` so ctrl-C /

@@ -40,9 +40,8 @@ repositories {
     // mavenLocal FIRST and non-optional: with no includeBuild("../.."), the only source of
     // `de.lhns.mcdp:mcdp-1.18:0.1.0-SNAPSHOT` is the parent build's publishToMavenLocal.
     // settings.gradle.kts lists mavenLocal only under `pluginManagement`, which covers the
-    // `de.lhns.mcdp` plugin marker but NOT ordinary dependency resolution — and its
-    // `dependencyResolutionManagement` block declares repositoriesMode but no repositories,
-    // so project repositories are the whole story for the mcdp jar.
+    // `de.lhns.mcdp` plugin marker but NOT ordinary dependency resolution, and declares no
+    // settings-level repositories — so project repositories are the whole story here.
     mavenLocal()
     mavenCentral()
 }

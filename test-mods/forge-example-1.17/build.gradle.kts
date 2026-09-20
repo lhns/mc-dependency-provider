@@ -57,7 +57,10 @@ configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
 }
 
 dependencies {
-    "minecraft"("net.minecraftforge:forge:1.17.1-37.1.2")
+    // 37.1.1: the 1.17.1 `forge` userdev line tops out there. The fmlcore/fmlloader pins
+    // in gradle/libs.versions.toml (and ADR-0029) are deliberately 37.1.2 — those artifacts
+    // do exist at 37.1.2; only `forge` itself does not.
+    "minecraft"("net.minecraftforge:forge:1.17.1-37.1.1")
     implementation("de.lhns.mcdp:mcdp-1.17:0.1.0-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
