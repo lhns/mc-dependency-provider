@@ -36,8 +36,9 @@ import java.util.logging.Logger;
  * {@link McdpModContainer} subclass are implemented end to end — the container's
  * constructor reads the per-mod manifest, resolves libraries, builds the per-mod
  * {@link de.lhns.mcdp.core.ModClassLoader}, registers the mod (and any bridge
- * manifest), and instantiates the entrypoint. See {@link McdpModContainer}'s class
- * Javadoc for the runtime-verification status.
+ * manifest) and builds the mod event bus, while entry-class instantiation and mod-bus
+ * event delivery happen at the FML lifecycle stages (ADR-0027). See
+ * {@link McdpModContainer}'s class Javadoc for the runtime-verification status.
  */
 public final class McdpLanguageProvider implements IModLanguageProvider {
 
