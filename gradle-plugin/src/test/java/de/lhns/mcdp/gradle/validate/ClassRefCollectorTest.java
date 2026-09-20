@@ -13,6 +13,7 @@ import org.objectweb.asm.Type;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -257,6 +258,70 @@ class ClassRefCollectorTest {
         });
         assertTrue(refs.contains(MARKER), refs.toString());
         assertTrue(refs.contains("com/example/anno/Nullable"), refs.toString());
+    }
+
+    /**
+     * CHECKCAST/INSTANCEOF/ANEWARRAY on an array type carry a descriptor, not an internal
+     * name. Collecting the raw operand yields "[Ljava/lang/String;", which no prefix check
+     * recognises as a platform type, so validateSharedPackages failed the build on a
+     * shared-package class containing nothing worse than `(String[]) o`.
+     */
+    @Test
+    void arrayTypeInstructionsCollectTheElementTypeNotTheDescriptor() {
+        Set<String> refs = refsOf(cw -> {
+            MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "m",
+                    "(Ljava/lang/Object;)V", null, null);
+            m.visitCode();
+            m.visitVarInsn(Opcodes.ALOAD, 1);
+            m.visitTypeInsn(Opcodes.CHECKCAST, "[Ljava/lang/String;");
+            m.visitInsn(Opcodes.POP);
+            m.visitVarInsn(Opcodes.ALOAD, 1);
+            m.visitTypeInsn(Opcodes.INSTANCEOF, "[Lcom/example/modcode/Thing;");
+            m.visitInsn(Opcodes.POP);
+            m.visitInsn(Opcodes.RETURN);
+            m.visitMaxs(2, 2);
+            m.visitEnd();
+        });
+        assertTrue(refs.contains("java/lang/String"), refs.toString());
+        assertTrue(refs.contains("com/example/modcode/Thing"), refs.toString());
+        assertFalse(refs.contains("[Ljava/lang/String;"), "raw array descriptor leaked: " + refs);
+        assertFalse(refs.contains("[Lcom/example/modcode/Thing;"), "raw array descriptor leaked: " + refs);
+    }
+
+    /** {@code arr.clone()} puts an array descriptor in MethodInsnNode.owner. */
+    @Test
+    void arrayMemberInvocationCollectsTheElementType() {
+        Set<String> refs = refsOf(cw -> {
+            MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "m",
+                    "([Lcom/example/modcode/Thing;)V", null, null);
+            m.visitCode();
+            m.visitVarInsn(Opcodes.ALOAD, 1);
+            m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "[Lcom/example/modcode/Thing;",
+                    "clone", "()Ljava/lang/Object;", false);
+            m.visitInsn(Opcodes.POP);
+            m.visitInsn(Opcodes.RETURN);
+            m.visitMaxs(2, 2);
+            m.visitEnd();
+        });
+        assertTrue(refs.contains("com/example/modcode/Thing"), refs.toString());
+        assertFalse(refs.contains("[Lcom/example/modcode/Thing;"), "raw array descriptor leaked: " + refs);
+    }
+
+    /** Primitive arrays have no element class at all and must not leak a descriptor either. */
+    @Test
+    void primitiveArrayCastCollectsNothing() {
+        Set<String> refs = refsOf(cw -> {
+            MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "m",
+                    "(Ljava/lang/Object;)V", null, null);
+            m.visitCode();
+            m.visitVarInsn(Opcodes.ALOAD, 1);
+            m.visitTypeInsn(Opcodes.CHECKCAST, "[[I");
+            m.visitInsn(Opcodes.POP);
+            m.visitInsn(Opcodes.RETURN);
+            m.visitMaxs(2, 2);
+            m.visitEnd();
+        });
+        assertFalse(refs.contains("[[I"), "raw array descriptor leaked: " + refs);
     }
 
     /** Build a minimal class named {@code com/example/shared/Probe} configured by the caller. */

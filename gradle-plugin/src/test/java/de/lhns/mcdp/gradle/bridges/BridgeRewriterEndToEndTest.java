@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -125,8 +126,10 @@ class BridgeRewriterEndToEndTest {
         String bridgeInternal = BridgePolicy.toInternal(
                 new BridgeInterfaceEmitter(BRIDGE_PKG).interfaceFqn("com/example/Target"));
         assertTrue(dump.contains(bridgeInternal), "expected bridge interface reference");
-        assertTrue(!dump.contains("com/example/Target")
-                        || dump.contains(BridgeRewriter.bridgeSimpleName("com/example/Target")),
+        // Assert outright rather than as a disjunct: bridgeSimpleName("com/example/Target")
+        // is a substring of the bridge interface FQN asserted just above, so an "or" form
+        // is unconditionally true and would pass even if a bare Target ref survived.
+        assertFalse(dump.contains("com/example/Target"),
                 "expected no bare reference to com/example/Target");
     }
 

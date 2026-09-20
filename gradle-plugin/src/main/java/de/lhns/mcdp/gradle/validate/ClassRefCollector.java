@@ -139,13 +139,20 @@ public final class ClassRefCollector {
                         collectFromAnnotations(insn.visibleTypeAnnotations, refs);
                         collectFromAnnotations(insn.invisibleTypeAnnotations, refs);
                         switch (insn) {
-                            case TypeInsnNode t -> refs.add(t.desc);
+                            // CHECKCAST/INSTANCEOF/ANEWARRAY on an array type carry a
+                            // descriptor (`[Ljava/lang/String;`), not an internal name, so
+                            // this must go through getObjectType/addType to reach the element
+                            // type -- adding the raw operand reports `[Ljava.lang.String;` as
+                            // an unresolvable reference and fails the build on legal code.
+                            case TypeInsnNode t -> addType(Type.getObjectType(t.desc), refs);
                             case FieldInsnNode f -> {
                                 refs.add(f.owner);
                                 addType(Type.getType(f.desc), refs);
                             }
                             case MethodInsnNode mi -> {
-                                refs.add(mi.owner);
+                                // `owner` is an array descriptor for array-member calls
+                                // such as `arr.clone()`; same normalisation as above.
+                                addType(Type.getObjectType(mi.owner), refs);
                                 addMethodType(mi.desc, refs);
                             }
                             case LdcInsnNode l -> addConstant(l.cst, refs);
@@ -211,7 +218,9 @@ public final class ClassRefCollector {
 
     private static void addHandle(Handle h, Set<String> refs) {
         if (h == null) return;
-        refs.add(h.getOwner());
+        // Same array-descriptor case as TypeInsnNode: a MethodHandle on `String[]::clone`
+        // has an array owner.
+        addType(Type.getObjectType(h.getOwner()), refs);
         String desc = h.getDesc();
         if (desc == null) return;
         // Field handles (GETFIELD/PUTSTATIC/...) carry a field descriptor, method handles a
