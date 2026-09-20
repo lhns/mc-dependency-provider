@@ -2,7 +2,7 @@
 
 **Status:** Accepted — pre-v0.1.0 release-readiness work. The *publishing mechanism* (vanniktech + Central Portal) is unchanged. Two parts of this ADR are superseded:
 
-- the "only two artifacts" constraint, by [ADR-0023](0023-multi-mc-band-publication.md), which publishes one aggregator per Minecraft band (six today: `mcdp-1.17`, `-1.18`, `-1.20`, `-1.20.6`, `-1.21`, `-26.1`) alongside `:gradle-plugin`;
+- the "only two artifacts" constraint, by [ADR-0023](0023-multi-mc-band-publication.md), which publishes one aggregator per Minecraft band — **eight today**: `mcdp-1.17`, `-1.18`, `-1.19`, `-1.20`, `-1.20.6`, `-1.21`, `-1.21.11`, `-26` — alongside `:gradle-plugin` and its plugin marker. (Was six; `-1.19` added by [ADR-0031](0031-mc-1-19-band.md), `-1.21.11` by [ADR-0030](0030-mc-1-21-11-band.md), and `-26.1` **replaced** by `-26` per [ADR-0032](0032-single-26x-band.md). No band-suffixed artifact has been released yet — Maven Central currently carries only the pre-rename `de.lhns.mcdp:mcdp`, `de.lhns.mcdp:gradle-plugin` and the marker — so the rename stranded no consumer.)
 - the `automaticRelease = false` staging gate, by [ADR-0026](0026-automatic-release.md). **There is no manual Portal click today** — releases auto-publish, gated on CI instead.
 
 ## Context

@@ -4,8 +4,18 @@ junit = "5.11.3"
 jetbrains-annotations = "26.0.1"
 shadow = "8.3.5"
 fabric-loader = "0.16.9"
+# MC 26.x + 1.21.11. LanguageAdapter / PreLaunchEntrypoint / ModContainer are byte-identical
+# to 0.16.9's (same SHA-1, class-file major 52), so this documents the band target rather
+# than a compatibility requirement.
+fabric-loader-mc26 = "0.19.5"
 neoforge-spi-mc1206 = "8.0.4"     # NeoForge 20.6.x (MC 1.20.6)
 neoforge-fml-loader = "4.0.42"
+# FML 10 line (MC 1.21.10/1.21.11 and, via the shared port, the whole 26.x line). The
+# SPI broke at 9.0 -> 10.0: IModFile.findResource removed in favour of JarContents, and
+# FMLEnvironment.dist became getDist(). 10.0.36 is class-file major 65 so javac on the
+# JDK 21 toolchain can read it; 12.0.0 (26.3) is major 69 and cannot be compiled against,
+# but every member the port calls is present and identically signed there.
+neoforge-fml-loader-mc12111 = "10.0.36"
 neoforge-fml-loader-mc1206 = "3.0.45"   # NeoForge 20.6.x ships FML loader 3.0.x
 neoforge-bus = "8.0.5"
 # Forge 1.17.1 / 1.18.2 — forgespi 4.0.x is the SPI surface (IModLanguageProvider,
@@ -20,9 +30,13 @@ neoforge-bus = "8.0.5"
 forge-spi-mc117 = "4.0.11"
 forge-spi-mc118 = "4.0.11"
 forge-spi-mc120 = "7.1.6"
+# MC 1.19.x. Every 1.19 fmlloader POM (1.19-41.1.0 .. 1.19.4-45.4.5) declares forgespi
+# 6.0.0 EXACTLY, not a range -- unlike 1.17/1.18 (4.0.15-4.x) and 1.20 (7.0.1).
+forge-spi-mc119 = "6.0.0"
 forge-fmlcore-mc117 = "1.17.1-37.1.2"
 forge-fmlcore-mc118 = "1.18.2-40.3.12"
 forge-fmlcore-mc120 = "1.20.1-47.4.20"
+forge-fmlcore-mc119 = "1.19.2-43.5.2"   # eventbus 6.0.3 per its POM
 asm = "9.7.1"
 vanniktech-maven-publish = "0.32.0"
 
@@ -35,16 +49,20 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
 
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+fabric-loader-mc26 = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader-mc26" }
 neoforge-spi-mc1206 = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi-mc1206" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
+neoforge-fml-loader-mc12111 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc12111" }
 neoforge-fml-loader-mc1206 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc1206" }
 neoforge-bus = { module = "net.neoforged:bus", version.ref = "neoforge-bus" }
 forge-spi-mc117 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc117" }
 forge-spi-mc118 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc118" }
 forge-spi-mc120 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc120" }
+forge-spi-mc119 = { module = "net.minecraftforge:forgespi", version.ref = "forge-spi-mc119" }
 forge-fmlcore-mc117 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc117" }
 forge-fmlcore-mc118 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc118" }
 forge-fmlcore-mc120 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc120" }
+forge-fmlcore-mc119 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc119" }
 
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }

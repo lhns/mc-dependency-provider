@@ -1,6 +1,6 @@
 # ADR-0023: Multi-Minecraft-band publication model
 
-**Status:** Accepted (scaffold landed; adapter implementations per-band still in progress).
+**Status:** Accepted. The *model* (per-band artifacts, `mcdp-<band>` naming, `setSrcDirs` source sharing) is in force unchanged. Several *particulars* recorded below — the band table, the out-of-scope list, `mcdp-1.21`'s scope, the Forge-adapter status and the 26.x source-sharing premise — have since been corrected by [ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md), [ADR-0030](0030-mc-1-21-11-band.md), [ADR-0031](0031-mc-1-19-band.md) and [ADR-0032](0032-single-26x-band.md). The original text is kept as written; see **"Amendments (2026-09-20)"** at the end for the current picture. Adapters are no longer scaffolds on any loader: Fabric, NeoForge and Forge all ship working adapters (Forge completed by ADR-0027/0028; the one remaining Forge gap is `@EventBusSubscriber` auto-registration).
 
 ## Context
 
@@ -19,10 +19,14 @@ mcdp shipped v0.1.0–v0.1.2 supporting Minecraft 1.21.1 only, on Fabric + NeoFo
 | `mcdp-1.18` | 1.18.x | 17 | Fabric + Forge | Pre-JPMS Forge era. |
 | `mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Last pre-NeoForge band. |
 | `mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | First JPMS-era NeoForge — primary value-prop band. |
-| `mcdp-1.21` | 1.21.1 | 21 | Fabric + NeoForge | Currently shipped (was `mcdp` pre-rename). |
-| `mcdp-26.1` | 26.1.x | 21+ | Fabric + NeoForge | Mojang's calendar-versioning era. |
+| `mcdp-1.21` | 1.21.1 | 21 | Fabric + NeoForge | Currently shipped (was `mcdp` pre-rename). 1.21.1-**only**; confirmed by [ADR-0030](0030-mc-1-21-11-band.md). |
+| `mcdp-26.1` | 26.1.x | 21+ | Fabric + NeoForge | Mojang's calendar-versioning era. **SUPERSEDED — this band does not exist.** Replaced by the single `mcdp-26` band, [ADR-0032](0032-single-26x-band.md); its directories are deleted. |
+
+> **This table is out of date — see "Amendments (2026-09-20)" below for the current eight-band table.** Two bands were added after it was written (`mcdp-1.19`, ADR-0031; `mcdp-1.21.11`, ADR-0030) and `mcdp-26.1` was replaced by `mcdp-26` (ADR-0032).
 
 **Explicitly out of scope:** 1.15.2, 1.16.x. Java 8 backports of `core/` (records, switch expressions, `StackWalker`) cost ~250 LOC of duplicate maintenance for niche demand. Mixin 0.7 (1.15.2) breaks the bridge codegen which assumes 0.8.x semantics. Anyone on those versions can shadow their stdlib into the jar.
+
+> **Amended.** This list was never complete: 1.19 was absent from both the supported table and this exclusion list, with no recorded reason — [ADR-0031](0031-mc-1-19-band.md) establishes that none of the reasons above apply to it and **adds** `mcdp-1.19`. A second, deliberate gap has since opened that this section should name: **MC 1.21.2 – 1.21.9 are uncovered on purpose.** See the amendments below.
 
 ### Artifact naming
 
@@ -34,7 +38,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 
 - `core/` and `deps-lib/`: target Java 16. Single source tree, all bands consume.
 - `fabric/` (renamed `:fabric-1.21`): canonical Fabric adapter source. Other Fabric bands (`fabric-1.17/`, `fabric-1.18/`, `fabric-1.20/`, `fabric-1.20.6/`, `fabric-26.1/`) share this source via `sourceSets.main.java.setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))` — *set*, not the additive `srcDirs(...)`: the band's own `src/main/java` must be replaced, not added to, or a stale tree would compile in silently. They differ only in `mcdpBand.javaRelease` (which the `mcdp.shaded-jar` convention feeds to `options.release`; `targetCompatibility` is not used anywhere in this build) and in the two `fabric.mod.json` floors. The Fabric `LanguageAdapter` + `PreLaunchEntrypoint` SPI surface is stable across fabric-loader 0.14+.
-- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). It *is* shared with `:neoforge-26.1` via `setSrcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.
+- `neoforge/` (renamed `:neoforge-1.21`): canonical NeoForge 21.x adapter source. **Not shared** with `:neoforge-1.20.6` — the NeoForge SPI diverged between 8.0.x (1.20.6) and 9.0.x (1.21). ~~It *is* shared with `:neoforge-26.1` via `setSrcDirs`, because the SPI has not in fact diverged between 21.x and 26.1; that band contributes only its own resources. Split it back out when a 26.x SPI line actually diverges.~~ **SUPERSEDED.** That premise expired: the SPI *did* diverge, at fancymodloader 9.0 → 10.0 (`IModFile.findResource` removed, `SecureJar` → `JarContents`, `FMLEnvironment.dist` → `getDist()`), and real 26.x ships loader 11/12 which carry those removals ([ADR-0030](0030-mc-1-21-11-band.md), postscript). There is a third NeoForge tree, `neoforge-1.21.11/` (the FML-10/11/12 port), and `neoforge-26/` shares **that** one — not `neoforge/`.
 - `forge-1.18/`: the canonical Forge adapter (`McdpLanguageProvider` + `McdpModContainer`). `forge-1.17/` and `forge-1.20/` carry no Java source of their own — both point `srcDirs` at it and pin only their own forgespi/fmlcore coordinates. 1.17 can share it because Forge 1.17.1-37.1.2 actually runs **forgespi 4.0.x**, not the 3.2.x this ADR originally assumed (see [ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)); the 7.x surface the 1.20 band uses is compatible for everything the adapter calls.
 - `multi-<band>/` (Gradle path `:mcdp-<band>`): aggregator subproject. Bundles the band's adapters' shadowJars into one runtime artifact. Vanniktech maven-publish wired with `automaticRelease=true` per [ADR-0026](0026-automatic-release.md) (ADR-0020 originally specified `false`).
 
@@ -51,7 +55,7 @@ The unsuffixed `mcdp` coordinate is **not** reused for any band going forward �
 - Each band is independently versioned and released. Bumping `mcdp-1.21` doesn't force a re-cut of `mcdp-1.20.6`.
 - Source sharing via `setSrcDirs` (Fabric, where the SPI is stable) avoids duplicated maintenance for the common case — and, since the `fabric.mod.json` template landed, the metadata too.
 - Forge SPI's stability across 3.2/4.0/7.x means once one Forge adapter is implemented properly, fanning out to the other bands is mostly mechanical.
-- New bands are addable without disturbing existing ones (e.g. when Mojang ships 26.2 or later, adding `mcdp-26.2` is a copy-and-tweak of the existing `mcdp-26.1` scaffold).
+- New bands are addable without disturbing existing ones. *(The worked example originally given here — "when Mojang ships 26.2 or later, adding `mcdp-26.2` is a copy-and-tweak of the existing `mcdp-26.1` scaffold" — was **not** followed. [ADR-0032](0032-single-26x-band.md) measured 26.1/26.2/26.3 as byte-identical on every SPI class mcdp touches and collapsed them into one `mcdp-26` band instead of three. The general claim stands; that instance of it was wrong.)*
 
 **Negative.**
 
@@ -74,6 +78,8 @@ The "Consequences — negative" bullet above gave two reasons the mcdp `gradle-p
 **Why 17 and not 16.** Two independent reasons. (1) `RunTaskClasspathPatch` uses `java.util.HexFormat`, added in Java 17, so 16 would not compile without a code change. (2) 16 would buy nothing: the plugin is a *build-time* artifact whose bytecode is loaded by the Gradle daemon JVM and never by a Minecraft JVM. The MC-1.17 Java-16 runtime floor that governs `core` and `deps-lib` simply does not reach it. 17 is also the floor ForgeGradle 5.1 users are already on — MC 1.18.2 requires Java 17 — and Gradle 7.6 runs on Java 8–19, so 17 is comfortably inside the window.
 
 **Consequence.** `forge-example-1.18` joined the nightly `runserver-smoke-bands` matrix. `forge-example-1.17` did not, for an unrelated reason that this ADR already records: its adapter is a stub that throws. The plugin-path exclusion no longer applies to either band.
+
+> **Correction.** The `forge-1.17` "stub that throws" reason was itself wrong — the band was never actually blocked. Forge 1.17.1-37.1.2 runs **forgespi 4.0.x**, not the 3.2.x this ADR assumed, so `forge-1.17` shares `forge-1.18`'s working adapter verbatim ([ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)). No Forge band ships a stub today. `forge-example-1.17` is still out of the CI matrix, but now for a purely mechanical reason: it pins a Java 16 toolchain and GitHub runners ship no JDK 16.
 
 ## Operational findings (added during runtime verification)
 
@@ -98,7 +104,9 @@ The aggregator jar's MANIFEST attribute that tells FML how to route the jar:
 | `mcdp-1.20` | `LANGPROVIDER` | Same as 1.18. |
 | `mcdp-1.20.6` | `LIBRARY` | NeoForge 8.0.x uses `cpw.mods.securejarhandler`'s PLUGIN module layer — LIBRARY routes the jar there, where service-load picks up `IModLanguageLoader` automatically. |
 | `mcdp-1.21` | `LIBRARY` | Same as 1.20.6 (NeoForge 4.0.x fancymodloader). |
-| `mcdp-26.1` | `LIBRARY` | Same SPI line as 1.21. |
+| `mcdp-26.1` | `LIBRARY` | Same SPI line as 1.21. **Band renamed to `mcdp-26`** (ADR-0032); the `LIBRARY` choice carries over unchanged. |
+| `mcdp-1.19` | `LANGPROVIDER` | *(Added by [ADR-0031](0031-mc-1-19-band.md).)* Pre-NeoForge Forge band, like 1.17/1.18/1.20. |
+| `mcdp-1.21.11` | `LIBRARY` | *(Added by [ADR-0030](0030-mc-1-21-11-band.md).)* The `LIBRARY` jar type and the `META-INF/services/…IModLanguageLoader` discovery path are unchanged in FML 10. |
 
 Getting the type wrong is silent: FML won't surface an error, the language provider just never gets discovered, and consumer mods fail with `Missing language mcdepprovider`. Recorded here so future band additions know to pick before runtime tells them.
 
@@ -113,6 +121,15 @@ ADR-0023 above states that Fabric bands share source via `setSrcDirs(listOf(root
 1.20.6  fabricloader >=0.15, java >=21
 1.21    fabricloader >=0.16.0, java >=21    (canonical fabric/)
 26.1    fabricloader >=0.16, java >=21
+```
+
+Amended for the bands added since (values read off the `fabricLoaderVersion` / `javaRelease`
+settings in each band's `build.gradle.kts`):
+
+```
+1.19    fabricloader >=0.14, java >=17      (ADR-0031)
+1.21.11 fabricloader >=0.19, java >=21      (ADR-0030)
+26      fabricloader >=0.19, java >=21      (ADR-0032; replaces the 26.1 row above)
 ```
 
 A band that hard-pins the 1.21 floors fails at mod resolution on every older band: "Replace mod 'Fabric Loader' (fabricloader) 0.15.11 with version 0.16.0 or later". The original fix was one copy of the file per band — six 29-line files whose only differences were those two lines.
@@ -131,6 +148,85 @@ Two mechanical notes for anyone touching this: `expand()` runs Groovy's `SimpleT
 
 `mc-smoke.yml` adds a `runserver-smoke-bands` job (nightly only) that boots `fabric-example-1.17`, `1.18`, `1.20`, `1.20.6`, `neoforge-example-1.20.6`, and `forge-example-1.20`, asserting the `[mcdp-smoke] mod=… boot ok` marker. The 1.21 cell stays in the existing `runserver-smoke` (push + nightly) for fast PR signal. 26.1 and Forge 1.17/1.18 are excluded for the reasons above.
 
+> **Updated.** `forge-example-1.18` is no longer excluded — it joined the matrix once `:gradle-plugin` dropped to Java 17 bytecode (errata above), giving seven cells. `forge-example-1.17` is still out (JDK 16 toolchain, no JDK 16 on GitHub runners), and the 26.x cells are still out, but for a **toolchain** reason, not a Mojang-artifact one — see the amendments below. The bands added in ADR-0030/0031/0032 have no cells yet. The workflow's own "Excluded from coverage" comment block is the authoritative list.
+
+## Amendments (2026-09-20)
+
+Four later ADRs each corrected one particular of this one. Rather than edit the reasoning above,
+this section states the current position in one place. Where it conflicts with the original text,
+**this section wins**, and the ADR that made the change is named.
+
+### Current supported bands
+
+Read off `settings.gradle.kts` and each band's `build.gradle.kts` on `band/phase4-new-bands`.
+**Eight bands**, not six:
+
+| Band | MC versions | `javaRelease` | Loaders | Adapter source | Established / changed by |
+|---|---|---|---|---|---|
+| `mcdp-1.17` | 1.17.1 | 16 | Fabric + Forge | shares `fabric/`, shares `forge-1.18/` | 0023; Forge share by [0029](0029-forge-1-17-shares-the-4-0-adapter.md) |
+| `mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | shares `fabric/`; `forge-1.18/` is canonical | 0023 |
+| `mcdp-1.19` | 1.19.2 (forgespi 6.0.0 is uniform across 1.19–1.19.4) | 17 | Fabric + Forge | shares `fabric/`, shares `forge-1.18/` | [0031](0031-mc-1-19-band.md) |
+| `mcdp-1.20` | **1.20.1** | 17 | Fabric + Forge | shares `fabric/`, shares `forge-1.18/` | 0023 |
+| `mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | shares `fabric/`; `neoforge-1.20.6/` own tree (FML 8.0.x) | 0023 |
+| `mcdp-1.21` | **1.21.1 only** | 21 | Fabric + NeoForge | shares `fabric/`; `neoforge/` is canonical (FML 4.0.x) | 0023, scope confirmed by [0030](0030-mc-1-21-11-band.md) |
+| `mcdp-1.21.11` | 1.21.10 + 1.21.11 (the FML-10 band) | 21 | Fabric + NeoForge | shares `fabric/`; `neoforge-1.21.11/` own tree | [0030](0030-mc-1-21-11-band.md) |
+| `mcdp-26` | 26.1, 26.2, 26.3, … | 21 (bytecode; game needs JDK 25) | Fabric + NeoForge | shares `fabric/`, shares `neoforge-1.21.11/` | [0032](0032-single-26x-band.md) |
+
+`mcdp-26.1` **does not exist**. It was never published to Maven Central, so nothing was stranded;
+its `fabric-26.1/`, `neoforge-26.1/`, `multi-26.1/` and `test-mods/*-example-26.1/` directories are
+deleted.
+
+There are now **three** NeoForge source trees (`neoforge/` for FML 4.0.x, `neoforge-1.20.6/` for
+8.0.x, `neoforge-1.21.11/` for 10/11/12) and **one** Forge tree (`forge-1.18/`, shared by four
+bands spanning forgespi 4.0.x → 6.0.x → 7.x).
+
+### `mcdp-1.20` covers 1.20.1, not "≤ 1.20.4"
+
+An earlier audit flagged a contradiction between the band table's `1.20.1` and prose elsewhere
+saying the band covers "≤ 1.20.4". **The table is the truth: `mcdp-1.20` is 1.20.1.** The band pins
+`net.minecraftforge:forge:1.20.1-47.4.20` / forgespi 7.x, `test-mods/forge-example-1.20` declares
+`versionRange = "[1.20.1,1.21)"`, and the only cell in CI boots 1.20.1. "≤ 1.20.4" is a statement
+about a *different* boundary — the end of the pre-NeoForge, `LANGPROVIDER`-routed Forge era — and
+should not be read as band coverage. 1.20.2–1.20.4 are not compiled against, not booted, and not
+claimed; they are likely to work (same forgespi 7.x line) but that is **unverified**.
+
+### Deliberate gaps
+
+- **MC 1.21.2 – 1.21.9: uncovered on purpose.** They span FML 5.0 / 6.0 / 7.0 / 8.0 / 9.0 — five
+  loader lines, each needing its own compile pin and possibly its own port — for versions that are
+  neither the line's entry point (1.21.1, where the modded ecosystem sits) nor its tail
+  (1.21.10/1.21.11, covered by `mcdp-1.21.11`). If demand appears, **the 9.0 line (1.21.5–1.21.8) is
+  the cheapest add**: it still has `IModFile.findResource` and the `FMLEnvironment.dist` field, so
+  the canonical `neoforge/` source compiles against it unmodified — a pure `setSrcDirs` band.
+  ([ADR-0030](0030-mc-1-21-11-band.md).)
+- **1.15.2, 1.16.x: still out**, for the original reasons (Java 8 backport of `core/`; Mixin 0.7).
+- **1.19 is no longer a gap** — [ADR-0031](0031-mc-1-19-band.md) adds it. The record contains no
+  reason it was ever excluded; ADR-0031 does not invent one.
+
+### Adapter status
+
+No band ships a stub. Fabric and NeoForge adapters were complete before this ADR's errata; the
+**Forge** adapter reached parity today:
+
+- [ADR-0027](0027-forge-lifecycle-staging.md) — the mod lifecycle is wired. Before it, no
+  `IModBusEvent` reached an mcdp-loaded mod on Forge, and the ADR-0017 `(IEventBus, ModContainer,
+  Dist)` constructor bag was empty.
+- [ADR-0028](0028-forge-cross-mod-registration.md) — ADR-0010 stdlib promotion, the ADR-0018/0019
+  lazy bridge populator and download progress reporting now all work on Forge. All three were
+  silently inert there before.
+- **Remaining Forge gap:** `@EventBusSubscriber` auto-registration (NeoForge gets this via
+  `AutomaticEventSubscriber.inject`; Forge does not yet).
+
+### Subproject / CI-cell arithmetic
+
+The "six bands → a lot of `build.gradle.kts` files / up to 18 CI cells" consequences above scale
+with the table: eight bands × three subprojects (fabric-X, forge-X|neoforge-X, multi-X) = 24 band
+subprojects, plus `core`, `deps-lib`, `gradle-plugin`, `cli`. CI has **not** grown to match — the
+nightly `runserver-smoke-bands` matrix is 7 cells × 2 OSes, and the bands added today have no cells
+(their test mods are unbuilt, and the 26.x ones are unbuildable on the current root toolchain).
+`mc-smoke.yml`'s "Excluded from coverage" comment is the authoritative account of what is and is
+not covered.
+
 ## Cross-references
 
 - ADR-0001 — per-mod URLClassLoaders (the underlying isolation model, version-agnostic)
@@ -139,3 +235,8 @@ Two mechanical notes for anyone touching this: `expand()` runs Groovy's `SimpleT
 - ADR-0016 — unified `mcdp` runtime jar (now per-band: `mcdp-X`)
 - ADR-0020 — Maven Central publishing (carries forward; one publish workflow handles all bands' artifacts)
 - ADR-0022 — `dev_roots` source-set output contract (band-agnostic; works the same on every band)
+- ADR-0027 / ADR-0028 — the Forge adapter's lifecycle staging and cross-mod registration; together they retire this ADR's "adapter implementations still in progress" status for Forge
+- ADR-0029 — corrects this ADR's forgespi-3.2.x premise for `forge-1.17`
+- ADR-0030 — corrects `mcdp-1.21`'s scope, adds `mcdp-1.21.11`, and expires the 21.x/26.x NeoForge source-sharing premise
+- ADR-0031 — adds `mcdp-1.19`, the band this ADR's table skipped without a reason
+- ADR-0032 — replaces `mcdp-26.1` with a single `mcdp-26` band

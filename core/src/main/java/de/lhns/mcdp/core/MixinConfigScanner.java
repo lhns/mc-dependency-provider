@@ -71,6 +71,36 @@ public final class MixinConfigScanner {
     }
 
     /**
+     * Content-addressed variant of
+     * {@link #registerMixinOwnersFromConfigs(String, List, List)}: takes the already-read text
+     * of each Mixin config JSON instead of a root + relative path pair.
+     *
+     * <p>Exists for adapters whose loader SPI hands out mod-jar entries as streams rather than
+     * as {@link Path}s. NeoForge FML 10.0.x (MC 1.21.10+) dropped
+     * {@code IModFile.findResource(String...)} in favour of {@code JarContents}, which exposes
+     * no {@link Path} view — see ADR-0030. Best-effort in exactly the same way as the
+     * path-based form: a config that fails to parse is skipped silently.
+     *
+     * @return the list of registered FQNs (for logging / tests)
+     */
+    public static List<String> registerMixinOwnersFromConfigContents(String modId,
+                                                                     List<String> configJsonContents) {
+        List<String> registered = new ArrayList<>();
+        for (String text : configJsonContents) {
+            if (text == null || text.isBlank()) continue;
+            try {
+                for (String fqn : extractFqnsFromConfig(text)) {
+                    McdpProvider.registerMixinOwner(fqn, modId);
+                    registered.add(fqn);
+                }
+            } catch (IllegalArgumentException ignored) {
+                // MiniJson parse error; annotation-modId path (ADR-0008 path 1) still works.
+            }
+        }
+        return registered;
+    }
+
+    /**
      * Parse a Mixin config JSON and return the fully-qualified names of every class declared under
      * {@code mixins}, {@code client}, and {@code server}.
      */

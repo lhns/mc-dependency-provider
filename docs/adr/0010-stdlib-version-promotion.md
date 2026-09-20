@@ -2,6 +2,8 @@
 
 **Status:** Accepted — policy + platform integration shipped in v0.1.0. Fabric (`McLibPreLaunch` two-pass) and NeoForge (`McLibLanguageLoader` lazy-init on first `loadMod`) both batch-collect manifests, call `selectPromotions`, build one shared promoted-stdlib loader via `LoaderCoordinator.buildSharedLibraryLoader`, and pass it as `parentLibLoader` to per-mod `register` calls.
 
+> **Forge: not covered until 2026-09-20.** This status line names only the two adapters that had the integration, and that was accurate — but the band model (ADR-0023) later added Forge bands, and promotion did **not** apply on them. The Forge adapter did all per-mod work inside `McdpModContainer`'s constructor, calling `CONSUMER.resolveAll(manifest)` per mod with `McdpModContainer.class.getClassLoader()` as `libParent`, so two Scala mods each got their own `scala3-library_3` — `selectPromotions` needs the union of all manifests, which a per-mod constructor cannot see. [ADR-0028](0028-forge-cross-mod-registration.md) fixes this: `ensurePromotionInitialized()` runs once off a reflective `LoadingModList` walk and builds the shared library loader, exactly as on NeoForge. Promotion now applies on all three loaders. Nothing in the *policy* below changed.
+
 ## Context
 
 ADR-0006 coalesces libraries only when two mods pin the *exact same* SHA-256. This is the right default: it preserves determinism (mod authors get exactly what they pinned) and costs ~20 LoC. The known downside, called out explicitly in ADR-0006 ("Upgrade path"): a modpack with twenty Scala mods, each pinning a slightly different patch version of `scala3-library_3`, produces twenty separate stdlib loaders — roughly 15 MB per distinct version for the stdlib alone.
