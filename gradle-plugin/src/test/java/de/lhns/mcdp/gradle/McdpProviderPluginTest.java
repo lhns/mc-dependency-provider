@@ -354,4 +354,225 @@ class McdpProviderPluginTest {
                         + "got " + rebuiltSize + " expected " + rewrittenSize
                         + " — bridgeTask probably skipped and the un-rewritten class shipped.");
     }
+
+    /**
+     * Back-to-back reruns with NO source change must not leave the mod with rewritten mixins and
+     * no bridges. {@code BridgeCodegenTask} cleans {@code build/mcdp-bridges/classes} and
+     * {@code .../resources} on every run and regenerates them from a scan of the compile outputs
+     * — but the compile outputs hold the PREVIOUS run's rewritten bytecode, which scans as
+     * SKIPPED (the cross-classloader refs are already bridged). Before the source-cache fix the
+     * second run therefore wiped both dirs and put nothing back: the rewritten mixin's
+     * {@code INVOKEINTERFACE HelperBridge.config()} had no {@code HelperBridge} class and no
+     * {@code META-INF/mcdp-bridges.toml} to register it → {@code NoClassDefFoundError} in-game.
+     *
+     * <p>It used to survive only by accident: the in-place rewrite dirties the compile task's
+     * output snapshot, so the next build recompiled and handed the codegen original bytecode
+     * again. Any build where that recompile doesn't happen (FROM-CACHE, partial restore, a task
+     * graph without the compile task) dropped the bridges silently. This test reruns
+     * {@code generateMcdpBridges} with the compile task excluded (and again plainly), touching
+     * no source, and asserts the manifest and the emitted {@code *Bridge.class} files survive.
+     *
+     * <p>Distinct from {@link #bridgeTaskRerunsAfterUpstreamOverwrite}, which deliberately
+     * deletes the class and re-runs {@code compileScala} first — i.e. it exercises the path
+     * where the originals ARE restored, and asserts only the rewritten file's size.
+     */
+    @Test
+    void bridgeOutputsSurvivePlainRerun(@TempDir Path tmp) throws IOException {
+        writeBridgeFixture(tmp, "plain_rerun");
+
+        BuildResult build1 = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpBridges", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(build1.getOutput().contains("BUILD SUCCESSFUL"), build1.getOutput());
+        assertBridgeOutputsPresent(tmp, "after build 1");
+
+        // Rerun with the compile task excluded. `-x compileJava` is the cheap, deterministic
+        // stand-in for every real-world way the compile task fails to hand the codegen original
+        // bytecode: a FROM-CACHE compile, a partial output restore, or an invocation whose task
+        // graph simply doesn't include it. Without it the test proves nothing — the in-place
+        // rewrite dirties compileJava's output snapshot, so a plain rerun recompiles and the
+        // codegen gets its originals back by luck.
+        BuildResult build2 = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpBridges", "-x", "compileJava", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(build2.getOutput().contains("BUILD SUCCESSFUL"), build2.getOutput());
+        assertBridgeOutputsPresent(tmp, "after build 2 (rerun without a recompile)");
+
+        // And a plain rerun, which is what a user actually types.
+        BuildResult build3 = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("generateMcdpBridges", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+        assertTrue(build3.getOutput().contains("BUILD SUCCESSFUL"), build3.getOutput());
+        assertBridgeOutputsPresent(tmp, "after build 3 (plain rerun)");
+    }
+
+    /**
+     * ADR-0024's over-share validator must not fire on the codegen's OWN output. The plugin
+     * auto-adds the bridge package to {@code sharedPackages}, and generated bridge methods name
+     * mod-private types in their descriptors by construction
+     * ({@code config()Lcom/example/modcode/Config;}) — that is the whole point of a bridge.
+     * Scanning them as if they were user code produced an OVER_SHARE diagnostic against a file
+     * the user cannot edit, whose only suggested remedy was to share the mod's own package: the
+     * exact over-share ADR-0024 exists to prevent.
+     */
+    @Test
+    void validateSharedPackagesIgnoresGeneratedBridges(@TempDir Path tmp) throws IOException {
+        writeBridgeFixture(tmp, "validate_bridges");
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("validateSharedPackages", "--stacktrace")
+                .withPluginClasspath()
+                .build();
+
+        String out = result.getOutput();
+        assertTrue(out.contains("BUILD SUCCESSFUL"), out);
+        assertFalse(out.contains("mcdp_bridges") && out.contains("shared-package class"),
+                "validator flagged a generated bridge:\n" + out);
+
+        // Premise check: the bridge really does name a mod-private type in its descriptor, so
+        // this test would fail if the codegen output were fed back into the validator.
+        // Bridge names are <SimpleName>_<hash> so two same-named targets in different
+        // packages can't collide, so derive it rather than hardcoding.
+        String helperBridge = de.lhns.mcdp.gradle.bridges.BridgeRewriter
+                .bridgeSimpleName("com/example/modcode/Helper") + "Bridge.class";
+        Path bridgeClass = tmp.resolve(
+                "build/mcdp-bridges/classes/com/example/validate_bridges/mcdp_bridges/" + helperBridge);
+        assertTrue(Files.isRegularFile(bridgeClass), "expected generated bridge at " + bridgeClass);
+        String constantPool = new String(Files.readAllBytes(bridgeClass),
+                java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertTrue(constantPool.contains("com/example/modcode/Config"),
+                "fixture no longer produces a bridge naming a mod-private type — premise broken");
+    }
+
+    /**
+     * ADR-0025 makes run-task stripping opt-in, so {@link RunTaskClasspathPatch} only fires for
+     * users who asked for strict prod parity — and its {@code doFirst} used to capture
+     * {@code Project}, the manifest {@code TaskProvider} and the run task itself, all of which
+     * fail to serialize under {@code --configuration-cache}. That put the one advertised
+     * diagnostic path out of reach for any build with the configuration cache on.
+     */
+    @Test
+    void runTaskPatchIsConfigurationCacheCompatible(@TempDir Path tmp) throws IOException {
+        Files.writeString(tmp.resolve("settings.gradle.kts"), "rootProject.name = \"cc_test\"\n");
+        Files.writeString(tmp.resolve("build.gradle.kts"), """
+                import org.gradle.api.tasks.JavaExec
+
+                plugins {
+                    `java-library`
+                    id("de.lhns.mcdp")
+                }
+
+                repositories {
+                    mavenCentral()
+                }
+
+                dependencies {
+                    mcdepImplementation("org.tomlj:tomlj:1.1.1")
+                }
+
+                mcdepprovider {
+                    lang.set("java")
+                    patchRunTasks.set(listOf("runServer"))
+                }
+
+                tasks.register<JavaExec>("runServer") {
+                    classpath = sourceSets["main"].runtimeClasspath
+                    mainClass.set("non.existent.Main")
+                }
+                """);
+
+        // Fails on the missing main class, as in stripsManifestJarsFromRunTaskClasspath — the
+        // patch has already run by then. What we assert is that the failure is THAT one and not
+        // a configuration-cache serialization problem.
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(tmp.toFile())
+                .withArguments("runServer", "--configuration-cache", "--stacktrace")
+                .withPluginClasspath()
+                .buildAndFail();
+
+        String out = result.getOutput();
+        assertFalse(out.contains("problems were found storing the configuration cache")
+                        || out.contains("configuration cache problem"),
+                "configuration cache violation in the run-task patch:\n" + out);
+        assertTrue(out.contains("manifest-listed jars from runServer"),
+                "patch didn't run under --configuration-cache:\n" + out);
+    }
+
+    /** Minimal project whose mixin forces a bridge with a mod-private type in its descriptor. */
+    private static void writeBridgeFixture(Path tmp, String projectName) throws IOException {
+        Files.writeString(tmp.resolve("settings.gradle.kts"),
+                "rootProject.name = \"" + projectName + "\"\n");
+        Files.writeString(tmp.resolve("build.gradle.kts"), """
+                plugins {
+                    `java-library`
+                    id("de.lhns.mcdp")
+                }
+                group = "com.example"
+                repositories {
+                    mavenCentral()
+                    maven { url = uri("https://repo.spongepowered.org/repository/maven-public/") }
+                }
+                dependencies {
+                    compileOnly("org.spongepowered:mixin:0.8.5")
+                }
+                mcdepprovider {
+                    lang.set("java")
+                }
+                """);
+
+        Path src = tmp.resolve("src/main/java");
+        Files.createDirectories(src.resolve("com/example/mixin"));
+        Files.createDirectories(src.resolve("com/example/modcode"));
+        // Returning a mod-private type puts com.example.modcode.Config into the generated
+        // bridge's method descriptor — the shape that tripped the over-share validator.
+        Files.writeString(src.resolve("com/example/mixin/MyMixin.java"), """
+                package com.example.mixin;
+                @org.spongepowered.asm.mixin.Mixin(Object.class)
+                public class MyMixin {
+                    // Returns int, not Config: a mixin's own method descriptor is merged onto
+                    // the target class, so naming a mod-private type there is itself an error
+                    // (BridgeScanner rejects it). The mod-private type must appear only in the
+                    // CALLED method's descriptor -- which is what puts it on the generated
+                    // bridge interface, the case these tests exercise.
+                    public static int handler() {
+                        return com.example.modcode.Helper.config().value;
+                    }
+                }
+                """);
+        Files.writeString(src.resolve("com/example/modcode/Config.java"), """
+                package com.example.modcode;
+                public class Config { public int value = 1; }
+                """);
+        Files.writeString(src.resolve("com/example/modcode/Helper.java"), """
+                package com.example.modcode;
+                public class Helper {
+                    public static Config config() { return new Config(); }
+                }
+                """);
+    }
+
+    private static void assertBridgeOutputsPresent(Path tmp, String phase) throws IOException {
+        Path manifest = tmp.resolve("build/mcdp-bridges/resources/META-INF/mcdp-bridges.toml");
+        assertTrue(Files.isRegularFile(manifest),
+                "bridge manifest missing " + phase + " at " + manifest);
+        assertTrue(Files.readString(manifest).contains("[[bridge]]"),
+                "bridge manifest has no entries " + phase + ":\n" + Files.readString(manifest));
+
+        Path classesDir = tmp.resolve("build/mcdp-bridges/classes");
+        assertTrue(Files.isDirectory(classesDir), "bridge classes dir missing " + phase);
+        try (java.util.stream.Stream<Path> walk = Files.walk(classesDir)) {
+            java.util.List<Path> bridges = walk
+                    .filter(p -> p.getFileName().toString().endsWith("Bridge.class"))
+                    .toList();
+            assertFalse(bridges.isEmpty(),
+                    "no *Bridge.class emitted " + phase + " under " + classesDir);
+        }
+    }
 }
