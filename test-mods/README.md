@@ -47,17 +47,39 @@ Minecraft bands", `mcdp-26.1`).
 ### `forge-example-1.17`, `forge-example-1.18`
 
 ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18, and it forces Gradle 7
-(Java ≤ 19). mcdp's `gradle-plugin` compiles to Java 21 bytecode against Gradle 8
-APIs, so **the mcdp plugin path is unusable on these two bands**. The mcdp
-*runtime* (the `mcdp-1.17` / `mcdp-1.18` jars via Maven) works; only manifest
-generation must happen outside mcdp. Forge 1.20.x is on ForgeGradle 6 + Gradle 8,
-which is why `forge-example-1.20` *is* in CI. See ADR-0023, "Consequences —
-negative".
+(Java ≤ 19), so these two mods run on their own Gradle 7.6 wrapper (see below).
 
-`forge-example-1.17` additionally targets a **stub adapter**: forgespi 3.2.x's
-`loadMod` predates `ModuleLayer` and `IModFileInfo.getFile()` is missing. The real
-port is a follow-up; ADR-0023 also notes the `mcdp-1.17` aggregator leaves
-`FMLModType` unset for this reason.
+**The mcdp plugin path works on these bands.** This section previously claimed it
+did not, for two reasons; only one of them was ever real:
+
+- *"compiles to Java 21 bytecode"* — this was true and was the actual blocker. A
+  Gradle 7.6 daemon runs on at most JDK 19, so it rejected the published
+  `gradle-plugin` variant (`org.gradle.jvm.version=21`) outright. Fixed:
+  `:gradle-plugin` now targets **Java 17** (root `build.gradle.kts`). 17 rather than
+  16 because `RunTaskClasspathPatch` uses `java.util.HexFormat`, a Java 17 API — and
+  16 buys nothing here anyway, since the plugin's bytecode is loaded by the *Gradle
+  daemon*, never by Minecraft's JVM. (That MC-runtime floor is why `core` and
+  `deps-lib` target 16; it does not apply to a build-time plugin.)
+- *"against Gradle 8 APIs"* — **this was false.** Every `org.gradle.*` type the
+  plugin imports (`Plugin`, `Project`, `Configuration`, `ResolvedArtifact`,
+  `MavenArtifactRepository`, `RegularFileProperty`, `ListProperty`,
+  `JavaPluginExtension`, `SourceSet`, `JavaExec`, `ProcessResources`, `ProjectLayout`,
+  `DuplicatesStrategy`, the task-annotation set) exists in Gradle 7.6, and the source
+  uses none of Gradle 8's added surface — no `consumable()`/`resolvable()`
+  configuration factories, no `Problems` API, no `DependencyCollector`, no
+  `MapProperty`, no `Provider.zip`. Nothing in the plugin needed changing.
+
+`forge-example-1.18` is therefore in the nightly `runserver-smoke-bands` matrix.
+
+`forge-example-1.17` is **not**, and the reason is the adapter, not the plugin:
+forgespi 3.2.x's `loadMod` predates `ModuleLayer` and `IModFileInfo.getFile()` is
+missing, so `forge-1.17`'s `McdpLanguageProvider` is still a stub that throws
+`UnsupportedOperationException`. A CI cell could only assert "this fails", which is
+not worth a nightly runner; add the row when the real port lands. Note that row will
+also need a JDK **16** in the workflow's `setup-java` list, because
+`forge-example-1.17` pins `toolchain { languageVersion = 16 }` and GitHub runners
+ship no JDK 16. ADR-0023 also notes the `mcdp-1.17` aggregator leaves `FMLModType`
+unset for the same stub-adapter reason.
 
 ### The Gradle 7.6 wrappers in `forge-example-1.17` / `forge-example-1.18`
 

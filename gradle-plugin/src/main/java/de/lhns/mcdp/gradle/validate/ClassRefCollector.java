@@ -138,33 +138,36 @@ public final class ClassRefCollector {
                     for (AbstractInsnNode insn : m.instructions) {
                         collectFromAnnotations(insn.visibleTypeAnnotations, refs);
                         collectFromAnnotations(insn.invisibleTypeAnnotations, refs);
-                        switch (insn) {
+                        // if/else-if on `instanceof` rather than a pattern switch: this
+                        // module targets Java 17 so the published plugin loads on a Gradle 7
+                        // daemon (ForgeGradle 5.1, the only FG line for MC <= 1.18, pins
+                        // Gradle 7). Switch patterns are Java 21 and would silently re-break
+                        // the Forge 1.17/1.18 CI cells. Do not "modernise" this back.
+                        if (insn instanceof TypeInsnNode t) {
                             // CHECKCAST/INSTANCEOF/ANEWARRAY on an array type carry a
                             // descriptor (`[Ljava/lang/String;`), not an internal name, so
                             // this must go through getObjectType/addType to reach the element
                             // type -- adding the raw operand reports `[Ljava.lang.String;` as
                             // an unresolvable reference and fails the build on legal code.
-                            case TypeInsnNode t -> addType(Type.getObjectType(t.desc), refs);
-                            case FieldInsnNode f -> {
-                                refs.add(f.owner);
-                                addType(Type.getType(f.desc), refs);
+                            addType(Type.getObjectType(t.desc), refs);
+                        } else if (insn instanceof FieldInsnNode f) {
+                            refs.add(f.owner);
+                            addType(Type.getType(f.desc), refs);
+                        } else if (insn instanceof MethodInsnNode mi) {
+                            // `owner` is an array descriptor for array-member calls
+                            // such as `arr.clone()`; same normalisation as above.
+                            addType(Type.getObjectType(mi.owner), refs);
+                            addMethodType(mi.desc, refs);
+                        } else if (insn instanceof LdcInsnNode l) {
+                            addConstant(l.cst, refs);
+                        } else if (insn instanceof InvokeDynamicInsnNode idy) {
+                            addMethodType(idy.desc, refs);
+                            addHandle(idy.bsm, refs);
+                            if (idy.bsmArgs != null) {
+                                for (Object arg : idy.bsmArgs) addConstant(arg, refs);
                             }
-                            case MethodInsnNode mi -> {
-                                // `owner` is an array descriptor for array-member calls
-                                // such as `arr.clone()`; same normalisation as above.
-                                addType(Type.getObjectType(mi.owner), refs);
-                                addMethodType(mi.desc, refs);
-                            }
-                            case LdcInsnNode l -> addConstant(l.cst, refs);
-                            case InvokeDynamicInsnNode idy -> {
-                                addMethodType(idy.desc, refs);
-                                addHandle(idy.bsm, refs);
-                                if (idy.bsmArgs != null) {
-                                    for (Object arg : idy.bsmArgs) addConstant(arg, refs);
-                                }
-                            }
-                            case MultiANewArrayInsnNode ma -> addType(Type.getType(ma.desc), refs);
-                            default -> {}
+                        } else if (insn instanceof MultiANewArrayInsnNode ma) {
+                            addType(Type.getType(ma.desc), refs);
                         }
                     }
                 }
@@ -199,20 +202,19 @@ public final class ClassRefCollector {
      * or a bootstrap-method argument. {@code String}/boxed primitives carry no type reference.
      */
     private static void addConstant(Object cst, Set<String> refs) {
-        switch (cst) {
-            case null -> {}
-            case Type t -> addType(t, refs);
+        // instanceof chain, not a pattern switch -- see the note in collectFromMethods.
+        if (cst instanceof Type t) {
+            addType(t, refs);
+        } else if (cst instanceof Handle h) {
             // Method references and other bsm args: the handle names an owner and a descriptor,
             // both of which the JVM resolves when the call site links.
-            case Handle h -> addHandle(h, refs);
-            case ConstantDynamic cd -> {
-                addType(Type.getType(cd.getDescriptor()), refs);
-                addHandle(cd.getBootstrapMethod(), refs);
-                for (int i = 0; i < cd.getBootstrapMethodArgumentCount(); i++) {
-                    addConstant(cd.getBootstrapMethodArgument(i), refs);
-                }
+            addHandle(h, refs);
+        } else if (cst instanceof ConstantDynamic cd) {
+            addType(Type.getType(cd.getDescriptor()), refs);
+            addHandle(cd.getBootstrapMethod(), refs);
+            for (int i = 0; i < cd.getBootstrapMethodArgumentCount(); i++) {
+                addConstant(cd.getBootstrapMethodArgument(i), refs);
             }
-            default -> {}
         }
     }
 
@@ -258,20 +260,18 @@ public final class ClassRefCollector {
     }
 
     private static void collectFromAnnotationValue(Object v, Set<String> refs) {
-        switch (v) {
-            case null -> {}
-            case Type t -> addType(t, refs);
-            case AnnotationNode nested -> collectFromAnnotation(nested, refs);
-            case String[] enumConst -> {
-                // {descriptor, constant-name}; only the descriptor is a type reference.
-                if (enumConst.length > 0 && enumConst[0] != null) {
-                    addType(Type.getType(enumConst[0]), refs);
-                }
+        // instanceof chain, not a pattern switch -- see the note in collectFromMethods.
+        if (v instanceof Type t) {
+            addType(t, refs);
+        } else if (v instanceof AnnotationNode nested) {
+            collectFromAnnotation(nested, refs);
+        } else if (v instanceof String[] enumConst) {
+            // {descriptor, constant-name}; only the descriptor is a type reference.
+            if (enumConst.length > 0 && enumConst[0] != null) {
+                addType(Type.getType(enumConst[0]), refs);
             }
-            case List<?> list -> {
-                for (Object e : list) collectFromAnnotationValue(e, refs);
-            }
-            default -> {}
+        } else if (v instanceof List<?> list) {
+            for (Object e : list) collectFromAnnotationValue(e, refs);
         }
     }
 

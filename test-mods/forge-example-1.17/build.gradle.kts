@@ -25,7 +25,13 @@ java {
     }
 }
 
-repositories { mavenCentral() }
+// mavenLocal FIRST: no includeBuild("../.."), so `de.lhns.mcdp:mcdp-1.17:0.1.0-SNAPSHOT`
+// only exists in the parent build's publishToMavenLocal output. settings.gradle.kts has
+// mavenLocal under `pluginManagement` only, which does not cover dependency resolution.
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
 
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.17.1")
