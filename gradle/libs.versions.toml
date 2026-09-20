@@ -21,12 +21,10 @@ neoforge-bus = "8.0.5"
 # Forge 1.17.1 / 1.18.2 — forgespi 4.0.x is the SPI surface (IModLanguageProvider,
 # ModFileScanData, IModInfo, etc.). Pinned to 4.0.11 (latest 4.0.x at time of writing).
 #
-# 1.17 was previously pinned to 3.2.3. That was wrong: `fmlloader-1.17.1-37.1.2.pom`
-# declares `forgespi 4.0.+`, forgespi 4.0.2 predates Forge 37.1.2 (2021-06-25 vs 2022-01),
-# and the shipped bytecode proves it — `ModLoader` calls the 4.0 overload
-# `IModLanguageLoader.loadMod(IModInfo, ModFileScanData, ModuleLayer)`, and
-# `moddiscovery.ModFile.findResource` is the 4.0 varargs form. 3.2.3 is the pre-release
-# 1.17 snapshot SPI, not what Forge 1.17.1 runs. See ADR-0029.
+# 4.0 for 1.17 too, not the 3.2.x it looks like it should want: `fmlloader-1.17.1-37.1.2.pom`
+# declares `forgespi 4.0.+`, and its shipped bytecode calls the 4.0 overload
+# `IModLanguageLoader.loadMod(IModInfo, ModFileScanData, ModuleLayer)` with the 4.0 varargs
+# `moddiscovery.ModFile.findResource`. 3.2.3 is the pre-release 1.17 snapshot SPI. ADR-0029.
 forge-spi-mc117 = "4.0.11"
 forge-spi-mc118 = "4.0.11"
 forge-spi-mc120 = "7.1.6"

@@ -38,3 +38,13 @@ dependencies {
 // aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
 // fabric and neoforge adapters. The shadowJar here remains produced for
 // inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration.
+
+// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
+// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
+// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
+// compiled into each band's own jar so it stays package-private.
+sourceSets {
+    main {
+        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
+    }
+}

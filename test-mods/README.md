@@ -8,19 +8,10 @@ subprojects of the root build, so `./gradlew :test-mods:…` does not reach them
 Build one with `cd test-mods/<mod> && ../../gradlew build`, or all of them with
 `scripts/test-mods.sh <gradle-args>`.
 
-Thirteen of the twenty run in CI. The other seven are **not abandoned code**, and
-they are not all excluded for the same reason:
-
-- **Three are blocked on the build toolchain** — `fabric-example-26.3`,
-  `neoforge-example-26.2` and `forge-example-1.17`. Their adapters work; what is
-  missing is a Gradle daemon / JDK combination CI can provide today. Reasons are
-  recorded below and in the "Excluded from coverage" comment in
-  `.github/workflows/mc-smoke.yml`.
-- **Four are new and simply not wired in yet** — `fabric-example-1.19`,
-  `forge-example-1.19`, `fabric-example-1.21.11` and `neoforge-example-1.21.11`.
-  These four have **never been built or booted**. Nothing is known to block the
-  1.19 pair; the 1.21.11 pair has one open question (Loom 1.9 vs MC 1.21.11, see
-  below).
+Thirteen of the twenty run in CI. The other seven are **not abandoned code**: three
+are blocked on the build toolchain and four are simply not wired in yet. Both
+reasons are detailed below, and mirrored in the "Excluded from coverage" comment in
+`.github/workflows/mc-smoke.yml`.
 
 ## Coverage
 
@@ -53,13 +44,12 @@ exercised that mod — read it as *unproven*, not *known broken*.
 ## The four new mods: never built
 
 `fabric-example-1.19`, `forge-example-1.19`, `fabric-example-1.21.11` and
-`neoforge-example-1.21.11` were added today alongside the `mcdp-1.19` and
-`mcdp-1.21.11` bands ([ADR-0031](../docs/adr/0031-mc-1-19-band.md),
-[ADR-0030](../docs/adr/0030-mc-1-21-11-band.md)). No build, no boot, no CI cell.
-Their pins are researched, not verified.
-
-All four use the ordinary composite-build shape (`includeBuild("../..")`, no own
-wrapper), so adding them is a matrix-row change once someone has run them locally:
+`neoforge-example-1.21.11` were added alongside the `mcdp-1.19` and `mcdp-1.21.11`
+bands ([ADR-0031](../docs/adr/0031-mc-1-19-band.md),
+[ADR-0030](../docs/adr/0030-mc-1-21-11-band.md)). No build, no boot, no CI cell —
+their pins are researched, not verified. All four use the ordinary composite-build
+shape (`includeBuild("../..")`, no own wrapper), so adding them is a matrix-row
+change once someone has run them locally:
 
 - **1.19 pair** — nothing known blocks them. `fabric-example-1.19` is Loom 1.9 on
   MC 1.19.2 / fabric-loader 0.14.25; `forge-example-1.19` is ForgeGradle 6.0.+ on
@@ -80,22 +70,17 @@ wrapper), so adding them is a matrix-row change once someone has run them locall
 
 Both target the single **`mcdp-26`** band, which covers Mojang's whole
 calendar-versioning line (26.1 / 26.2 / 26.3) — see
-[ADR-0032](../docs/adr/0032-single-26x-band.md), which supersedes ADR-0023's
-`mcdp-26.1` row. They replace the old `fabric-example-26.1` / `neoforge-example-26.1`
-scaffolds.
+[ADR-0032](../docs/adr/0032-single-26x-band.md). They replace the old
+`fabric-example-26.1` / `neoforge-example-26.1` scaffolds.
 
-**The old exclusion reason is obsolete.** This section used to say MC 26.1.x was
-"scaffold-only: Mojang has not shipped real artifacts". Mojang has: 26.1, 26.2 and
-26.3 are all in the version manifest with real downloads, 26.3 released 2026-09-15,
-and fabric-loader 0.19.5, Fabric API `0.161.0+26.3` and Loom 1.18.2 are all published
-and stable.
-
-What actually blocks these two cells is **the build toolchain, not Minecraft**:
-
-- MC 26.1+ all declare `javaVersion.majorVersion = 25`.
-- Loom refuses a MC version whose required Java exceeds the **Gradle daemon** JVM —
-  that is exactly the `26.1.2 requires Java 25 but Gradle is using 21` error.
-- Gradle 8.11.1 (the repo root) cannot run on JDK 25 at all.
+**The old exclusion reason — "MC 26.1.x is scaffold-only, Mojang has not shipped
+real artifacts" — is obsolete.** 26.1, 26.2 and 26.3 are all in the version manifest
+with real downloads (26.3 released 2026-09-15), and fabric-loader 0.19.5, Fabric API
+`0.161.0+26.3` and Loom 1.18.2 are published and stable. What actually blocks these
+two cells is **the build toolchain, not Minecraft**: MC 26.1+ declare
+`javaVersion.majorVersion = 25`; Loom refuses a MC version whose required Java
+exceeds the **Gradle daemon** JVM (`26.1.2 requires Java 25 but Gradle is using 21`);
+and Gradle 8.11.1, the repo root, cannot run on JDK 25 at all.
 
 So these two mods take the `forge-example-1.17` / `-1.18` shape in the other
 direction: their **own Gradle 9.6.1 wrapper**, no `includeBuild("../..")`,
@@ -120,25 +105,10 @@ ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18, and it forces Gra
 (Java ≤ 19), so these two mods run on their own Gradle 7.6 wrapper (see below).
 
 **The mcdp plugin path works on these bands, and so does the Forge adapter.** This
-section previously claimed the *plugin* did not work, for two reasons; only one of
-them was ever real:
-
-- *"compiles to Java 21 bytecode"* — this was true and was the actual blocker. A
-  Gradle 7.6 daemon runs on at most JDK 19, so it rejected the published
-  `gradle-plugin` variant (`org.gradle.jvm.version=21`) outright. Fixed:
-  `:gradle-plugin` now targets **Java 17** (root `build.gradle.kts`). 17 rather than
-  16 because `RunTaskClasspathPatch` uses `java.util.HexFormat`, a Java 17 API — and
-  16 buys nothing here anyway, since the plugin's bytecode is loaded by the *Gradle
-  daemon*, never by Minecraft's JVM. (That MC-runtime floor is why `core` and
-  `deps-lib` target 16; it does not apply to a build-time plugin.)
-- *"against Gradle 8 APIs"* — **this was false.** Every `org.gradle.*` type the
-  plugin imports (`Plugin`, `Project`, `Configuration`, `ResolvedArtifact`,
-  `MavenArtifactRepository`, `RegularFileProperty`, `ListProperty`,
-  `JavaPluginExtension`, `SourceSet`, `JavaExec`, `ProcessResources`, `ProjectLayout`,
-  `DuplicatesStrategy`, the task-annotation set) exists in Gradle 7.6, and the source
-  uses none of Gradle 8's added surface — no `consumable()`/`resolvable()`
-  configuration factories, no `Problems` API, no `DependencyCollector`, no
-  `MapProperty`, no `Provider.zip`. Nothing in the plugin needed changing.
+section previously claimed the *plugin* did not work under Gradle 7. Half of that was
+real — `:gradle-plugin` published `org.gradle.jvm.version=21`, which a Gradle 7.6
+daemon rejects outright — and is fixed: the plugin now targets **Java 17**. The other
+half, "uses Gradle 8 APIs", was simply false. See ADR-0023's errata for the audit.
 
 `forge-example-1.18` is therefore in the nightly `runserver-smoke-bands` matrix.
 **That cell has not yet passed** — it was added along with the Java-17 plugin
@@ -146,8 +116,7 @@ target and no nightly has produced a green result for it, so MC 1.18.2-on-Forge 
 *wired*, not *proven*.
 
 `forge-example-1.17` is not in the matrix at all, but no longer because of the
-adapter. That band was long believed to be stuck on forgespi 3.2.x, whose `loadMod`
-predates `ModuleLayer` and whose `IModFileInfo` lacks `getFile()`. It isn't: Forge
+adapter: that band was long believed stuck on forgespi 3.2.x, and it isn't — Forge
 1.17.1-37.1.2 requires `forgespi 4.0.+`, so `forge-1.17` shares the same adapter
 source as `forge-1.18` (and `forge-1.19` / `forge-1.20`, which share it too — see
 [ADR-0029](../docs/adr/0029-forge-1-17-shares-the-4-0-adapter.md)). The one thing
@@ -159,10 +128,9 @@ still holding the row back is toolchain: it needs a JDK **16** in the workflow's
 its adapter was a stub. That is stale: the aggregator now emits
 `FMLModType: LANGPROVIDER` like every other Forge/NeoForge band.)
 
-**Forge caveat that applies to all four Forge bands:** the adapter has lifecycle
-events, mixin bridges, stdlib promotion and download progress (ADR-0027/0028), but
-**`@EventBusSubscriber` auto-registration is not implemented on Forge** — that is
-NeoForge-only. Forge test mods register subscribers explicitly.
+**Forge caveat that applies to all four Forge bands:** `@EventBusSubscriber`
+auto-registration is not implemented on Forge — it is NeoForge-only (ADR-0027/0028).
+Forge test mods register subscribers explicitly.
 
 ### The Gradle 7.6 wrappers in `forge-example-1.17` / `forge-example-1.18`
 
@@ -181,6 +149,3 @@ direction, and without the binaries.) That is **load-bearing, not cruft**:
 
 Every other test-mod — including the four new 1.19 / 1.21.11 mods — intentionally has
 no wrapper at all and is driven by `../../gradlew` through `includeBuild("../..")`.
-The only mods with wrapper files of any kind are `forge-example-1.17` /
-`forge-example-1.18` (full Gradle 7.6 wrapper) and `fabric-example-26.3` /
-`neoforge-example-26.2` (Gradle 9.6.1 wrapper *properties* only).

@@ -64,7 +64,7 @@ project(":mcdp-1.20").projectDir = file("multi-1.20")
 
 // 1.19 band. Fabric + Forge, Java 17. forgespi 6.0.0 sits between the 4.0 (1.17/1.18) and
 // 7.x (1.20) surfaces the shared forge-1.18 adapter already spans, so it shares that source
-// too -- verified by compiling it against forgespi 6.0.0 and 6.0.2. ADR-0031.
+// too. ADR-0031.
 include("fabric-1.19")
 include("forge-1.19")
 include("mcdp-1.19")
@@ -76,20 +76,19 @@ include("neoforge-1.20.6")
 include("mcdp-1.20.6")
 project(":mcdp-1.20.6").projectDir = file("multi-1.20.6")
 
-// 1.21.11 band — really the FML-10 band: covers MC 1.21.10 + 1.21.11. NeoForge's SPI
-// broke at fancymodloader 9.0 -> 10.0 (IModFile.findResource removed, SecureJar replaced
-// by JarContents; FMLEnvironment.dist -> getDist()), so this band needs its own NeoForge
-// source rather than sharing neoforge/'s 21.x tree. Fabric's surface is unchanged, so its
+// 1.21.11 band — really the FML-10 band: covers MC 1.21.10 + 1.21.11. Its NeoForge half
+// needs its own source rather than sharing neoforge/'s 21.x tree (the FML 9.0 -> 10.0 SPI
+// break; see neoforge-1.21.11/build.gradle.kts). Fabric's surface is unchanged, so that
 // half still shares fabric/. mcdp-1.21 stays 1.21.1-only. ADR-0030.
 include("fabric-1.21.11")
 include("neoforge-1.21.11")
 include("mcdp-1.21.11")
 project(":mcdp-1.21.11").projectDir = file("multi-1.21.11")
 
-// 26 band — Mojang's calendar-versioning line (26.1, 26.2, 26.3, ...) as a SINGLE band.
-// The SPI is byte-identical across the whole line, so there is nothing for a per-release
+// 26 band — Mojang's calendar-versioning line (26.1, 26.2, 26.3, ...) as a SINGLE band:
+// the SPI is byte-identical across the whole line, so there is nothing for a per-release
 // band to encode. Its NeoForge half shares the 1.21.11 FML-10 port, not neoforge/'s 21.x
-// tree: real 26.x ships fancymodloader 11/12, which carry the FML-10 removals. ADR-0032.
+// tree — real 26.x ships fancymodloader 11/12, which carry the FML-10 removals. ADR-0032.
 include("fabric-26")
 include("neoforge-26")
 include("mcdp-26")

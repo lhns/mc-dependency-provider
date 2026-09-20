@@ -28,3 +28,13 @@ dependencies {
     compileOnly(libs.neoforge.fml.loader.mc1206)
     compileOnly(libs.neoforge.bus)
 }
+
+// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
+// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
+// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
+// compiled into each band's own jar so it stays package-private.
+sourceSets {
+    main {
+        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
+    }
+}
