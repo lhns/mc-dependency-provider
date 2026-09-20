@@ -1,13 +1,7 @@
 package de.lhns.mcdp.forge;
 
-import de.lhns.mcdp.api.McdpProvider;
 import de.lhns.mcdp.core.EntrypointAdapter;
-import de.lhns.mcdp.core.LoaderCoordinator;
 import de.lhns.mcdp.core.ModClassLoader;
-import de.lhns.mcdp.deps.LibraryCache;
-import de.lhns.mcdp.deps.Manifest;
-import de.lhns.mcdp.deps.ManifestConsumer;
-import de.lhns.mcdp.deps.ManifestIo;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.BusBuilder;
 import net.minecraftforge.eventbus.api.Event;
@@ -18,11 +12,6 @@ import net.minecraftforge.fml.event.IModBusEvent;
 import net.minecraftforge.forgespi.Environment;
 import net.minecraftforge.forgespi.language.IModInfo;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -34,10 +23,12 @@ import java.util.logging.Logger;
  *
  * <p>Two phases, mirroring vanilla {@code FMLModContainer} (see ADR-0027):
  * <ol>
- *   <li><b>Constructor (FML's {@code loadMod} dispatch).</b> Per-mod registration: read the
- *       manifest, download libraries, build the per-mod {@link ModClassLoader}, register with
- *       {@link McdpProvider}, register any bridge manifest, resolve (but do not initialize)
- *       the entry class, and build the per-mod mod {@link IEventBus}. No mod code runs yet.</li>
+ *   <li><b>Constructor (FML's {@code loadMod} dispatch).</b> Delegates per-mod registration —
+ *       manifest read, library download, stdlib promotion, {@link ModClassLoader} construction,
+ *       provider and bridge-manifest registration — to
+ *       {@link McdpLanguageProvider#ensureRegistered}, which may already have run from the lazy
+ *       populator (ADR-0028). Then resolves (but does not initialize) the entry class and builds
+ *       the per-mod mod {@link IEventBus}. No mod code runs yet.</li>
  *   <li><b>{@code CONSTRUCT} lifecycle stage.</b> The {@link #activityMap} entry registered by
  *       the constructor runs {@link #constructMod()}, which instantiates the entry class with
  *       the ADR-0017 context bag {@code (IEventBus, ModContainer, Dist)}.</li>
@@ -62,13 +53,6 @@ public final class McdpModContainer extends ModContainer {
 
     private static final Logger LOG = Logger.getLogger("mcdepprovider");
 
-    private static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
-
-    private static final LoaderCoordinator COORDINATOR =
-            new LoaderCoordinator(McdpModContainer.class.getClassLoader());
-    private static final LibraryCache CACHE = LibraryCache.defaultCache();
-    private static final ManifestConsumer CONSUMER = new ManifestConsumer(CACHE);
-
     private final String entryFqn;
     private final ModClassLoader modLoader;
     private final Class<?> entryClass;
@@ -86,53 +70,21 @@ public final class McdpModContainer extends ModContainer {
         // mods that don't call it boot fine.
         this.contextExtension = () -> this;
         this.entryFqn = entryFqn;
+
+        // Manifest read, library resolution (with progress logging), ADR-0010 stdlib promotion,
+        // ModClassLoader construction, McdpProvider.registerMod and auto-bridge registration all
+        // live in McdpLanguageProvider.ensureRegistered — the same idempotent entry point the
+        // lazy populator uses when a mixin <clinit> beats FML's loadMod sweep (ADR-0028).
+        McdpLanguageProvider.Registered reg = McdpLanguageProvider.ensureRegistered(info);
+        this.modLoader = reg.loader();
+        this.lang = reg.manifest().lang();
         try {
-            // Read manifest from the mod jar.
-            Path manifestPath = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
-            if (manifestPath == null || !Files.isRegularFile(manifestPath)) {
-                throw new IllegalStateException("mcdepprovider: " + info.getModId()
-                        + " declares modLoader=mcdepprovider but has no " + MANIFEST_PATH);
-            }
-            Manifest manifest;
-            try (InputStream in = Files.newInputStream(manifestPath)) {
-                manifest = ManifestIo.read(in);
-            }
-
-            // Resolve libraries (download missing, SHA-verify, return on-disk paths).
-            List<Path> libs = CONSUMER.resolveAll(manifest);
-
-            // Build the per-mod ModClassLoader. modPaths defaults to the mod jar; in dev
-            // it's the source-set output dirs from manifest.devRoots() (filtered for
-            // existence on the consumer's filesystem).
-            Path modFile = info.getOwningFile().getFile().getFilePath();
-            List<Path> manifestDevRoots = manifest.devRoots().stream()
-                    .map(Path::of)
-                    .filter(Files::isDirectory)
-                    .toList();
-            List<Path> modPaths = manifestDevRoots.isEmpty()
-                    ? List.of(modFile)
-                    : manifestDevRoots;
-
-            this.modLoader = COORDINATOR.register(
-                    info.getModId(), manifest, modPaths, libs,
-                    McdpModContainer.class.getClassLoader());
-            McdpProvider.registerMod(info.getModId(), modLoader);
-
-            // Bridge manifest registration (ADR-0019). Skip silently if absent (mod has no
-            // mixins or didn't generate any cross-classloader bridges).
-            Path bridgeToml = info.getOwningFile().getFile()
-                    .findResource("META-INF/mcdp-bridges.toml");
-            if (bridgeToml != null && Files.isRegularFile(bridgeToml)) {
-                McdpProvider.registerAutoBridgeManifestToml(modLoader, bridgeToml);
-            }
-
             // Resolve the entry class without initializing it — static init belongs to the
             // CONSTRUCT stage, alongside the entry constructor.
-            this.lang = manifest.lang();
             this.entryClass = Class.forName(entryFqn, false, modLoader);
-        } catch (IOException | ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(
-                    "mcdepprovider: failed to load mod " + info.getModId() + ": " + e.getMessage(), e);
+                    "mcdepprovider: failed to load mod " + info.getModId() + ": " + e, e);
         }
 
         // Per-mod mod-event bus. Same recipe as vanilla FMLModContainer, restricted to the

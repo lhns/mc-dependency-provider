@@ -49,3 +49,4 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0025](0025-run-task-stripping-opt-in.md) | Run-task classpath stripping is opt-in, not the default | Accepted; supersedes 0007's stripping default |
 | [0026](0026-automatic-release.md) | `automaticRelease = true` — green CI gate replaces the Portal click | Accepted; supersedes 0020's staging gate |
 | [0027](0027-forge-lifecycle-staging.md) | Forge mod construction moves to the `CONSTRUCT` stage; classloader setup stays in `loadMod` | Accepted; applies 0017 to Forge |
+| [0028](0028-forge-cross-mod-registration.md) | Forge cross-mod registration: one idempotent `ensureRegistered`, reached from a reflective `LoadingModList` walk | Accepted; completes 0027, applies 0010/0019 to Forge |
