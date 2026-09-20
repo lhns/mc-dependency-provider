@@ -24,7 +24,9 @@ import javax.inject.Inject;
  *
  * mcdepprovider {
  *     lang.set("scala")
- *     sharedPackages.add("com.example.api")
+ *     // Trailing dot: prefixes are matched with startsWith, so "com.example.api" without it
+ *     // would also share com.example.apiInternal with the game layer.
+ *     sharedPackages.add("com.example.api.")
  * }
  * }</pre>
  */

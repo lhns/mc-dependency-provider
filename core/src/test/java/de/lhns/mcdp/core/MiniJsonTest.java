@@ -61,4 +61,19 @@ class MiniJsonTest {
     void rejectsUnterminatedString() {
         assertThrows(IllegalArgumentException.class, () -> MiniJson.parse("\"abc"));
     }
+
+    /**
+     * Truncation must raise the parser's own {@link IllegalArgumentException}, not a
+     * {@code StringIndexOutOfBoundsException} — {@code MixinConfigScanner} only catches the
+     * former, so anything else escapes its best-effort catch and crashes boot.
+     */
+    @Test
+    void truncatedInputThrowsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> MiniJson.parse("{\"a\":\"b\""));
+        assertThrows(IllegalArgumentException.class, () -> MiniJson.parse("{\"a\":1"));
+        assertThrows(IllegalArgumentException.class, () -> MiniJson.parse("[1,2"));
+        assertThrows(IllegalArgumentException.class, () -> MiniJson.parse("{\"a\":[1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> MiniJson.parse("{\"package\":\"com.example\",\"mixins\":[\"A\"]"));
+    }
 }
