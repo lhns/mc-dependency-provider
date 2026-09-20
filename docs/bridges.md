@@ -19,7 +19,6 @@ mcdepprovider {
     // Override only if you need to:
     //   bridges {
     //       enabled.set(false)                                         // opt out (see Track 2)
-    //       modPrivatePackages.add("com.example.mymod.*")              // narrow the rewrite scope
     //       bridgePackage.set("com.example.mymod.mcdp_bridges")  // change the emitted pkg
     //   }
 }
@@ -167,6 +166,20 @@ Scala / Kotlin closures inside an instrumented body compile to `INVOKEDYNAMIC La
 The codegen handles this automatically. For each lambda site, it emits a per-site bridge interface + impl pair (alongside the regular per-target ones) and rewrites the indy to construct the SAM through the bridge. The bridge impl's factory method does its own `LambdaMetafactory` call against an embedded synthetic on the impl class — and because the impl is loaded by `ModClassLoader`, the embedded synthetic's mod-private references resolve correctly.
 
 `javap` of a rewritten mixin will show no `INVOKEDYNAMIC` for closures over mod-private code; it'll show a stack-juggle + `INVOKEINTERFACE bridge.make` instead. The original synthetic on the mixin class is left as dead code (Sponge tolerates).
+
+**Not bridged: closures that capture `this`.** A lambda in a mixin *instance* method that
+touches instance state compiles to an instance synthetic, and javac passes the receiver as
+the first captured argument. There is no correct rewrite for that shape: the bridge impl
+lives on the mod's loader, so the factory's signature would have to name the mixin class —
+a game-layer type the mod loader cannot see. The codegen therefore **rejects the site** and
+leaves the `INVOKEDYNAMIC` exactly as javac emitted it, with a build warning naming the
+mixin, the method and the `lambda$...` synthetic. Nothing partial is emitted: no bridge, no
+`LAMBDA_*` field, no manifest entry.
+
+The closure still runs, but its body resolves against the game-layer loader — so if it
+touches mod-private or Scala types you get the `ClassNotFoundException` described above.
+The fix is to make the lambda non-capturing: hoist the instance state into a local, or move
+the body to a `static` helper and capture only its result.
 
 Limitation: capture types are passed through to the bridge interface descriptor as-declared. If a closure captures a Scala-typed value, the bridge interface's class file names that Scala type — same limit as ADR-0018's general "no mod-private types in bridge signatures" rule. The fluidphysics-style cases (closures over Java/MC types passing Scala values inside the body) work; pure Scala-capture cases warn.
 
