@@ -184,12 +184,12 @@ jobs:
   # Excluded from coverage (also documented per-mod in test-mods/README.md):
   #   - 26.1 (fabric + neoforge): MC 26.1.x is scaffold-only — Mojang has not shipped
   #     real artifacts; Loom errors "26.1.2 requires Java 25 but Gradle is using 21".
-  #   - Forge 1.17: the adapter is still a stub — forge-1.17's McdpLanguageProvider
-  #     throws UnsupportedOperationException (forgespi 3.2.x's loadMod predates
-  #     ModuleLayer; IModFileInfo.getFile() is missing). A cell here could only ever
-  #     assert "boot fails", which is not worth a nightly runner. Add it when the real
-  #     port lands — the scaffold (own Gradle 7.6 wrapper, mavenLocal consumption) is
-  #     already in place, so it is a one-row change at that point. Its extra wrinkle:
+  #   - Forge 1.17: the adapter now works (it shares forge-1.18's source — Forge
+  #     1.17.1-37.1.2 runs forgespi 4.0.x, not the 3.2.x this band was mis-pinned to;
+  #     see ADR-0029), so a cell here would be meaningful. It is not added yet only
+  #     because of the wrinkle below; the rest of the scaffold (own Gradle 7.6 wrapper,
+  #     mavenLocal consumption) is already in place, so it is a one-row change. The
+  #     wrinkle:
   #     test-mods/forge-example-1.17 pins `toolchain { languageVersion = 16 }`, and
   #     GitHub runners ship no JDK 16, so that row will also need a 16 in the
   #     setup-java list below.

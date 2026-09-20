@@ -47,6 +47,16 @@ repositories {
     mavenCentral()
 }
 
+// SNAPSHOT dependencies are "changing" modules, which Gradle caches for 24h by default.
+// That defeats the CI preflight: `publishToMavenLocal` writes a fresh mcdp jar, the
+// consumer build resolves the previous one out of ~/.gradle/caches/modules-2, and the
+// build fails against stale bytecode (seen as ASM "Unsupported class file major version"
+// when the plugin's target changed). Re-resolve every build instead -- these test mods
+// exist to exercise whatever was just published.
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
+}
+
 // ForgeGradle's `minecraft { ... }` block configures MC version + mappings + run tasks.
 // The Kotlin-DSL surface uses `the<...>()` lookup to access the Groovy-typed extension.
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {

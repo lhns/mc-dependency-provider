@@ -24,8 +24,7 @@ abstract class McdpBandExtension {
 
     /**
      * FML's jar-type manifest attribute, or unset for jars FML never sees (the Fabric-only
-     * adapters) and for bands FML must *not* route (`mcdp-1.17`, whose Forge adapter is
-     * still a stub — ADR-0023). `LANGPROVIDER` on Forge-bundling bands (≤ 1.20.4);
+     * adapters). `LANGPROVIDER` on Forge-bundling bands (≤ 1.20.4);
      * `LIBRARY` on NeoForge bands, where FML 4.x/8.x+ routes LIBRARY jars into the PLUGIN
      * module layer it ServiceLoader-scans for IModLanguageLoader and `LANGPROVIDER` is not
      * a valid value.

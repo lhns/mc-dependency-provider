@@ -4,11 +4,12 @@ plugins {
 
 // MC 1.17 band aggregator. Fabric + Forge — the NeoForge fork only starts at 1.20.5+.
 //
-// `fmlModType` is deliberately left unset here, unlike the 1.18/1.20 Forge bands: the
-// forge-1.17 adapter is still a stub (`getFileVisitor()` throws), so a LANGPROVIDER hint
-// would only make FML load a service that blows up. ADR-0023 §"FMLModType per-band".
+// `fmlModType` was deliberately left unset here while forge-1.17 was a stub. It is now the
+// real adapter — the same source the 1.18/1.20 bands compile, since Forge 1.17.1 runs
+// forgespi 4.0.x (ADR-0029) — so the band is routed like the other Forge bands.
 mcdpBand {
     javaRelease.set(16)
+    fmlModType.set("LANGPROVIDER")
     pomDescription.set("Multi-loader (Fabric + Forge) JVM-language mod provider for MC 1.17.")
 }
 
