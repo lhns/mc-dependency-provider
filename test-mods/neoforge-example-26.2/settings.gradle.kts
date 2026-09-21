@@ -18,8 +18,13 @@ rootProject.name = "neoforge-example-26.2"
 
 pluginManagement {
     repositories {
-        maven("https://central.sonatype.com/repository/maven-snapshots/")
+        // mavenLocal FIRST. The published Sonatype snapshot below is a fallback only: listed
+        // ahead of mavenLocal it wins plugin resolution outright, and this mod then builds
+        // against whatever snapshot was last published rather than the tree it sits in. That
+        // silently masked an ASM fix for two CI runs.
         mavenLocal()
+        // Fallback for a checkout that has not run `publishToMavenLocal` from the repo root.
+        maven("https://central.sonatype.com/repository/maven-snapshots/")
         maven("https://maven.neoforged.net/releases") { name = "NeoForged" }
         gradlePluginPortal()
         mavenCentral()
