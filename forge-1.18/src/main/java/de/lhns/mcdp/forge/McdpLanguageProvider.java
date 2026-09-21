@@ -99,6 +99,15 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
 
     private static final ConcurrentHashMap<String, Registered> REGISTERED = new ConcurrentHashMap<>();
 
+    /**
+     * One lock per modId, so the body of {@link #ensureRegistered} runs once even when both of
+     * ADR-0028's entry points reach it concurrently — FML drives {@code loadMod} on
+     * modloading-worker threads while the lazy populator can fire from a mixin's {@code <clinit>}.
+     * Not {@code REGISTERED.computeIfAbsent}: the body registers into other maps and walks the
+     * whole mod list, and ConcurrentHashMap forbids a mapping function that touches the same map.
+     */
+    private static final ConcurrentHashMap<String, Object> REGISTRATION_LOCKS = new ConcurrentHashMap<>();
+
     @Override
     public String name() {
         return LANGUAGE_ID;
@@ -145,7 +154,23 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
         String modId = info.getModId();
         Registered cached = REGISTERED.get(modId);
         if (cached != null) return cached;
+        synchronized (REGISTRATION_LOCKS.computeIfAbsent(modId, k -> new Object())) {
+            cached = REGISTERED.get(modId);
+            if (cached != null) return cached;
+            return registerNow(info, modId);
+        }
+    }
 
+    /**
+     * The body of {@link #ensureRegistered}, called under that mod's registration lock.
+     * <p>
+     * It must not run twice for one modId: it ends in a plain
+     * {@link McdpProvider#registerMod(String, ModClassLoader)} put, so two concurrent runs would
+     * leave {@code McdpProvider} holding one {@code ModClassLoader} and {@link #REGISTERED} the
+     * other — splitting {@code Class} identity for that mod's auto-bridges, which resolve through
+     * {@code McdpProvider}.
+     */
+    private static Registered registerNow(IModInfo info, String modId) {
         Path modFile = info.getOwningFile().getFile().getFilePath();
         Path manifestResource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
         Manifest manifest = readManifest(modFile, manifestResource, modId);
@@ -158,7 +183,7 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
                 manifest.sharedPackages(),
                 PROMOTION_POLICY.stripPromoted(manifest, selected),
                 manifest.devRoots());
-        List<Path> reducedLibs = filterNonPromoted(manifest, libs, selected);
+        List<Path> reducedLibs = StdlibPromotion.filterNonPromoted(manifest, libs, selected);
         ClassLoader libParent = promotedLoader != null
                 ? promotedLoader
                 : McdpLanguageProvider.class.getClassLoader();
@@ -187,8 +212,8 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
         }
 
         Registered reg = new Registered(loader, manifest);
-        Registered raced = REGISTERED.putIfAbsent(modId, reg);
-        return raced != null ? raced : reg;
+        REGISTERED.put(modId, reg);
+        return reg;
     }
 
     /**
@@ -236,6 +261,10 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
                     }
                     shas.add(lib.sha256());
                 }
+                // Assigned before promotionSelection below, and both are volatile: a reader that
+                // sees promotionSelection set must also see promotedLoader. Reversing these two
+                // hands a racing thread a promotion-stripped library list with no promoted parent,
+                // i.e. NoClassDefFoundError on the very stdlib the promotion exists to share.
                 promotedLoader = COORDINATOR.buildSharedLibraryLoader(jars, shas);
                 LOG.info("mcdepprovider: promoted " + selected.size()
                         + " stdlib artifact(s) to a shared loader across "
@@ -303,17 +332,6 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
         } catch (RuntimeException e) {
             return false;
         }
-    }
-
-    private static List<Path> filterNonPromoted(Manifest m, List<Path> libs,
-                                                Map<String, Manifest.Library> selected) {
-        List<Path> out = new ArrayList<>(libs.size());
-        List<Manifest.Library> declared = m.libraries();
-        for (int i = 0; i < declared.size(); i++) {
-            String stem = StdlibPromotion.stemOf(declared.get(i).coords());
-            if (!selected.containsKey(stem)) out.add(libs.get(i));
-        }
-        return out;
     }
 
     private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {

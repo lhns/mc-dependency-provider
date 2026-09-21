@@ -2,6 +2,7 @@ package de.lhns.mcdp.core;
 
 import de.lhns.mcdp.deps.Manifest;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -87,6 +88,44 @@ public final class StdlibPromotion {
         for (Manifest.Library lib : m.libraries()) {
             String stem = stemOf(lib.coords());
             if (!selected.containsKey(stem)) out.add(lib);
+        }
+        return out;
+    }
+
+    /**
+     * Path-list twin of {@link #stripPromoted}: given the mod's <em>resolved</em> library jars,
+     * return the subset whose declaring {@link Manifest.Library} was not promoted. Adapters call
+     * both — {@code stripPromoted} to build the reduced {@link Manifest}, this to build the
+     * matching per-mod URL list — and the two results must line up entry for entry.
+     *
+     * <p><strong>Index-parallel invariant.</strong> {@code resolvedLibs.get(i)} must be the jar
+     * resolved for {@code manifest.libraries().get(i)}. That is exactly what
+     * {@code ManifestConsumer.resolveAll(manifest)} returns ("the on-disk path of each in
+     * manifest order"), and every adapter feeds this method that call's output with the same
+     * manifest instance. Nothing in the type system says so, so it is asserted below rather than
+     * assumed: a shorter list used to fault with a bare {@link IndexOutOfBoundsException} from
+     * {@code get(i)}, and a longer one silently dropped the tail — a mod booting with libraries
+     * missing off the end of its classpath, which fails far from the cause.
+     *
+     * @param manifest     the mod's manifest, in the state it had when its libraries were resolved
+     * @param resolvedLibs one path per {@code manifest.libraries()} entry, same order
+     * @param selected     the promotion selection from {@link #selectPromotions}
+     * @return the non-promoted subset of {@code resolvedLibs}, order preserved
+     * @throws IllegalArgumentException if the two lists are not the same length
+     */
+    public static List<Path> filterNonPromoted(Manifest manifest,
+                                               List<Path> resolvedLibs,
+                                               Map<String, Manifest.Library> selected) {
+        List<Manifest.Library> declared = manifest.libraries();
+        if (declared.size() != resolvedLibs.size()) {
+            throw new IllegalArgumentException(
+                    "mcdepprovider: manifest/resolved-library lists are not index-parallel: "
+                            + declared.size() + " declared vs " + resolvedLibs.size() + " resolved");
+        }
+        List<Path> out = new ArrayList<>(resolvedLibs.size());
+        for (int i = 0; i < declared.size(); i++) {
+            String stem = stemOf(declared.get(i).coords());
+            if (!selected.containsKey(stem)) out.add(resolvedLibs.get(i));
         }
         return out;
     }

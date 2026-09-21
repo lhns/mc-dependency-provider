@@ -86,8 +86,12 @@ public final class MixinConfigScanner {
                     McdpProvider.registerMixinOwner(fqn, modId);
                     registered.add(fqn);
                 }
-            } catch (IllegalArgumentException ignored) {
-                // MiniJson parse error; annotation-modId path (ADR-0008 path 1) still works.
+            } catch (RuntimeException ignored) {
+                // Best-effort by contract: ADR-0008 path 1 (the annotation's own modId) is the
+                // guarantee, this scan is defense-in-depth. Catching only the MiniJson parse error
+                // let McdpProvider.registerMixinOwner's "no ModClassLoader registered for modId"
+                // escape and abort the whole batch, so one config naming a sibling mod's class
+                // took every later config down with it — the opposite of best-effort.
             }
         }
         return registered;

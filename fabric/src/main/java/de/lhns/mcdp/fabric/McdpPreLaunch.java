@@ -121,7 +121,7 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                     e.manifest.lang(),
                     e.manifest.sharedPackages(),
                     policy.stripPromoted(e.manifest, selected));
-            List<Path> reducedLibs = filterNonPromoted(e.manifest, e.libs, selected);
+            List<Path> reducedLibs = StdlibPromotion.filterNonPromoted(e.manifest, e.libs, selected);
             ClassLoader libParent = promoted != null ? promoted : McdpPreLaunch.class.getClassLoader();
             ModClassLoader loader = COORDINATOR.register(
                     e.modId, reducedManifest, e.modPaths, reducedLibs, libParent);
@@ -168,17 +168,6 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
         } catch (IOException | IllegalArgumentException ignored) {
             // IOException: fabric.mod.json read failure. IllegalArgumentException: MiniJson parse error.
         }
-    }
-
-    private static List<Path> filterNonPromoted(Manifest m, List<Path> libs,
-                                                Map<String, Manifest.Library> selected) {
-        List<Path> out = new ArrayList<>(libs.size());
-        List<Manifest.Library> declared = m.libraries();
-        for (int i = 0; i < declared.size(); i++) {
-            String stem = StdlibPromotion.stemOf(declared.get(i).coords());
-            if (!selected.containsKey(stem)) out.add(libs.get(i));
-        }
-        return out;
     }
 
     private record ModEntry(String modId, Manifest manifest, List<Path> libs, List<Path> modPaths) {}

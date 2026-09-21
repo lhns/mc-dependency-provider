@@ -106,17 +106,34 @@ public final class LibraryCache {
         return target;
     }
 
+    /**
+     * Move {@code tmp} onto {@code target}, tolerating another writer doing the same thing.
+     * <p>
+     * Two mods depending on one library download it concurrently, so this is the normal case, not
+     * an edge. The previous version caught {@link FileAlreadyExistsException} on both moves and
+     * neither catch was reachable: {@code ATOMIC_MOVE} is {@code MoveFileEx(REPLACE_EXISTING)} on
+     * Windows and {@code rename(2)} on POSIX, and {@code REPLACE_EXISTING} cannot raise it by
+     * definition. What actually happens on Windows is {@code AccessDeniedException} or
+     * {@code NoSuchFileException} out of the fallback move, which escaped as a failed dependency
+     * download in roughly one concurrent store in seven.
+     * <p>
+     * Losing the race is not a failure here: the cache is content-addressed and {@code target} is
+     * named for the SHA-256 the caller has already verified, so a target that exists now holds the
+     * bytes we were about to write.
+     */
     private static void atomicMove(Path tmp, Path target) throws IOException {
         try {
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (FileAlreadyExistsException alreadyThere) {
-            // Another writer won — fine, both bytes are SHA-pinned to the same content.
+            return;
         } catch (IOException atomicFailed) {
-            try {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-            } catch (FileAlreadyExistsException ignored) {
-                // Same race as above.
-            }
+            // Cross-device, or the platform has no atomic move — fall through to the plain one.
+        }
+        try {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException replaceFailed) {
+            // isRegularFile, not exists: a directory sitting at a SHA-named path is a corrupt
+            // cache, not a lost race, and must stay loud.
+            if (!Files.isRegularFile(target)) throw replaceFailed;
         }
     }
 }

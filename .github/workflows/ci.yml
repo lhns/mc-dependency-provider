@@ -121,3 +121,24 @@ jobs:
             */build/libs/*.jar
           if-no-files-found: ignore
           retention-days: 7
+
+  spi-identity:
+    # A band that covers several loader versions is correct only while the SPI classes it
+    # compiles against are byte-identical across them. For mcdp-26 that claim justified
+    # compiling against the FML-10 pin and shipping onto loader 11/12 (ADR-0032), and it lived
+    # only in a comment. If a point release breaks it the build stays green and the adapter
+    # NoSuchMethodErrors at boot, so it is checked here instead.
+    #
+    # Separate job because it is network-bound (maven.neoforged.net) and has no JDK or Gradle
+    # dependency; a unit test has no business downloading jars.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify the SPI byte-identity claims
+        run: python3 scripts/verify_spi_identity.py
