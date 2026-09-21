@@ -108,12 +108,18 @@ The repo-root wrapper stays at **8.11.1** and must not be bumped: ForgeGradle 6.
 **25** is in the workflow's `setup-java` list (before `21`, which stays last so it keeps
 winning `JAVA_HOME` for every other cell).
 
-**Both open questions were answered by run 35545861369, and one of them badly.**
+**Both open questions are now answered, and `neoforge-example-26.2` is green on both
+OSes (run 35549061543).**
 
 *The mcdp Gradle plugin does load on a Gradle 9.7.1 daemon.* Both cells got past plugin
 resolution and configuration; the NeoForge one reached `:generateMcdpBridges` and failed
 there on `Unsupported class file major version 69` — the bundled ASM predated Java 25.
-Fixed by pinning ASM 9.10.1, with `ClassFileVersionSupportTest` to keep it fixed.
+Fixed by pinning ASM 9.10.1 *and* relocating it into the plugin jar — Gradle exports its own
+`org.objectweb.asm` to the plugin classloader, so the pin alone changed nothing. Two further
+runs still failed identically because `pluginManagement` listed the Sonatype snapshot repo
+ahead of `mavenLocal()`, so the mod never loaded the jar the preflight step had just built.
+`ClassFileVersionSupportTest` pins the dependency version and `verifyAsmRelocated` pins that
+the plugin actually uses it.
 
 *`fabric-example-26.3` has no CI cell, and the blocker is upstream.* Loom got as far as
 mapping resolution and stopped: **Mojang publishes no `client_mappings`/`server_mappings`

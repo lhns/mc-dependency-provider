@@ -4,7 +4,7 @@ A JVM-language mod provider for **Fabric**, **Forge** and **NeoForge** (Minecraf
 
 First-class support for **Java, Scala, Kotlin** — one provider, one pipeline, pluggable entry points.
 
-**Status:** v0.1.2 is published to Maven Central as a single `de.lhns.mcdp:mcdp` runtime jar (plus `de.lhns.mcdp:gradle-plugin`). The next release publishes **per-MC-band** instead: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26`. All eight are wired in `settings.gradle.kts`; **they are not equally proven** — see the table below. MC 1.21.1 has the most coverage: Fabric and NeoForge boot a real server and a real client in CI, and mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
+**Status:** v0.1.2 is published to Maven Central as a single `de.lhns.mcdp:mcdp` runtime jar (plus `de.lhns.mcdp:gradle-plugin`). The next release publishes **per-MC-band** instead: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26`. All eight are wired in `settings.gradle.kts`; **they are not equally proven** — see the table below. Every band now has at least one loader booting a real server in CI on both Linux and Windows; the one gap is the Fabric side of `mcdp-26`, which is blocked upstream. MC 1.21.1 has the most coverage: Fabric and NeoForge boot a real server and a real client in CI, and mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
 
 ## Why
 
@@ -31,13 +31,13 @@ mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod
 | Artifact | MC versions | JDK | Loaders | Status |
 |---|---|---|---|---|
 | `de.lhns.mcdp:mcdp-1.17` | 1.17.1 | 16 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge **compile-verified** — shares the 1.18 adapter (ADR-0029); no CI cell yet (runners ship no JDK 16) |
-| `de.lhns.mcdp:mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge **boot-verified** — booted locally for the first time once the mod moved off ForgeGradle 5.1 onto FG6 and the repo wrapper; CI cell pending |
-| `de.lhns.mcdp:mcdp-1.19` | 1.19.2 | 17 | Fabric + Forge | Fabric **and** Forge **boot-verified** — both booted a real server locally; CI cells added, first nightly pending. Forge half shares the 1.18 adapter against forgespi 6.0.x (ADR-0031) |
+| `de.lhns.mcdp:mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** (run 35549061543) — the Forge cell passed for the first time once the mod moved off ForgeGradle 5.1 onto FG6 and the repo wrapper |
+| `de.lhns.mcdp:mcdp-1.19` | 1.19.2 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** (run 35549061543). Forge half shares the 1.18 adapter against forgespi 6.0.x (ADR-0031) |
 | `de.lhns.mcdp:mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** — both booted a real server (run 35526039405) |
 | `de.lhns.mcdp:mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **CI-verified** (run 35526039405) |
 | `de.lhns.mcdp:mcdp-1.21` | **1.21.1 only** | 21 | Fabric + NeoForge | **CI-verified, server *and* client.** Shipped (v0.1.x as `mcdp:VERSION`; v0.2+ as `mcdp-1.21:VERSION`) |
-| `de.lhns.mcdp:mcdp-1.21.11` | 1.21.10, 1.21.11 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **boot-verified** locally; CI cells added, first nightly pending. Own NeoForge source for the FML-10 SPI (ADR-0030) |
-| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | NeoForge has a CI cell (own Gradle 9.7.1 wrapper, JDK 25 daemon); first run pending. Fabric is **compile-verified only and blocked upstream** — no 26.x release ships Mojang mappings and yarn has no 26.x builds, so Loom has no mapping source. One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
+| `de.lhns.mcdp:mcdp-1.21.11` | 1.21.10, 1.21.11 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **CI-verified** (run 35549061543). Own NeoForge source for the FML-10 SPI (ADR-0030). Fabric uses Mojang mappings — Loom 1.9 cannot read 1.21.11's yarn unpick metadata |
+| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | NeoForge **CI-verified** on MC 26.2 (run 35549061543) via its own Gradle 9.7.1 wrapper on a JDK 25 daemon. Fabric is **compile-verified only and blocked upstream** — no 26.x release ships Mojang mappings and yarn has no 26.x builds, so Loom has no mapping source at all. One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
 
 ### Gaps and caveats
 
