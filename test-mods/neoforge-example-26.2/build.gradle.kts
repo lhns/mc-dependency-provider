@@ -39,6 +39,10 @@ neoForge {
     version = "26.2.0.88"   // newest STABLE build of the 26.x line; see header
 
     runs {
+        // Tier-3 runClient cell; same shape as test-mods/neoforge-example's client config.
+        // Unproven like everything else in this band — no CI run has ever booted MC 26.x at
+        // all, on either dist. See the mc-client-nightly.yml header.
+        create("client") { client() }
         create("server") { server() }
     }
 

@@ -33,6 +33,16 @@ repositories { mavenCentral() }
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.19.2")
     runs {
+        // Tier-3 runClient cell (.github/workflows/mc-client-nightly.yml). Same shape as
+        // `server` plus `fml.earlyprogresswindow=false` — see forge-example-1.18 for why.
+        create("client") {
+            workingDirectory(project.file("run"))
+            property("forge.logging.console.level", "info")
+            property("fml.earlyprogresswindow", "false")
+            mods {
+                create("forge_example_119") { source(sourceSets.main.get()) }
+            }
+        }
         create("server") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")

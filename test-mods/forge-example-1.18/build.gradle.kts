@@ -33,6 +33,20 @@ repositories { mavenCentral() }
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.18.2")
     runs {
+        // Tier-3 runClient cell (.github/workflows/mc-client-nightly.yml). Same shape as
+        // `server` plus `fml.earlyprogresswindow=false`: FML opens a second GLFW window
+        // before the game window, and on the software rasterizer the CI client runs under
+        // that is the most common cause of a boot that never reaches the title screen.
+        create("client") {
+            workingDirectory(project.file("run"))
+            property("forge.logging.console.level", "info")
+            property("fml.earlyprogresswindow", "false")
+            mods {
+                create("forge_example_118") {
+                    source(sourceSets.main.get())
+                }
+            }
+        }
         create("server") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")

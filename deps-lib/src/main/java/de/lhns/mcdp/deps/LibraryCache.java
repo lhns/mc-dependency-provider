@@ -121,6 +121,9 @@ public final class LibraryCache {
      * named for the SHA-256 the caller has already verified, so a target that exists now holds the
      * bytes we were about to write.
      */
+    private static final int MOVE_ATTEMPTS = 5;
+    private static final long MOVE_RETRY_BACKOFF_MS = 20L;
+
     private static void atomicMove(Path tmp, Path target) throws IOException {
         try {
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
@@ -128,12 +131,27 @@ public final class LibraryCache {
         } catch (IOException atomicFailed) {
             // Cross-device, or the platform has no atomic move — fall through to the plain one.
         }
-        try {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException replaceFailed) {
-            // isRegularFile, not exists: a directory sitting at a SHA-named path is a corrupt
-            // cache, not a lost race, and must stay loud.
-            if (!Files.isRegularFile(target)) throw replaceFailed;
+        // Windows reports a concurrent replace of the same target as AccessDenied or
+        // NoSuchFile, and it is transient -- the other writer is mid-rename. Retry briefly, then
+        // accept a target that has appeared. isRegularFile, not exists: a directory at a
+        // SHA-named path is a corrupt cache, not a lost race, and must stay loud.
+        IOException lastFailure = null;
+        for (int attempt = 0; attempt < MOVE_ATTEMPTS; attempt++) {
+            try {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (IOException replaceFailed) {
+                lastFailure = replaceFailed;
+                if (Files.isRegularFile(target)) return;
+                try {
+                    Thread.sleep(MOVE_RETRY_BACKOFF_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw replaceFailed;
+                }
+            }
         }
+        if (Files.isRegularFile(target)) return;
+        throw lastFailure;
     }
 }

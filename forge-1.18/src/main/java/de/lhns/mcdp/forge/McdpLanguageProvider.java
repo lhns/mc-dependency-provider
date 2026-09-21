@@ -2,6 +2,7 @@ package de.lhns.mcdp.forge;
 
 import de.lhns.mcdp.api.McdpProvider;
 import de.lhns.mcdp.core.LoaderCoordinator;
+import de.lhns.mcdp.core.MixinConfigScanner;
 import de.lhns.mcdp.core.ModClassLoader;
 import de.lhns.mcdp.core.StdlibPromotion;
 import de.lhns.mcdp.deps.LibraryCache;
@@ -18,6 +19,7 @@ import net.minecraftforge.forgespi.language.ModFileScanData;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -75,6 +78,15 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
 
     static final String MANIFEST_PATH = "META-INF/mcdepprovider.toml";
     private static final String BRIDGE_MANIFEST_PATH = "META-INF/mcdp-bridges.toml";
+
+    /**
+     * Forge has no {@code [[mixins]]} block in {@code mods.toml} — the NeoForge adapters read
+     * one, Forge's {@code ModFileParser} never had one to read. On Forge a mod's Mixin configs
+     * are named by Mixin's own {@code MixinConfigs} jar-manifest attribute, which
+     * {@code MixinPlatformAgentDefault} splits on commas.
+     */
+    private static final String JAR_MANIFEST_PATH = "META-INF/MANIFEST.MF";
+    private static final String MIXIN_CONFIGS_ATTRIBUTE = "MixinConfigs";
 
     /**
      * {@code net.minecraftforge.fml.loading.LoadingModList} lives in the {@code fmlloader}
@@ -211,9 +223,96 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
             LOG.info("mcdepprovider: registered " + bridges + " auto-bridge entries for " + modId);
         }
 
+        registerMixinOwnersFromJarManifest(info, modId);
+
         Registered reg = new Registered(loader, manifest);
         REGISTERED.put(modId, reg);
         return reg;
+    }
+
+    /**
+     * Map every Mixin class this mod declares back to {@code modId} (ADR-0008 path 2), reading
+     * the config list from the mod file's {@code MixinConfigs} jar-manifest attribute — the
+     * Forge equivalent of the NeoForge adapters' {@code [[mixins]]} scan.
+     *
+     * <p><b>Severity: robustness, not correctness.</b> Nothing that works today starts working
+     * because of this. {@code McdpProvider.loadMixinImpl} finds its caller by stack-walk and
+     * resolves the loader from {@code @McdpMixin(modId = ...)} first, falling back to the
+     * single-registered-mod shortcut; the ADR-0018 auto-codegen path does not consult this map
+     * at all. What it closes is one real gap: with two or more mcdp mods installed, a mixin
+     * whose {@code @McdpMixin} omits {@code modId} has no shortcut left and
+     * {@code loadMixinImpl} throws — see
+     * {@code McdpProviderTest.failsLoudlyWithMultipleModsAndNoModIdOrFqnMapping}. Fabric and
+     * NeoForge authors are covered there by their loaders' config scans; Forge authors were not.
+     *
+     * <p><b>Production only.</b> {@link #JAR_MANIFEST_PATH} exists in a packaged mod jar and
+     * nowhere else: a dev run's mod file is the exploded source-set output, which has no
+     * {@code META-INF/MANIFEST.MF}, and ForgeGradle passes the config via {@code --mixin.config}
+     * instead — an argument that names no mod. So a dev boot registers nothing here and silently
+     * keeps the pre-existing behaviour. Best-effort throughout, like every other caller of
+     * {@link MixinConfigScanner}.
+     */
+    private static void registerMixinOwnersFromJarManifest(IModInfo info, String modId) {
+        List<String> registered = registerMixinOwnersFromModFile(
+                modId, name -> findResource(info, name));
+        if (!registered.isEmpty()) {
+            LOG.info("mcdepprovider: mapped " + registered.size() + " mixin class(es) to "
+                    + modId + " from the " + MIXIN_CONFIGS_ATTRIBUTE + " manifest attribute");
+        }
+    }
+
+    /**
+     * The half of {@link #registerMixinOwnersFromJarManifest} that touches no forgespi type, so
+     * it can be tested against a plain directory and against a real jar's ZIP filesystem — the
+     * two shapes {@code findResource} hands back in dev and in production.
+     *
+     * @param resourceFinder mod-file-relative resource name to a readable {@link Path}, or null
+     * @return every FQN registered, in declaration order
+     */
+    static List<String> registerMixinOwnersFromModFile(String modId,
+                                                       Function<String, Path> resourceFinder) {
+        List<String> configNames = mixinConfigNames(resourceFinder.apply(JAR_MANIFEST_PATH));
+        if (configNames.isEmpty()) return List.of();
+        List<String> contents = new ArrayList<>(configNames.size());
+        for (String name : configNames) {
+            Path config = resourceFinder.apply(name);
+            if (config == null) continue;
+            try {
+                contents.add(Files.readString(config, StandardCharsets.UTF_8));
+            } catch (IOException | RuntimeException ignored) {
+                // A manifest may name a config the jar doesn't carry; the others still count.
+            }
+        }
+        return MixinConfigScanner.registerMixinOwnersFromConfigContents(modId, contents);
+    }
+
+    /** {@code MixinConfigs: a.json,b.json} → {@code [a.json, b.json]}; empty when absent. */
+    static List<String> mixinConfigNames(Path jarManifest) {
+        if (jarManifest == null) return List.of();
+        String attribute;
+        try (InputStream in = Files.newInputStream(jarManifest)) {
+            attribute = new java.util.jar.Manifest(in)
+                    .getMainAttributes().getValue(MIXIN_CONFIGS_ATTRIBUTE);
+        } catch (IOException | RuntimeException e) {
+            // findResource returns a speculative path for resources no root actually holds, so
+            // "no manifest" arrives here as NoSuchFileException rather than as a null Path.
+            return List.of();
+        }
+        if (attribute == null || attribute.isBlank()) return List.of();
+        List<String> names = new ArrayList<>();
+        for (String part : attribute.split(",")) {
+            String name = part.trim();
+            if (!name.isEmpty()) names.add(name);
+        }
+        return names;
+    }
+
+    private static Path findResource(IModInfo info, String name) {
+        try {
+            return info.getOwningFile().getFile().findResource(name);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

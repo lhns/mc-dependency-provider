@@ -31,6 +31,22 @@ repositories { mavenCentral() }
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.20.1")
     runs {
+        // Tier-3 runClient cell (.github/workflows/mc-client-nightly.yml).
+        //   * `--mixin.config` is repeated from `server` on purpose: BlocksClinitMixin sits in
+        //     the side-neutral "mixins" array of forge_example_120.mixins.json, so it applies
+        //     on a client boot too and is the one mixin marker a client cell can assert.
+        //   * `fml.earlyprogresswindow=false` — FML opens a second GLFW window before the game
+        //     window; on the software rasterizer CI runs under that is the most common cause of
+        //     a dev client that never reaches the title screen.
+        create("client") {
+            workingDirectory(project.file("run"))
+            property("forge.logging.console.level", "info")
+            property("fml.earlyprogresswindow", "false")
+            args("--mixin.config", "forge_example_120.mixins.json")
+            mods {
+                create("forge_example_120") { source(sourceSets.main.get()) }
+            }
+        }
         create("server") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")

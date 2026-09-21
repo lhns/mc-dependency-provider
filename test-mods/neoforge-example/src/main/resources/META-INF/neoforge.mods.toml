@@ -23,3 +23,11 @@ type = "required"
 versionRange = "[1.21.1,1.22)"
 ordering = "NONE"
 side = "BOTH"
+
+# The whole NeoForge-side mixin registration. FML's ModFileParser reads this block out of
+# neoforge.mods.toml and hands it to Mixin itself, and mcdp's McdpLanguageLoader re-reads the
+# same block through IConfigurable to map every class the config names back to this modId.
+# Nothing else registers it: no jar-manifest attribute, no --mixin.config run argument — which
+# is exactly where Forge 1.20 differs (see test-mods/forge-example-1.20/build.gradle.kts).
+[[mixins]]
+config = "neoforge_example.mixins.json"

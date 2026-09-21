@@ -10,12 +10,84 @@ name: CI — Tier 3 (runClient nightly via xvfb)
 # avoid it before v0.1.
 #
 # Coverage goals at Tier 3:
-#   1. Title-screen reached via runClient on NeoForge + Fabric with mcdepprovider.
-#   2. Mixin bridge smoke (#23) once the test mixin lands — currently stubbed.
+#   1. Title-screen reached via runClient on EVERY band, on both loaders the band ships,
+#      with mcdepprovider as the mod loader — and the mod's own [mcdp-smoke] marker in the
+#      log, so "MC booted" cannot pass for "mcdp ran" (the same anti-vacuity rule Tier-2
+#      applies to runServer).
+#   2. Dist.CLIENT actually resolves through the Forge SPI (forge-1.20 cell asserts
+#      `dist=CLIENT` in the ADR-0017 context bag — see below).
+#   3. Mixin bridge smoke (#23) on the client side — forge-1.20 only; see below.
+#
+# ---------------------------------------------------------------------------
+# WHAT A CLIENT BOOT PROVES THAT A SERVER BOOT DOES NOT — and what it does not
+# ---------------------------------------------------------------------------
+# mcdp has NO dist branching anywhere. Every `Dist` / `FMLEnvironment.dist` read in the
+# tree is a null-check (production vs. unit test), never a value check; `Dist` travels as
+# an opaque element of the ADR-0017 constructor bag and `JavaEntrypointAdapter.fillFromBag`
+# matches it by assignability alone. Library resolution and the per-mod URLClassLoader are
+# built at the same dist-independent hook on all three platforms (Fabric
+# `PreLaunchEntrypoint.onPreLaunch`, Forge/NeoForge `ensureRegistered` from `loadMod` or the
+# lazy populator). So these cells are NOT testing a second code path in mcdp; they are
+# testing that the single code path survives a different *host* bootstrap.
+#
+# Three concrete things they do add:
+#   * `Environment.get()` / `FMLEnvironment.dist` resolving to CLIENT rather than
+#     DEDICATED_SERVER — asserted on forge-1.20.
+#   * Fabric's KnotClient launch path rather than KnotServer, with mcdp's language adapter
+#     in the middle.
+#   * The lazy bridge populator's bootstrap-ordering assumption, which is documented in
+#     McdpProvider against `Main.main()` → `Bootstrap.bootStrap()` → `ServerModLoader.load()`
+#     and has never been exercised against the client's `Minecraft` ctor / `ClientModLoader`
+#     sequence.
+#
+# What these cells deliberately DO NOT assert: the MinecraftServer* mixin markers. Those
+# mixins sit in the `"server"` array of the mods' mixin configs, so Sponge-Mixin does not
+# apply them on a CLIENT environment and their markers legitimately never appear. The one
+# exception is forge-example-1.20's BlocksClinitMixin, which is in the side-neutral
+# `"mixins"` array and therefore fires on both dists — which is why forge-1.20 is the only
+# cell here with a mixin assertion.
+#
+# Every test mod's entry point IS reachable client-side: all nine fabric.mod.json files use
+# the side-neutral `main` entrypoint with `"environment": "*"`, and all eight Forge/NeoForge
+# mods.toml files declare `side = "BOTH"`. No cell below is waiting on an entrypoint that
+# cannot run.
+#
+# ---------------------------------------------------------------------------
+# COVERAGE AND THE ONE DELIBERATE EXCLUSION
+# ---------------------------------------------------------------------------
+# 15 cells: all eight bands (1.17, 1.18, 1.19, 1.20, 1.20.6, 1.21, 1.21.11, 26) on both
+# loaders each band ships, minus one.
+#
+#   EXCLUDED: forge-1.17. Not because the band is broken — the adapter works (ADR-0029) —
+#   but because a client cell for it would be the *first* CI cell of any kind for that mod.
+#   test-mods/forge-example-1.17 is the one test mod with no runServer cell in mc-smoke.yml
+#   either: it is the single MC version Forge never regenerated an FG6 MDK for, so it still
+#   carries a Gradle 7.6 wrapper, omits includeBuild("../.."), consumes mcdp from mavenLocal,
+#   pins `toolchain { languageVersion = 16 }`, and has no foojay resolver in its
+#   settings.gradle.kts — so it needs BOTH a daemon_jdk override AND a `16` in the
+#   setup-java list below, and GitHub runners ship no JDK 16. A red cell there would be
+#   reporting "this mod has never been built by CI", not "the client path regressed", and
+#   the cheapest way to distinguish those is to land its runServer cell in Tier-2 first.
+#   The 1.17 BAND is still covered here, by fabric-1.17. Its `client` run config has been
+#   added to the build file regardless, so turning this cell on later is one matrix row
+#   plus `16` in setup-java.
+#
+# The 26.x pair (fabric-26.3, neoforge-26.2) is included but is the highest-risk pair in the
+# file: no CI run has ever booted MC 26.x on ANY dist, the cells carry their own Gradle
+# 9.7.1 wrapper on a JDK 25 daemon, and mc_smoke.py's default client marker (the texture
+# atlas line) has not been confirmed to exist in 26.x's log output. Nightly gates nothing,
+# so a red 26.x cell is information rather than an outage — but read a first failure there
+# as "the band was never proven", not as a regression.
+#
+# Cache policy: the keys here are deliberately IDENTICAL to mc-smoke.yml's, so a client cell
+# restores the MC artifacts the Tier-2 nightly populated 90 minutes earlier for the same
+# loader+version instead of provisioning its own copy. Only client-only assets are a genuine
+# cold cost.
 
 on:
   schedule:
-    # 04:30 UTC — after Tier-2 nightly (03:00 UTC) has reported.
+    # 04:30 UTC — after Tier-2 nightly (03:00 UTC) has reported, and late enough that its
+    # mc-assets-* caches are saved and restorable by the cells below.
     - cron: "30 4 * * *"
   workflow_dispatch:
 
@@ -28,23 +100,74 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - { name: neoforge, dir: test-mods/neoforge-example }
-          - { name: fabric,   dir: test-mods/fabric-example   }
+        # Each cell: dir = test mod root; modid = expected [mcdp-smoke] mod ID;
+        # cache_key = MC version key (must match mc-smoke.yml's for cache sharing);
+        # loader = fabric|neoforge|forge (which cache paths matter);
+        # daemon_jdk = JDK the *test mod's* Gradle build must run on, empty = job default (21).
+        #
+        # Loom mods need no `client` run config of their own — fabric-loom registers
+        # runClient/runServer itself, which is why test-mods/fabric-example can write
+        # `named("client")` rather than `create("client")`. Every Forge/NeoForge mod here
+        # had `create("server")` ONLY and has had a `client` config added alongside it.
+        cell:
+          # ---- Fabric, one per band -------------------------------------------------
+          - { name: fabric-1.17,     dir: test-mods/fabric-example-1.17,     modid: fabric_example_117,     cache_key: 1.17.1,  loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.18,     dir: test-mods/fabric-example-1.18,     modid: fabric_example_118,     cache_key: 1.18.2,  loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.19,     dir: test-mods/fabric-example-1.19,     modid: fabric_example_119,     cache_key: 1.19.2,  loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.20,     dir: test-mods/fabric-example-1.20,     modid: fabric_example_120,     cache_key: 1.20.1,  loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.20.6,   dir: test-mods/fabric-example-1.20.6,   modid: fabric_example_1206,    cache_key: 1.20.6,  loader: fabric,   daemon_jdk: "" }
+          # The 1.21 pair: the only two cells this workflow had before every band got one.
+          # fabric-example prints the ADR-0001 isolation line (`mod=<id> name=... cats...`),
+          # not the bands' `boot ok` marker — which is why the assertion below matches on the
+          # `mod=<id> ` prefix that both shapes share.
+          - { name: fabric-1.21,     dir: test-mods/fabric-example,          modid: fabric_example,         cache_key: 1.21.1,  loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-1.21.11,  dir: test-mods/fabric-example-1.21.11,  modid: fabric_example_12111,   cache_key: 1.21.11, loader: fabric,   daemon_jdk: "" }
+          - { name: fabric-26.3,     dir: test-mods/fabric-example-26.3,     modid: fabric_example_263,     cache_key: "26.3",  loader: fabric,   daemon_jdk: "25" }
+          # ---- Forge (bands 1.18–1.20; 1.17 excluded, see header) --------------------
+          - { name: forge-1.18,      dir: test-mods/forge-example-1.18,      modid: forge_example_118,      cache_key: 1.18.2,  loader: forge,    daemon_jdk: "" }
+          - { name: forge-1.19,      dir: test-mods/forge-example-1.19,      modid: forge_example_119,      cache_key: 1.19.2,  loader: forge,    daemon_jdk: "" }
+          - { name: forge-1.20,      dir: test-mods/forge-example-1.20,      modid: forge_example_120,      cache_key: 1.20.1,  loader: forge,    daemon_jdk: "" }
+          # ---- NeoForge (bands 1.20.6 and up) ---------------------------------------
+          - { name: neoforge-1.20.6, dir: test-mods/neoforge-example-1.20.6, modid: neoforge_example_1206,  cache_key: 1.20.6,  loader: neoforge, daemon_jdk: "" }
+          - { name: neoforge-1.21,   dir: test-mods/neoforge-example,        modid: neoforge_example,       cache_key: 1.21.1,  loader: neoforge, daemon_jdk: "" }
+          - { name: neoforge-1.21.11,dir: test-mods/neoforge-example-1.21.11,modid: neoforge_example_12111, cache_key: 1.21.11, loader: neoforge, daemon_jdk: "" }
+          - { name: neoforge-26.2,   dir: test-mods/neoforge-example-26.2,   modid: neoforge_example_262,   cache_key: "26.2",  loader: neoforge, daemon_jdk: "25" }
     runs-on: ubuntu-latest
+    # Backstop, not a budget. Measured real work on the two pre-existing 1.21 cells is well
+    # under 20 min warm; the unmeasured costs are a cold ForgeGradle userdev/decompile setup
+    # and the client-only asset download (thousands of small objects — the slowest single
+    # step in this workflow when cold). The script timeout below is deliberately lower
+    # (40 min) so a hung client is reported as a FAILURE: a job cancelled by timeout-minutes
+    # skips both the log upload and actions/cache's post-save step, which is exactly how the
+    # Tier-2 band cells stayed silently red with permanently cold caches.
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (Temurin)
+      - name: Set up JDKs (21 default, 17 as a toolchain for the Forge cells, 25 for the MC 26.x band)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          # Same mechanism and same ordering constraint as mc-smoke.yml's
+          # runserver-smoke-bands: setup-java installs each version and exports
+          # JAVA_HOME_<major>_X64 for it, and the LAST entry wins JAVA_HOME/PATH. 21 must
+          # stay LAST so the repo build and every Gradle-8 cell keep JDK 21 with no per-cell
+          # handling; the two 26.x cells pick JAVA_HOME_25_X64 back up explicitly in the
+          # runClient step via `daemon_jdk`. 17 is nobody's daemon JDK — it is here because
+          # forge-example-1.18/-1.19/-1.20 declare `toolchain { languageVersion = 17 }` and a
+          # JDK-21 daemon resolves that from JAVA_HOME_17_X64. Dropping 17 breaks all three
+          # Forge cells. (No `16` here: that is only needed by the excluded forge-1.17 cell —
+          # the fabric-1.17 cell auto-provisions its JDK 16 toolchain through the foojay
+          # resolver in its settings.gradle.kts, which forge-example-1.17 does not have.)
+          java-version: |
+            17
+            25
+            21
 
       - name: Set up Python 3.12
+        # scripts/mc_smoke.py runs the client and shuts it down on the first-frame marker.
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -66,44 +189,149 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-Linux-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          # hashFiles list copied verbatim from mc-smoke.yml so this workflow lands on the
+          # SAME key and reuses the Tier-2 nightly's Gradle home. The old key here globbed
+          # `**/*.gradle.kts`, which rotated on any test-mod build-file edit — including the
+          # run-config additions this change makes — and guaranteed a cold start.
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'build.gradle.kts', 'settings.gradle.kts', '*/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            gradle-Linux-
+            gradle-${{ runner.os }}-
 
-      - name: Cache Minecraft assets
+      - name: Cache Minecraft assets (${{ matrix.cell.loader }} ${{ matrix.cell.cache_key }})
         uses: actions/cache@v4
         with:
+          # Loom (fabric) → ~/.gradle/caches/fabric-loom
+          # ModDevGradle (neoforge) → ~/.neoforge
+          # ForgeGradle (forge) → ~/.gradle/caches/forge_gradle   <- was missing here entirely,
+          #   so the Forge cells below would have re-provisioned userdev + assets every night.
+          # Key is identical to mc-smoke.yml's, on purpose: a client cell restores whatever the
+          # Tier-2 runServer cell for the same loader+version saved at 03:00.
           path: |
-            ~/.neoforge
             ~/.gradle/caches/fabric-loom
-          key: mc-assets-Linux-${{ matrix.platform.name }}-1.21.1
+            ~/.gradle/caches/forge_gradle
+            ~/.neoforge
+          key: mc-assets-${{ runner.os }}-${{ matrix.cell.loader }}-${{ matrix.cell.cache_key }}
           restore-keys: |
-            mc-assets-Linux-${{ matrix.platform.name }}-
+            mc-assets-${{ runner.os }}-${{ matrix.cell.loader }}-
 
-      - name: Build mcdepprovider
-        run: ./gradlew build --no-daemon --stacktrace
+      - name: Publish mcdp aggregator + plugin to mavenLocal
+        # Same universal preflight as mc-smoke.yml's band job: the composite-included mods
+        # (fabric, neoforge) do not need it, the mavenLocal-consuming mods (the forge bands
+        # and the whole 26.x pair) do, and publishing covers both. Cheaper than `build`,
+        # which would also run the repo's full unit-test suite on every one of these cells.
+        run: ./gradlew publishToMavenLocal --no-daemon --stacktrace
+        shell: bash
 
-      - name: runClient smoke — wait for first rendered frame, then exit
-        working-directory: ${{ matrix.platform.dir }}
+      - name: runClient (${{ matrix.cell.name }}) — wait for first rendered frame, then exit
+        working-directory: ${{ matrix.cell.dir }}
+        shell: bash
         env:
           # Software rasterizer — no GPU on CI runners.
           LIBGL_ALWAYS_SOFTWARE: "1"
           MESA_GL_VERSION_OVERRIDE: "4.6"
+        # mc_smoke.py picks the client marker itself: `--task` containing "runClient" selects
+        # DEFAULT_CLIENT_MARKER (`Created: <w>x<h>x<d> minecraft:textures/atlas...`), the first
+        # line MC logs once the texture atlas is stitched — i.e. the renderer really ran, not
+        # just the mod loader. It then kills the whole process tree, which runClient has no
+        # self-exit flag for. Wrapper selection is the script's own walk-up from --cwd, so the
+        # two 26.x cells get their committed Gradle 9.7.1 wrapper and everything else falls
+        # through to the repo-root 8.11.1.
         run: |
+          set -euo pipefail
+          # Cells with their own Gradle distribution need their own daemon JDK: the MC 26.x
+          # band runs Gradle 9.7.1 on JDK 25. Swap JAVA_HOME to the JDK this cell asked for;
+          # mc_smoke.py inherits it through to the wrapper. Identical to mc-smoke.yml's.
+          JDK='${{ matrix.cell.daemon_jdk }}'
+          if [ -n "$JDK" ]; then
+            VAR="JAVA_HOME_${JDK}_X64"
+            JH="${!VAR:-}"
+            [ -n "$JH" ] || { echo "ERROR: $VAR not set by setup-java"; env | grep '^JAVA_HOME' || true; exit 1; }
+            export JAVA_HOME="$JH"
+            export PATH="$JAVA_HOME/bin:$PATH"
+          fi
+          java -version
           xvfb-run -a --server-args="-screen 0 1280x720x24" \
             python3 ../../scripts/mc_smoke.py \
               --cwd . \
               --task :runClient \
-              --timeout 1200 \
-              --log-file ../../client-${{ matrix.platform.name }}.log
+              --timeout 2400 \
+              --log-file ../../client-${{ matrix.cell.name }}.log
+
+      - name: Assert mcdp actually loaded the mod (not just that MC rendered a frame)
+        # Without this the cell proves only that Minecraft reached its texture atlas. Matches
+        # the `mod=<id> ` prefix, which both marker shapes share (`mod=<id> boot ok` on the
+        # band mods, `mod=<id> name=... cats...` on the two 1.21 isolation mods).
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=client-${{ matrix.cell.name }}.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          grep -q "\[mcdp-smoke\] mod=${{ matrix.cell.modid }} " "$LOG" || {
+            echo "ERROR: mcdp smoke marker for ${{ matrix.cell.modid }} not in log"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
+      - name: Assert Dist.CLIENT + client-side mixin bridge (forge-1.20 only)
+        # The only assertions in this workflow that a runServer cell cannot make:
+        #   * dist=CLIENT — forgespi's Environment.get() resolving to the client value inside
+        #     the ADR-0017 context bag. The Tier-2 cell asserts dist=[A-Z_]+ and gets
+        #     DEDICATED_SERVER; anything other than CLIENT here means the bag was built from
+        #     the wrong environment (or `null`, which is what a failed Environment.get() prints).
+        #   * BlocksClinitMixin — the one mixin in a side-neutral "mixins" array rather than a
+        #     "server" array, so it is the only mixin that applies on a client boot. It fires
+        #     from Blocks.<clinit>, which on the client runs inside the Minecraft ctor's
+        #     Bootstrap.bootStrap() rather than Main.main() — the exact ordering the lazy bridge
+        #     populator's rationale is documented against for the SERVER only. This is the cell
+        #     that closes that gap.
+        if: matrix.cell.name == 'forge-1.20'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=client-${{ matrix.cell.name }}.log
+          echo "=== [mcdp-smoke] lines ==="
+          grep '\[mcdp-smoke\]' "$LOG" | sort -u
+
+          MISSING=0
+          grep -q 'stage=CONSTRUCT mod=forge_example_120 dist=CLIENT' "$LOG" || {
+            echo "ERROR: expected dist=CLIENT in the CONSTRUCT marker"
+            grep 'stage=CONSTRUCT' "$LOG" || true
+            MISSING=1; }
+          grep -q 'mixin=BlocksClinitMixin ok' "$LOG" || {
+            echo "ERROR: mixin marker missing — lazy bridge populator did not fire on the client path"
+            MISSING=1; }
+          grep -q 'stage=FMLCommonSetupEvent mod=forge_example_120' "$LOG" || {
+            echo "ERROR: FMLCommonSetupEvent never arrived — acceptEvent is not forwarding client-side"
+            MISSING=1; }
+          [ "$MISSING" = 0 ] || exit 1
+
+          # Same ordering invariant the Tier-2 cell checks: Blocks.<clinit> must precede the
+          # entry constructor, or the mixin is resolving against an already-populated registry
+          # and is no longer evidence for the lazy path.
+          MIXIN_LINE=$(grep -n 'mixin=BlocksClinitMixin ok' "$LOG" | head -1 | cut -d: -f1)
+          CTOR_LINE=$(grep -n 'stage=CONSTRUCT mod=forge_example_120' "$LOG" | head -1 | cut -d: -f1)
+          echo "mixin@$MIXIN_LINE construct@$CTOR_LINE"
+          [ "$MIXIN_LINE" -lt "$CTOR_LINE" ] || {
+            echo "ERROR: mixin fired after CONSTRUCT — not exercising the lazy populator"; exit 1; }
 
       - name: Upload logs + crash reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: mc-client-${{ matrix.platform.name }}-failure
+          name: mc-client-${{ matrix.cell.name }}-failure
           path: |
-            client-*.log
-            ${{ matrix.platform.dir }}/run/logs/**
-            ${{ matrix.platform.dir }}/run/crash-reports/**
+            client-${{ matrix.cell.name }}.log
+            ${{ matrix.cell.dir }}/run/logs/**
+            ${{ matrix.cell.dir }}/run/crash-reports/**
+            ${{ matrix.cell.dir }}/build/reports/**
           if-no-files-found: ignore
+
+      - name: Upload boot log on success (for trend analysis)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-client-success-${{ matrix.cell.name }}
+          path: |
+            client-${{ matrix.cell.name }}.log
+          if-no-files-found: ignore
+          retention-days: 14
