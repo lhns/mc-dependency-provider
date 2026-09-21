@@ -92,6 +92,17 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
+     * One lock per modId, so the body below runs once even when both entry points reach it
+     * concurrently — FML drives mod loading on worker threads while the lazy populator can fire
+     * from a mixin's {@code <clinit>}. Not {@code REGISTERED.computeIfAbsent}: the body registers
+     * into other maps and walks the whole mod list, and ConcurrentHashMap forbids a mapping
+     * function that touches the same map.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> REGISTRATION_LOCKS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+
+    /**
      * Build the per-mod {@link ModClassLoader}, register the mod with {@link McdpProvider}, and
      * register its auto-bridge manifest. Idempotent — second call for the same modId returns
      * the cached {@link Registered} record without rerunning manifest reads or library downloads.
@@ -113,6 +124,23 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         String modId = info.getModId();
         Registered cached = REGISTERED.get(modId);
         if (cached != null) return cached;
+        synchronized (REGISTRATION_LOCKS.computeIfAbsent(modId, k -> new Object())) {
+            cached = REGISTERED.get(modId);
+            if (cached != null) return cached;
+            return registerNow(info, modId);
+        }
+    }
+
+    /**
+     * The body of {@code ensureRegistered}, called under that mod's registration lock.
+     * <p>
+     * It must not run twice for one modId: it ends in a plain
+     * {@link McdpProvider#registerMod(String, ModClassLoader)} put, so two concurrent runs would
+     * leave {@code McdpProvider} holding one {@code ModClassLoader} and {@code REGISTERED} the
+     * other — splitting {@code Class} identity for that mod's auto-bridges, which resolve through
+     * {@code McdpProvider}.
+     */
+    private static Registered registerNow(IModInfo info, String modId) {
 
         Path modFile = info.getOwningFile().getFile().getFilePath();
         Path manifestResource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
@@ -125,7 +153,7 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 manifest.lang(),
                 manifest.sharedPackages(),
                 PROMOTION_POLICY.stripPromoted(manifest, selected));
-        List<Path> reducedLibs = filterNonPromoted(manifest, libs, selected);
+        List<Path> reducedLibs = StdlibPromotion.filterNonPromoted(manifest, libs, selected);
         ClassLoader libParent = promotedLoader != null
                 ? promotedLoader
                 : McdpLanguageLoader.class.getClassLoader();
@@ -159,8 +187,8 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         registerMixinOwnersForNeoForgeMod(info, modId);
 
         Registered reg = new Registered(loader, manifest);
-        Registered raced = REGISTERED.putIfAbsent(modId, reg);
-        return raced != null ? raced : reg;
+        REGISTERED.put(modId, reg);
+        return reg;
     }
 
     /**
@@ -243,17 +271,6 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         } catch (IllegalStateException | IllegalArgumentException | ClassCastException ignored) {
             // FML IConfigurable surface — wrong types or missing keys throw these.
         }
-    }
-
-    private static List<Path> filterNonPromoted(Manifest m, List<Path> libs,
-                                                Map<String, Manifest.Library> selected) {
-        List<Path> out = new ArrayList<>(libs.size());
-        List<Manifest.Library> declared = m.libraries();
-        for (int i = 0; i < declared.size(); i++) {
-            String stem = StdlibPromotion.stemOf(declared.get(i).coords());
-            if (!selected.containsKey(stem)) out.add(libs.get(i));
-        }
-        return out;
     }
 
     private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
