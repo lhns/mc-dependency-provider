@@ -13,13 +13,28 @@ name: CI — Published artifact check
 #
 # Runs on PRs too, not just push:main — a bad band adapter is a PR-review-time problem, and
 # the job is one Gradle build plus a few seconds of zip reading.
+#
+# This job publishes `0.1.0-SNAPSHOT` and nothing else. It used to also trigger on
+# `release: published` and compute the tag version, and that path could never have passed:
+#   * vanniktech's signAllPublications() sets `signing.required` to
+#     `!version.endsWith("-SNAPSHOT")`, so a tag version makes signing mandatory;
+#   * no signing key is in this job's environment, so Gradle's in-memory signatory is null;
+#   * a required Sign task with no signatory throws
+#     "Cannot perform signing task ':…:signMavenPublication' because it has no configured
+#     signatory" — before publishToMavenLocal writes anything for the script to read.
+# Worse than a red check: publish.yml's gate looks this workflow up with
+# `gh run list --workflow "CI — Published artifact check" --commit <sha> --limit 1`, so the
+# failing release-event run could be the newest run for that commit and block the release it
+# was meant to guard.
+#
+# The coverage that trigger was reaching for — a tag-shaped, non-SNAPSHOT, *signed* publish,
+# verified — is real and now lives in release-dry-run.yml, which generates a throwaway PGP key
+# in the job and therefore actually satisfies the signing requirement.
 
 on:
   push:
     branches: [main]
   pull_request:
-  release:
-    types: [published]
   workflow_dispatch:
 
 concurrency:
@@ -59,16 +74,13 @@ jobs:
       - name: Compute version
         id: ver
         shell: bash
-        # Mirrors publish.yml's version rule, so a release event verifies the very
-        # coordinates the publish job is about to upload.
+        # Always the snapshot version — this job has no signing key, and vanniktech makes
+        # signing mandatory for any version that does not end in -SNAPSHOT. The tag-shaped
+        # half of publish.yml's version rule is rehearsed by release-dry-run.yml instead;
+        # see the header.
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
-            version="${tag#v}"
-          else
-            version="0.1.0-SNAPSHOT"
-          fi
+          version="0.1.0-SNAPSHOT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Verifying version: $version"
 

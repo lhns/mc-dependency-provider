@@ -1,0 +1,45 @@
+// Adds a local file-system Maven repository named `dryRunStaging` to every project that
+// applies `maven-publish`, so CI can run the *real* publish path against a target that
+// cannot reach the network.
+//
+// Why an init script instead of a Gradle task:
+//   vanniktech-maven-publish 0.32.0 has no "assemble the Central Portal bundle but do not
+//   upload it" task. `publishToMavenCentral` is a pure alias that dependsOn
+//   `publishAllPublicationsToMavenCentralRepository`; the actual upload is an *end-of-build
+//   action* registered by the `createStagingRepository` task that every
+//   `…ToMavenCentralRepository` task dependsOn. So there is no way to run the staging
+//   publish without also arming the upload. (For CENTRAL_PORTAL the staging repo URL is
+//   itself a `file://<rootBuildDir>/publish/staging/<uuid>` tree, which the build service
+//   then zips and POSTs — the assembly is local, only the final POST is not.)
+//
+// Publishing to a plain `maven { url = file(...) }` repository reproduces that assembly with
+// the same task type (`PublishToMavenRepository`), the same generated POMs and Gradle module
+// metadata, the same `Sign` tasks and the same `.md5`/`.sha1`/`.sha256`/`.sha512` checksums a
+// real repository publish writes — and it never touches vanniktech's Sonatype build service,
+// so no end-of-build upload action is ever registered.
+//
+// Usage:
+//   ./gradlew publishAllPublicationsToDryRunStagingRepository \
+//       -I gradle/dry-run-staging.init.gradle -Dmcdp.dryRunRepo=/abs/path/to/repo
+//
+// This file is CI scaffolding: it is never applied by a normal build, and nothing in
+// build.gradle.kts / buildSrc references it.
+
+def target = System.getProperty('mcdp.dryRunRepo')
+if (target == null || target.trim().isEmpty()) {
+    throw new GradleException(
+            'dry-run-staging.init.gradle requires -Dmcdp.dryRunRepo=<absolute directory>')
+}
+def targetDir = new File(target).absoluteFile
+
+gradle.allprojects { project ->
+    project.pluginManager.withPlugin('maven-publish') {
+        def publishing = project.extensions.getByName('publishing')
+        if (publishing.repositories.findByName('dryRunStaging') == null) {
+            publishing.repositories.maven { repo ->
+                repo.name = 'dryRunStaging'
+                repo.url = targetDir.toURI()
+            }
+        }
+    }
+}

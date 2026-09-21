@@ -1,5 +1,6 @@
 package de.lhns.mcdp.gradle.bridges;
 
+import de.lhns.mcdp.gradle.testfixtures.RuntimeLoaderSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -15,39 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * duplicated in {@code BridgePolicy}. If the two drift, the codegen bridges (or fails to
  * bridge) classes the runtime loader treats the other way round.
  *
- * <p>The expectation is hard-coded below rather than parsed out of
- * {@code core/src/main/java/de/lhns/mcdp/core/ModClassLoader.java}. Source parsing was the
- * alternative, but it is neither simpler nor more robust here: the core sources are not on the
- * test classpath, so the test would have to guess a path relative to the Gradle working
- * directory and re-implement a tolerant Java-literal scanner — both of which break for reasons
- * that have nothing to do with the invariant under test. A literal list fails loudly and
- * points straight at the file to re-sync. Reflection is out for the same reason as the
- * dependency: the class simply isn't there (and its field is package-private besides).
- *
- * <p><b>Keep in sync with</b> {@code core/src/main/java/de/lhns/mcdp/core/ModClassLoader.java},
- * field {@code PLATFORM_PREFIXES}.
+ * <p>The comparison reads the runtime's field for real, via
+ * {@link RuntimeLoaderSource#platformPrefixes()} — see that class for why it compiles core's
+ * source instead of depending on {@code :core}. An earlier version of this test compared
+ * against a hand-typed copy of the list, which meant it could only ever detect edits to
+ * {@code BridgePolicy}: the drift it is named for went straight through it.
  */
 class BridgePolicyPrefixParityTest {
 
-    /** Verbatim copy of {@code ModClassLoader.PLATFORM_PREFIXES}. */
-    private static final List<String> MOD_CLASS_LOADER_PLATFORM_PREFIXES = List.of(
-            "java.",
-            "javax.",
-            "jdk.",
-            "sun.",
-            "com.sun.",
-            "org.w3c.",
-            "org.xml.",
-            "net.minecraft.",
-            "net.neoforged.",
-            "net.fabricmc.",
-            "com.mojang.",
-            "cpw.mods.",
-            "org.slf4j.",
-            "org.apache.logging.log4j.",
-            "de.lhns.mcdp.api.",
-            "de.lhns.mcdp.core."
-    );
+    /** The runtime's own {@code PLATFORM_PREFIXES}, read out of {@code :core}'s real source. */
+    private static final List<String> MOD_CLASS_LOADER_PLATFORM_PREFIXES =
+            RuntimeLoaderSource.platformPrefixes();
 
     /**
      * The one prefix {@code BridgePolicy} carries beyond the runtime list: Mixin's own runtime

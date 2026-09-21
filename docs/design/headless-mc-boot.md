@@ -156,9 +156,11 @@ python3 scripts/mc_smoke.py \
 
 # Expect: exit 0, "Done (…s)!" in log, [mclib-smoke] line from ExampleMod.
 
-# 3. Verify the classpath parity check (ADR-0007).
-#    If the Gradle task :runServerClasspath is present, it dumps to
-#    build/runServer-classpath.txt; grep for cats-*.jar etc — should be absent.
+# 3. Classpath parity (ADR-0007) is NOT checkable here. ADR-0025 made `patchRunTasks`
+#    opt-in and the example mods do not opt in, so their run classpaths legitimately
+#    carry the manifest jars. (An earlier version of this step named a
+#    `:runServerClasspath` task that never existed.) The opt-in path is covered by
+#    McdpProviderPluginTest.stripsManifestJarsFromRunTaskClasspath.
 
 # 4. Second boot (warm).
 #    On Linux: sudo ip link set <iface> down (requires sudo).

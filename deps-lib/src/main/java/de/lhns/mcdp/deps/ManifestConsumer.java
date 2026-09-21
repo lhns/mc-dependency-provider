@@ -85,6 +85,10 @@ public final class ManifestConsumer {
     }
 
     public Path resolve(Manifest.Library lib) throws IOException {
+        // Deliberately ahead of the whitelist check: a cache hit fetches nothing, and the bytes
+        // are the ones this manifest's SHA-256 already demands, so the URL is moot. The
+        // consequence — enabling the whitelist does not quarantine previously cached content —
+        // is documented in the README and pinned by RepoWhitelistTest.cacheHitBypassesWhitelistCheck.
         if (cache.contains(lib.sha256())) {
             return cache.pathFor(lib.sha256());
         }

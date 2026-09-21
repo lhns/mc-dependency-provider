@@ -1,6 +1,8 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import com.vanniktech.maven.publish.SonatypeHost
+import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.plugin.devel.tasks.PluginUnderTestMetadata
+import org.gradle.process.CommandLineArgumentProvider
 import java.util.zip.ZipFile
 
 plugins {
@@ -59,6 +61,22 @@ tasks.named<PluginUnderTestMetadata>("pluginUnderTestMetadata") {
     pluginClasspath.from(project(":deps-lib").sourceSets.named("main").get().runtimeClasspath)
     // ASM moved to compileOnly + bundle, so runtimeClasspath no longer carries it either.
     pluginClasspath.from(bundle)
+}
+
+// ShadowJarCodegenTest runs a real codegen build against the shadow jar, which is the only
+// place the RELOCATED ASM is ever executed: pluginUnderTestMetadata above feeds TestKit the
+// un-relocated `bundle`, so every other integration test proves nothing about the relocation.
+// The jar path is handed over as a system property; an argument provider keeps it lazy (and
+// configuration-cache clean) while `inputs.file` carries the task dependency.
+tasks.named<Test>("test") {
+    val shadowJarFile = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
+    dependsOn(tasks.named("shadowJar"))
+    inputs.file(shadowJarFile)
+            .withPropertyName("shadowJarUnderTest")
+            .withNormalizer(ClasspathNormalizer::class.java)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dmcdp.shadow.jar=${shadowJarFile.get().asFile.absolutePath}")
+    })
 }
 
 tasks.named<Jar>("jar") {

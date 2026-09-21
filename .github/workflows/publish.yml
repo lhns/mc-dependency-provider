@@ -5,7 +5,8 @@ name: Publish to Maven Central
 #       immediately releases them (automaticRelease=true in
 #       buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts for the band artifacts and
 #       in gradle-plugin/build.gradle.kts for the plugin; no Portal click — see ADR-0026).
-#       The Tier 1 + Tier 2 gate below is what stands in for the manual review.
+#       The gate below is what stands in for the manual review, and it applies to every
+#       trigger -- release included.
 #   (b) push to `main` — publishes the current `-SNAPSHOT` to Central Portal's snapshots repo
 #       (no staging gate; snapshots are mutable and replace any prior copy of the same version).
 #
@@ -62,20 +63,28 @@ jobs:
           TRIGGERING_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          # release / workflow_dispatch paths bypass the gate; only workflow_run firings
-          # check that both required workflows succeeded for this commit.
-          if [ "$EVENT" != "workflow_run" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Every path runs the gate. It used to short-circuit to publish=true for any event
+          # other than workflow_run -- so publishing a GitHub release uploaded to Maven Central
+          # with no CI precondition whatsoever, and automaticRelease=true made that immutable
+          # and unattended. The header above and mcdp.band-aggregator.gradle.kts both described
+          # this gate as what stands in for the manual Portal review; now it is.
+          #
+          # A workflow_run firing carries the triggering run's SHA; release and dispatch do not,
+          # so they gate on the SHA being built.
+          if [ "$EVENT" = "workflow_run" ]; then
+            if [ "$TRIGGERING_CONCLUSION" != "success" ]; then
+              echo "Triggering workflow concluded with '$TRIGGERING_CONCLUSION'. Skipping publish."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            HEAD_SHA="${{ github.sha }}"
           fi
-          if [ "$TRIGGERING_CONCLUSION" != "success" ]; then
-            echo "Triggering workflow concluded with '$TRIGGERING_CONCLUSION'. Skipping publish."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          echo "Gating on commit $HEAD_SHA (event: $EVENT)"
           required=(
             "CI — Tier 1 (unit + TestKit + manifest)"
             "CI — Tier 2 (MC runServer smoke)"
+            "CI — Published artifact check"
           )
           for name in "${required[@]}"; do
             conclusion=$(gh run list \
