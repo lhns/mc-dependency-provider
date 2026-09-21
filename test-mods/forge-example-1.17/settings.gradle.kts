@@ -7,8 +7,12 @@ rootProject.name = "forge-example-1.17"
 // Run `:mcdp-1.17:publishToMavenLocal` from parent first, then build here.
 pluginManagement {
     repositories {
-        maven("https://central.sonatype.com/repository/maven-snapshots/")
+        // mavenLocal FIRST. Listed after the snapshot repo it loses plugin resolution outright,
+        // so this mod would build against the last published snapshot rather than the tree it
+        // sits in -- and the "publish to mavenLocal first" instruction above would do nothing.
+        // Same bug as the 26.x mods had (fixed in e38ef7c); it was never propagated here.
         mavenLocal()
+        maven("https://central.sonatype.com/repository/maven-snapshots/")
         maven("https://maven.minecraftforge.net/") { name = "MinecraftForge" }
         gradlePluginPortal()
         mavenCentral()

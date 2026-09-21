@@ -26,6 +26,8 @@ neoForge {
     version = "21.11.45"
 
     runs {
+        // Tier-3 runClient cell; same shape as test-mods/neoforge-example's client config.
+        create("client") { client() }
         create("server") { server() }
     }
 

@@ -46,6 +46,19 @@ configurations.all {
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.17.1")
     runs {
+        // Tier-3 runClient cell. Same shape as `server` below plus one property:
+        // FML's early progress window is a second GLFW window opened before the game
+        // window, and on a software rasterizer under xvfb it is the most common cause of
+        // a dev client that never reaches the title screen. Turning it off costs nothing
+        // in coverage — mcdp's language provider is loaded by FML either way.
+        create("client") {
+            workingDirectory(project.file("run"))
+            property("forge.logging.console.level", "info")
+            property("fml.earlyprogresswindow", "false")
+            mods {
+                create("forge_example_117") { source(sourceSets.main.get()) }
+            }
+        }
         create("server") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")

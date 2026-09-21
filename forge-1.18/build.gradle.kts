@@ -29,6 +29,11 @@ dependencies {
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
-    testCompileOnly(libs.forge.spi.mc118)
-    testCompileOnly(libs.forge.fmlcore.mc118)
+    // Not testCompileOnly: McdpLanguageProvider implements IModLanguageProvider and its static
+    // initializer reaches core/deps-lib, so loading the class under test needs all four at test
+    // runtime, not just on the compile classpath.
+    testImplementation(project(":core"))
+    testImplementation(project(":deps-lib"))
+    testImplementation(libs.forge.spi.mc118)
+    testImplementation(libs.forge.fmlcore.mc118)
 }

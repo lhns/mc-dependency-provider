@@ -138,6 +138,25 @@ jobs:
             exit 1
           }
 
+      - name: Assert the NeoForge mixin-bridge path ran (neoforge only)
+        # All four NeoForge bands parse [[mixins]] out of neoforge.mods.toml and feed
+        # MixinConfigScanner, and until this mod gained a mixin that code had never run against a
+        # real config on any band. The mixin fires inside Blocks.<clinit>, before FML's loadMod
+        # sweep, so the marker also proves the lazy bridge populator resolved on demand.
+        #
+        # NeoForge registers the config from the TOML alone -- no jar-manifest attribute and no
+        # --mixin.config, which is the sharp contrast with the Forge twin in the bands job.
+        if: matrix.platform.name == 'neoforge'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
+          grep -q '\[mcdp-smoke\] mixin=BlocksClinitMixin mod=neoforge_example ok' "$LOG" || {
+            echo "ERROR: NeoForge mixin marker missing — the bridge did not resolve"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
       - name: Second boot — must be served entirely from cache
         working-directory: ${{ matrix.platform.dir }}
         shell: bash
@@ -202,106 +221,26 @@ jobs:
   # vs 0.15 vs 0.19) would not surface until release. This job boots one test mod per
   # (loader × band) cell.
   #
-  # WHAT IS COVERED: the 7 cells in the matrix below (1.17, 1.18, 1.20, 1.20.6 Fabric;
-  # 1.20.6 NeoForge; 1.20 + 1.18 Forge), plus MC 1.21.1 Fabric/NeoForge in the
-  # `runserver-smoke` job above. That is five of the eight bands, and no band is covered
-  # on every loader it ships.
+  # COVERED: every band, on every loader that band supports -- 14 cells x 2 OSes.
+  # The only mod in test-mods/ without a cell here is mixin-example, which has its own job
+  # (mixin-codegen-smoke) because it asserts on codegen output rather than on a boot.
   #
-  # Excluded from coverage (also documented per-mod in test-mods/README.md):
-  #   - 26.x: NO LONGER EXCLUDED. fabric-example-26.3 and neoforge-example-26.2 are rows
-  #     in runserver-smoke-bands below, with daemon_jdk: "25". The blocker was never
-  #     Minecraft — MC 26.1/26.2/26.3 all have full downloads in version_manifest_v2.json
-  #     (all declaring javaVersion 25), NeoForge has STABLE 26.1.2.109 and 26.2.0.88
-  #     builds, fabric-loader 0.19.5 and Loom 1.18.2 are released — it was the toolchain:
-  #       * Loom refuses a MC version whose required Java exceeds the *Gradle daemon* JVM.
-  #         MC 26.x needs JDK 25; Gradle 8.11.1 (the repo-root wrapper) cannot run on
-  #         JDK 25 at all. So the 26.x test mods carry their own Gradle wrapper, now
-  #         complete (gradlew, gradlew.bat, gradle-wrapper.jar all committed), and 25 is
-  #         in this job's setup-java list — placed BEFORE 21, which must stay last so it
-  #         keeps winning JAVA_HOME for every other cell.
-  #       * That wrapper pins Gradle 9.7.1, not 9.6.x: Loom 1.18.x publishes
-  #         runtimeElements with org.gradle.plugin.api-version = 9.7.0, so a 9.6 consumer
-  #         is rejected at variant selection. (The old note here claimed the wrapper
-  #         binaries "cannot be produced without a local Gradle 9.6 install" — wrong. The
-  #         jar and launchers are version-agnostic bootstrappers that read
-  #         distributionUrl; these were copied verbatim from the repo-root 8.11.1 wrapper.)
-  #       * STILL UNPROVEN, no nightly has run these cells: whether Loom 1.18.2 can
-  #         provision MC 26.3, and whether the mcdp Gradle plugin loads on a 9.x daemon.
-  #     Two mapping facts a 26.x cell must not get wrong:
-  #       * net.fabricmc:yarn has NO 26.x builds at all — its metadata stops at
-  #         1.21.11+build.6, and meta.fabricmc.net/v2/versions/yarn/26.3 returns []. The
-  #         calendar line publishes only a rolling net.fabricmc:intermediary:0.0.0, so
-  #         26.x test mods MUST use loom.officialMojangMappings().
-  #       * The NeoForge 26.x smoke targets MC 26.2, not 26.3: NeoForge's 26.3 line is
-  #         beta-only (26.3.0.0-beta … 26.3.0.7-beta); 26.2.0.88 is the newest stable.
-  #     See ADR-0032.
-  #   - Forge 1.17: the adapter WORKS and the band is not blocked. It shares forge-1.18's
-  #     source because Forge 1.17.1-37.1.2 runs forgespi 4.0.x, not the 3.2.x the band was
-  #     mis-pinned to (ADR-0029), and multi-1.17 now sets FMLModType=LANGPROVIDER like the
-  #     other Forge-bundling bands. Its scaffold is NOT the one forge-example-1.18 now
-  #     uses: 1.17 is the one MC version Forge never regenerated an FG6 MDK for, so
-  #     test-mods/forge-example-1.17 still carries a Gradle 7.6 wrapper, omits
-  #     includeBuild("../..") and consumes mcdp from mavenLocal. A cell for it would
-  #     therefore need a daemon_jdk override AND a 16 in the setup-java list below
-  #     (it pins `toolchain { languageVersion = 16 }`, and GitHub runners ship no JDK 16).
-  #     Whether the FG6 migration that fixed forge-1.18 also applies to 1.17 is untested.
-  #   - The three bands added on 2026-09-20 (1.19, 1.21.11, 26) have NO cells, on purpose:
-  #     their six test mods (fabric-/forge-example-1.19, fabric-/neoforge-example-1.21.11,
-  #     fabric-example-26.3, neoforge-example-26.2) have never been built — the adapters
-  #     were verified by compiling with plain javac against the real upstream jars, not
-  #     through Gradle (ADR-0030, ADR-0031, ADR-0032). 1.19 is the cheap add once its mods
-  #     build: no new JDK needed (Java 17, ForgeGradle 6 / Gradle 8, like the 1.20 cell).
-  #     1.21.11's Fabric cell needs a Loom that can provision MC 1.21.11, which the root
-  #     Gradle 8.11.1 wrapper cannot supply (Loom 1.10+ needs Gradle 8.12), so it needs a
-  #     root wrapper bump or its own wrapper. The 26.x pair is blocked on the toolchain
-  #     reason above.
-  #   - MC 1.21.2 - 1.21.9 have no band at all, so there is nothing to smoke. Deliberate:
-  #     they span FML 5.0/6.0/7.0/8.0/9.0 (ADR-0030).
+  # Two cells need a non-default daemon JVM, via the daemon_jdk column:
+  #   - forge-1.17 runs a Gradle 7.6 wrapper (1.17.1 is the one MC version Forge never
+  #     regenerated an FG6 MDK for), which cannot run on JDK 21 -> daemon 17, toolchain 16.
+  #   - the two 26.x mods carry their own Gradle 9.7.1 wrapper and need a JDK 25 daemon:
+  #     Loom refuses a MC version whose required Java exceeds the daemon JVM, and Loom 1.18.x
+  #     declares org.gradle.plugin.api-version 9.7.0 so 9.6.x is rejected at variant selection.
+  # Everything else builds on the repo-root Gradle 8.11.1 wrapper and the JDK 21 daemon.
   #
-  # Forge 1.18 used to be excluded here for two reasons, and BOTH were wrong.
-  #   (a) "mcdp's gradle-plugin is built against Gradle 8 APIs". It is not. Every
-  #       org.gradle.* type and method it uses exists in Gradle 7.6; the only real blocker
-  #       was that the plugin compiled to Java 21 bytecode, so a Gradle 7.6 daemon on JDK 17
-  #       rejected its published variant (org.gradle.jvm.version=21). :gradle-plugin now
-  #       targets Java 17 (root build.gradle.kts).
-  #   (b) "ForgeGradle 5.1 is the only FG line for MC <= 1.18, and FG 5.1 rejects Gradle 8",
-  #       which is why the mod carried a Gradle 7.6 wrapper and a daemon_jdk: "17" override.
-  #       Also false: `forge-1.18.2-40.3.12-mdk.zip` declares `net.minecraftforge.gradle`
-  #       version '[6.0,6.2)' with a Gradle 8.8 wrapper, and `forge-1.16.5-36.2.42-mdk.zip`
-  #       is FG6 / Gradle 8.4 — Forge regenerated those MDKs onto FG6, which handles userdev
-  #       configs on both sides of 1.17. FG 6.0.54's EnvironmentChecks accepts Gradle
-  #       [8.1, 9.0) and the root wrapper is 8.11.1. So forge-example-1.18 is now an ordinary
-  #       composite-included mod with no wrapper of its own and no daemon override, and the
-  #       Gradle-7.6-only :classes/:generateMcdpBridges task cycle that made this cell fail
-  #       is out of the picture entirely.
-  # ADR-0023's "Consequences — negative" bullet is superseded; see its errata section.
+  # The root wrapper must NOT be bumped past Gradle 8: ForgeGradle 6.0.54 accepts [8.1, 9.0)
+  # and forge-example-1.19/-1.20 composite-include the root build.
   #
-  # Why these cells were red and nobody noticed (run 35485761394, the only nightly this
-  # job has ever had): forge-1.20 and neoforge-1.20.6 were cancelled at exactly 30:00 on
-  # both OSes. The logs show they had already SUCCEEDED — `[mcdp-smoke] ... boot ok` and
-  # MC's `Done (28.875s)!` both appear ~3 min in — and then sat idle for ~26 min until
-  # `timeout-minutes` killed them. The step ran plain `gradlew runServer | tee`, which has
-  # no way to stop a server that booted fine. The Fabric cells "passed" only by accident:
-  # they set needs_eula=false, so MC halts itself at the EULA gate seconds after the mod
-  # initializer prints the marker — they never reached first tick at all. Both problems
-  # are fixed the same way: run every cell through scripts/mc_smoke.py, exactly like the
-  # 1.21 cells above, which waits for the first-tick marker and then kills the process
-  # tree. (The old comment claiming mc_smoke.py "asserts manifest-driven cats/circe
-  # contents" was wrong — that assertion is a separate workflow step, not part of the
-  # script.) Side effect worth knowing: a cancelled job never runs actions/cache's
-  # post-save step, which is why `mc-assets-*-forge-*` / `-neoforge-1.20.6` have never
-  # been populated and every nightly started cold. One green run fixes that for good.
-  #
-  # That green run happened: in run 35526039405, forge-1.20 and neoforge-1.20.6 PASSED for
-  # the first time. So the mc_smoke.py conversion above is confirmed working, and the
-  # mc-assets caches for those cells are populated from here on.
-  #
-  # Triggers: nightly only (no push). Still 7 cells × 2 OSes = 14 jobs — the 2026-09-20
-  # bands added no rows, so this estimate is unchanged by them. Measured real work per
-  # cell is ~1 min publish + ~2–4 min boot-to-first-tick, so steady state is ≈ 60–90
-  # runner-minutes per nightly (the cells run in parallel, so wall time is one cell).
-  # timeout-minutes is a backstop, not a budget — see the note on it below.
-  # The base 1.21 smoke above stays on push so PRs still get end-to-end signal.
+  # Triggers: nightly only (no push), so a band regression cannot block a snapshot publish on
+  # the day it lands -- the base 1.21 smoke above stays on push for PR signal. Cells run in
+  # parallel, so wall time is roughly one cell; steady state is ~1 min publish + 2-4 min
+  # boot-to-first-tick each. timeout-minutes is a backstop, not a budget.
+
   runserver-smoke-bands:
     if: github.event_name != 'push'
     strategy:
@@ -338,6 +277,11 @@ jobs:
           # daemon; its `toolchain { languageVersion = 17 }` is satisfied from
           # JAVA_HOME_17_X64, which is why 17 stays in the setup-java list below.
           - { name: forge-1.18,     dir: test-mods/forge-example-1.18,     modid: forge_example_118,     cache_key: 1.18.2, loader: forge,    daemon_jdk: "" }
+          # The last band to get a cell. The repo said in five places that this one could not have
+          # one because "GitHub runners ship no JDK 16" -- but Adoptium publishes jdk-16.0.2+7 GA,
+          # setup-java installs it, and the mod only needs 16 as a *toolchain*: it runs a Gradle 7.6
+          # wrapper, so the daemon is 17. Verified by building and booting it locally first.
+          - { name: forge-1.17,     dir: test-mods/forge-example-1.17,     modid: forge_example_117,     cache_key: 1.17.1, loader: forge,    daemon_jdk: "17" }
           # MC 26.x band. Own Gradle 9.7.1 wrapper, no includeBuild("../.."), consumes
           # mcdp + the mcdp gradle-plugin from mavenLocal (the preflight step below).
           # The only band left with its own distribution. Needs the JDK 25 daemon: MC 26.x declares
@@ -376,6 +320,7 @@ jobs:
           # JDK-21 daemon resolves that toolchain from JAVA_HOME_17_X64. Dropping 17 breaks
           # the forge-1.18 cell.
           java-version: |
+            16
             17
             25
             21

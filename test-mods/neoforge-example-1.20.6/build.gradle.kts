@@ -21,6 +21,13 @@ neoForge {
     version = "20.6.139"
 
     runs {
+        // `client` exists for the Tier-3 runClient nightly. Kept byte-for-byte in the shape
+        // of test-mods/neoforge-example's — that is the only NeoForge client config CI has
+        // ever booted, so it is the one to copy rather than improve on. (If this cell hangs
+        // before the title screen, the first lever to pull is
+        // `systemProperty("fml.earlyprogresswindow", "false")`, which is what the Forge
+        // band mods set; it is left off here only to keep MDG's proven config untouched.)
+        create("client") { client() }
         create("server") { server() }
     }
 
