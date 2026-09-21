@@ -165,6 +165,66 @@ classes and three Fabric classes between the newest pinned loader jar and the ne
   deliberate mismatch, safe only as long as the SPI classes stay byte-identical — now a
   documented check rather than an assumption.
 
+## Errata
+
+Three particulars of this ADR were wrong or have expired. The decision — one band for the
+calendar line — is untouched, and the finding in the first item below *strengthens* the
+measurement argument rather than weakening it, so this is an erratum, not a superseding ADR.
+
+### MC 26.x ships deobfuscated, so there are no mappings to pick — including Mojang's
+
+The Consequences section says the 26.x test mods "use `loom.officialMojangMappings()`". They do
+not, and cannot: **Mojang publishes no `client_mappings` or `server_mappings` for the calendar
+line**, the same way Fabric publishes no yarn for it. The reason is the same for both, and it
+was measured rather than inferred — class names read straight out of the published game jars:
+
+| Client jar | real `net/minecraft/…` names | obfuscated names |
+|---|---|---|
+| 26.3 | **10,737** | **0** |
+| 1.21.11 | 33 | 10,201 |
+
+Mojang stopped obfuscating. There is nothing left to map, which is why `fabric-api:0.161.0+26.3`
+builds without mappings too. Fabric signals this through fabric-meta, which returns the sentinel
+`net.fabricmc:intermediary:0.0.0` — its *identity* mappings artifact — for every 26.x version,
+and that is what `fabric-example-26.3` passes to `mappings(...)`.
+
+One consequence follows and is load-bearing in the build file: the identity intermediary has no
+`named` namespace, so Loom cannot remap a *sources* jar through it (`Could not find namespace
+"named" in provided tiny tree`), and it attempts that for every `modImplementation` dependency.
+`mcdp-26` is therefore consumed via plain `implementation`. Nothing needs remapping against an
+unobfuscated game, and Fabric's `ClasspathModCandidateFinder` discovers mcdp from the plain
+classpath in a dev run. `test-mods/fabric-example-26.3/build.gradle.kts` carries the full chain
+inline and is the authority for it.
+
+This is the one genuinely new empirical fact since the ADR was written, and it reinforces the
+decision: criterion (c) — "MC class names and FML internals diverge per version" — cannot fire
+for a line that ships no obfuscation map at all, on top of mcdp referencing zero Minecraft
+classes.
+
+### "The band cannot be verified at runtime in CI, and stays excluded" — it is verified
+
+Both cells are green on both OSes, in the nightly `runserver-smoke-bands` matrix
+(`fabric-26.3`, `neoforge-26.2`, `daemon_jdk: "25"`) and in the Tier-3 `runClient` nightly.
+The toolchain analysis above was right about *what* was needed — own wrapper, JDK 25 daemon,
+no `includeBuild("../..")`, `mavenLocal()` first — and wrong only in concluding that it could
+not be had. What actually stood between the analysis and a green cell was neither Gradle nor
+Minecraft:
+
+- **ASM could not read Java 25 class files.** `:generateMcdpBridges` failed with `Unsupported
+  class file major version 69`. Pinning ASM 9.10.1 was not enough on its own — Gradle exports
+  its own `org.objectweb.asm` to the plugin classloader and wins — so ASM is now shaded **and
+  relocated** into the plugin jar. `ClassFileVersionSupportTest` pins the version;
+  `verifyAsmRelocated` pins that the plugin actually uses the relocated copy.
+- **The mods resolved mcdp from Sonatype, not from the local build.** `pluginManagement` listed
+  the snapshot repo ahead of `mavenLocal()`, so the preflight publish was invisible and two
+  further runs failed identically. `mavenLocal()` now comes first in both mods.
+
+### "Gradle 9.6 + JDK 25 of their own" — the floor is 9.7.0
+
+Same Consequences bullet. Loom 1.18.x publishes `runtimeElements` with
+`org.gradle.plugin.api-version = 9.7.0`, so a 9.6.x consumer is rejected at *variant selection*
+and never loads the plugin at all. The committed wrapper is **9.7.1**, the current release.
+
 ## Cross-references
 
 - ADR-0023 — the band model; its `mcdp-26.1` row, FMLModType table and `fabric.mod.json`

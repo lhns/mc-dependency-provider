@@ -1,9 +1,5 @@
 plugins {
-    id("mcdp.band-adapter")
-}
-
-repositories {
-    maven("https://maven.fabricmc.net/")
+    id("mcdp.fabric-band")
 }
 
 // Fabric for Mojang's calendar-versioning line (MC 26.1, 26.2, 26.3, …) — ONE band for the
@@ -21,21 +17,7 @@ mcdpBand {
     // calendar-version game provider. Too low a floor is a silent runtime failure; too high
     // only asks a consumer to update their loader.
     fabricLoaderVersion.set("0.19")
-}
-
-sourceSets {
-    main {
-        java.setSrcDirs(listOf(rootProject.file("fabric/src/main/java")))
-        resources.setSrcDirs(listOf(rootProject.file("fabric/src/main/resources")))
-    }
-}
-
-dependencies {
-    compileOnly(project(":core"))
-    compileOnly(project(":deps-lib"))
-    compileOnly(libs.jetbrains.annotations)
     // Compiled against the 26.x-era loader rather than the 1.21 pin. Safe on the JDK 21
     // toolchain: fabric-loader's api classes are still major 52 (Java 8) even at 0.19.5.
-    compileOnly(libs.fabric.loader.mc26)
-    compileOnly("org.slf4j:slf4j-api:2.0.9")
+    fabricLoaderArtifact.set(libs.fabric.loader.mc26)
 }

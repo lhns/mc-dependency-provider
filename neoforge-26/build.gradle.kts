@@ -1,10 +1,5 @@
 plugins {
-    id("mcdp.band-adapter")
-}
-
-repositories {
-    maven("https://maven.neoforged.net/releases")
-    maven("https://libraries.minecraft.net/")
+    id("mcdp.neoforge-band")
 }
 
 // NeoForge for Mojang's calendar-versioning line (MC 26.1 / 26.2 / 26.3) — one band for the
@@ -22,14 +17,11 @@ mcdpBand {
     fmlModType.set("LIBRARY")
 }
 
+// Not setSrcDirs: mcdp.neoforge-band has already added neoforge-shared/, and replacing the
+// list would drop it.
 sourceSets {
     main {
-        java.setSrcDirs(listOf(
-            rootProject.file("neoforge-1.21.11/src/main/java"),
-            // setSrcDirs REPLACES, so the shared listener must be listed here too.
-            rootProject.file("neoforge-shared/src/main/java"),
-        ))
-        resources.setSrcDirs(listOf("src/main/resources"))
+        java.srcDir(rootProject.file("neoforge-1.21.11/src/main/java"))
     }
 }
 

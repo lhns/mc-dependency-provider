@@ -1,11 +1,5 @@
 plugins {
-    id("mcdp.band-adapter")
-}
-
-repositories {
-    maven("https://maven.neoforged.net/releases")
-    // Mojang's repo — fancymodloader:loader pulls transitive com.mojang:logging from here.
-    maven("https://libraries.minecraft.net/")
+    id("mcdp.neoforge-band")
 }
 
 // NeoForge for MC 1.21.11 (NeoForge 21.11.x, fancymodloader:loader 10.0.x).
@@ -36,14 +30,4 @@ dependencies {
     // net.neoforged:neoforge:21.11.45 (the newest 21.11 release) declares in its POM.
     compileOnly(libs.neoforge.fml.loader.mc12111)
     compileOnly(libs.neoforge.bus)
-}
-
-// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
-// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
-// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
-// compiled into each band's own jar so it stays package-private.
-sourceSets {
-    main {
-        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
-    }
 }

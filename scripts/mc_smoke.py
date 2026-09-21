@@ -4,7 +4,7 @@ mc_smoke.py — boot a Minecraft dev server via Gradle (ModDevGradle `runServer`
 or Loom `runServer`), wait for the first-tick marker ("Done (Xs)!"), then
 shut it down cleanly.
 
-Used by .gitea/workflows/mc-smoke.yml. Exits 0 on clean first-tick shutdown,
+Used by .github/workflows/mc-smoke.yml and mc-client-nightly.yml (and their .gitea mirrors). Exits 0 on clean first-tick shutdown,
 1 on timeout, 2 on fatal-log match (e.g. Invalid package name, ResolutionException).
 
 Why this script exists rather than inline shell: the MC server prints the
@@ -24,7 +24,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 DEFAULT_SERVER_MARKER = r'Done \([\d.]+s\)! For help, type "help"'
@@ -65,7 +64,7 @@ def main() -> int:
             "Seconds to keep tailing log after the shutdown marker before killing the JVM. "
             "Lets the server complete several full ticks so Mixin @At(\"TAIL\")/\"RETURN\" "
             "injections can fire — the JVM is killed mid-tick otherwise, leaving only HEAD "
-            "injections visible. Default 5s ≈ 100 ticks at 20Hz; set 0 to terminate immediately."
+            "injections visible. Default 5s is about 100 ticks at 20Hz; set 0 to terminate immediately."
         ),
     )
     args = parser.parse_args()
@@ -150,7 +149,7 @@ def main() -> int:
         **popen_kwargs,
     )
 
-    state = {"first_tick": False, "fatal": None, "start": time.monotonic()}
+    state = {"first_tick": False, "fatal": None}
 
     def reader():
         assert proc.stdout is not None

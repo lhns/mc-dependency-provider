@@ -27,9 +27,9 @@ dependencies {
     compileOnly(libs.forge.spi.mc120)
     // fmlcore for Forge 1.20.1 — supplies net.minecraftforge.fml.ModContainer + lifecycle.
     compileOnly(libs.forge.fmlcore.mc120)
-    compileOnly("net.minecraftforge:eventbus:6.0.5")
+    compileOnly(libs.forge.eventbus.mc120)
     compileOnly(libs.asm)
-    compileOnly("org.apache.maven:maven-artifact:3.8.5")
+    compileOnly(libs.maven.artifact)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

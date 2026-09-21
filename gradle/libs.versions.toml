@@ -8,6 +8,9 @@ fabric-loader = "0.16.9"
 # to 0.16.9's (same SHA-1, class-file major 52), so this documents the band target rather
 # than a compatibility requirement.
 fabric-loader-mc26 = "0.19.5"
+# Ships transitively with every fabric-loader line this repo targets; pinned only so the
+# adapter can import LoggerFactory at compile time.
+slf4j = "2.0.9"
 neoforge-spi-mc1206 = "8.0.4"     # NeoForge 20.6.x (MC 1.20.6)
 neoforge-fml-loader = "4.0.42"
 # FML 10 line (MC 1.21.10/1.21.11 and, via the shared port, the whole 26.x line). The
@@ -31,6 +34,16 @@ forge-spi-mc120 = "7.1.6"
 # MC 1.19.x. Every 1.19 fmlloader POM (1.19-41.1.0 .. 1.19.4-45.4.5) declares forgespi
 # 6.0.0 EXACTLY, not a range -- unlike 1.17/1.18 (4.0.15-4.x) and 1.20 (7.0.1).
 forge-spi-mc119 = "6.0.0"
+# EventBus is a transitive of fmlcore at runtime, needed explicitly at compile time. Each pin
+# is the line the band's own fmlcore POM declares: `eventbus 5.0.+` for both 1.17.1-37.1.2 and
+# 1.18.2-40.3.12, 6.0.3 for 1.19.2-43.5.2, 6.0.5 for 1.20.1-47.4.20.
+forge-eventbus-mc117 = "5.0.7"
+forge-eventbus-mc118 = "5.0.7"
+forge-eventbus-mc119 = "6.0.3"
+forge-eventbus-mc120 = "6.0.5"
+# ArtifactVersion in IModInfo. One version across all four Forge bands: the type is unchanged
+# since Maven 3.0 and no fmlcore POM constrains it.
+maven-artifact = "3.8.5"
 forge-fmlcore-mc117 = "1.17.1-37.1.2"
 forge-fmlcore-mc118 = "1.18.2-40.3.12"
 forge-fmlcore-mc120 = "1.20.1-47.4.20"
@@ -48,6 +61,7 @@ jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "j
 
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 fabric-loader-mc26 = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader-mc26" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 neoforge-spi-mc1206 = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi-mc1206" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
 neoforge-fml-loader-mc12111 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc12111" }
@@ -61,6 +75,11 @@ forge-fmlcore-mc117 = { module = "net.minecraftforge:fmlcore", version.ref = "fo
 forge-fmlcore-mc118 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc118" }
 forge-fmlcore-mc120 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc120" }
 forge-fmlcore-mc119 = { module = "net.minecraftforge:fmlcore", version.ref = "forge-fmlcore-mc119" }
+forge-eventbus-mc117 = { module = "net.minecraftforge:eventbus", version.ref = "forge-eventbus-mc117" }
+forge-eventbus-mc118 = { module = "net.minecraftforge:eventbus", version.ref = "forge-eventbus-mc118" }
+forge-eventbus-mc119 = { module = "net.minecraftforge:eventbus", version.ref = "forge-eventbus-mc119" }
+forge-eventbus-mc120 = { module = "net.minecraftforge:eventbus", version.ref = "forge-eventbus-mc120" }
+maven-artifact = { module = "org.apache.maven:maven-artifact", version.ref = "maven-artifact" }
 
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }

@@ -1,15 +1,10 @@
 plugins {
-    id("mcdp.band-adapter")
+    id("mcdp.neoforge-band")
 }
 
-repositories {
-    maven("https://maven.neoforged.net/releases")
-    // Mojang's repo — fancymodloader:loader pulls transitive com.mojang:logging from here.
-    maven("https://libraries.minecraft.net/")
-}
-
-// NeoForge for MC 1.21.x. This band owns the shared NeoForge adapter source; neoforge-26.1
-// points its srcDirs here.
+// NeoForge for MC 1.21.x (FML 4.0.x). This tree is this band's only: the FML-10 removals mean
+// neoforge-1.21.11/ carries its own port, and neoforge-26/ shares *that* one (ADR-0030, ADR-0032).
+// Pointing a 26.x band here is exactly the mistake ADR-0032 was written to correct.
 mcdpBand {
     javaRelease.set(21)
     fmlModType.set("LIBRARY")
@@ -38,13 +33,3 @@ dependencies {
 // aggregator `:mcdp-1.21` (dir `multi/`) publishes the jar containing both the
 // fabric and neoforge adapters. The shadowJar here remains produced for
 // inspection/debugging and is consumed via `:mcdp-1.21`'s `bundle` configuration.
-
-// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
-// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
-// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
-// compiled into each band's own jar so it stays package-private.
-sourceSets {
-    main {
-        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
-    }
-}

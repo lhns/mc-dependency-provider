@@ -1,3 +1,4 @@
+import org.gradle.api.artifacts.MinimalExternalModuleDependency
 import org.gradle.api.provider.Property
 
 /**
@@ -21,6 +22,13 @@ abstract class McdpBandExtension {
      * `mcdp.band-adapter` this module has no Fabric metadata to expand.
      */
     abstract val fabricLoaderVersion: Property<String>
+
+    /**
+     * The fabric-loader artifact this band *compiles* against, as opposed to the runtime floor
+     * above. `mcdp.fabric-band` defaults it to the catalog's `fabric-loader` pin; a band sets it
+     * only when it needs a different loader line (fabric-26). Fabric adapter modules only.
+     */
+    abstract val fabricLoaderArtifact: Property<MinimalExternalModuleDependency>
 
     /**
      * FML's jar-type manifest attribute, or unset for jars FML never sees (the Fabric-only

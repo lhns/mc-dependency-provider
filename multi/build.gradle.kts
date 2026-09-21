@@ -4,7 +4,7 @@ plugins {
 
 // The 1.21-band aggregator: Gradle path `:mcdp-1.21`, on-disk dir `multi/`, published as
 // `de.lhns.mcdp:mcdp-1.21`. One of several sibling band aggregators (`multi-1.17/` ..
-// `multi-26.1/`); publication is per-band, see ADR-0023.
+// `multi-26/`); publication is per-band, see ADR-0023.
 //
 // Both loaders' metadata files coexist in the one jar: `fabric.mod.json` at the jar root
 // (Fabric reads it); the NeoForge side uses `META-INF/services/IModLanguageLoader` +
