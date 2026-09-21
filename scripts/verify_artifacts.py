@@ -11,6 +11,12 @@ Run after `./gradlew publishToMavenLocal`:
 
     python3 scripts/verify_artifacts.py --version 0.1.0-SNAPSHOT
 
+Or against any Maven repository layout — the release dry run publishes to a local file
+repository so it can exercise the signed, non-SNAPSHOT path without uploading anything:
+
+    python3 scripts/verify_artifacts.py --version 0.0.0-dry-run \
+        --m2 build/dry-run-staging --signatures require
+
 Exit 0 when every band passes, 1 otherwise. Every failure is reported before exiting, so
 one run shows the whole picture rather than the first broken band.
 """
@@ -58,7 +64,29 @@ BANDS = {
 # (gradle-plugin/build.gradle.kts sets it explicitly).
 EXTRA_ARTIFACTS = {"gradle-plugin": "mcdp Gradle plugin"}
 
+# The Gradle plugin marker. `java-gradle-plugin` publishes a second, POM-only publication
+# whose groupId is the *plugin id* and whose artifactId is "<plugin id>.gradle.plugin"; that
+# is the coordinate `plugins { id("de.lhns.mcdp") }` resolves, and its single dependency is
+# what redirects to the real jar. Here the plugin id happens to equal GROUP, so the marker
+# lands in the same directory as the bands — that is a coincidence, not a rule, which is why
+# the group is spelled out below rather than reusing GROUP.
+PLUGIN_ID = "de.lhns.mcdp"
+PLUGIN_MARKER_GROUP = PLUGIN_ID
+PLUGIN_MARKER_ARTIFACT = f"{PLUGIN_ID}.gradle.plugin"
+# The marker POM's <name>. vanniktech's `pom { name }` reaches the marker publication too, so
+# this is gradle-plugin/build.gradle.kts's name, not the gradlePlugin{} displayName.
+PLUGIN_MARKER_POM_NAME = "mcdp Gradle plugin"
+# What the marker must point at: the artifact that actually carries the plugin classes.
+PLUGIN_IMPL_ARTIFACT = "gradle-plugin"
+
 MOD_ID = "mcdepprovider"
+
+# Extensions a repository publish writes that are not themselves published content. A
+# file-repository publish emits checksums; `publishToMavenLocal` does not. Both are excluded
+# from the "every published file needs a signature" rule, and so is maven-metadata*.xml.
+CHECKSUM_SUFFIXES = (".md5", ".sha1", ".sha256", ".sha512")
+
+SIGNATURE_HEADER = b"-----BEGIN PGP SIGNATURE-----"
 
 # Tight enough that a stray `$` or `{` in bytecode cannot trip it, loose enough to catch any
 # Gradle/Groovy template variable name. Matched against raw bytes so binary entries need no
@@ -101,6 +129,62 @@ def pom_text(path: Path, tag: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+def pom_dependencies(path: Path) -> list[tuple[str, str, str]]:
+    """Every <dependency> of a POM as (groupId, artifactId, version). Same deliberate
+    non-XML-parse as pom_text: these POMs are generated and flat."""
+    deps: list[tuple[str, str, str]] = []
+    text = path.read_text(encoding="utf-8")
+    for block in re.findall(r"<dependency>(.*?)</dependency>", text, re.S):
+        def field(tag: str) -> str:
+            m = re.search(rf"<{tag}>([^<]*)</{tag}>", block)
+            return m.group(1).strip() if m else ""
+        deps.append((field("groupId"), field("artifactId"), field("version")))
+    return deps
+
+
+def signable_files(base: Path) -> list[Path]:
+    """Everything in a version directory that the Central Portal treats as a published file:
+    the jars, the POM and the Gradle module metadata — not signatures, not checksums, not
+    repository metadata."""
+    if not base.is_dir():
+        return []
+    return sorted(
+        p for p in base.iterdir()
+        if p.is_file()
+        and not p.name.startswith("maven-metadata")
+        and not p.name.endswith(".asc")
+        and not p.name.endswith(CHECKSUM_SUFFIXES)
+    )
+
+
+def verify_signatures(base: Path, scope: str, rep: Report) -> None:
+    """One armored `.asc` per published file.
+
+    Central rejects a release bundle whose POM or jars are unsigned, and until this existed
+    nothing checked that `signAllPublications()` had produced anything at all — the
+    configuration only ever ran inside publish.yml with the production key, so a broken
+    signing setup would first be reported by the Portal, after automaticRelease=true had
+    already made the upload immutable.
+
+    "Every non-checksum, non-metadata file" is exactly the set Gradle signs: `sign(publication)`
+    covers the POM, the .module metadata and every jar artifact.
+    """
+    files = signable_files(base)
+    if not rep.check(scope, bool(files), f"published files present ({len(files)})"):
+        return
+    for f in files:
+        sig = f.with_name(f.name + ".asc")
+        if not rep.check(scope, sig.is_file(), f"signature present ({sig.name})"):
+            continue
+        rep.check(scope, sig.read_bytes().lstrip().startswith(SIGNATURE_HEADER),
+                  f"{sig.name} is an armored PGP signature")
+
+
+def signing_is_active(root: Path) -> bool:
+    """Whether this publish signed anything at all. Used only to resolve --signatures=auto."""
+    return any(root.rglob("*.asc"))
+
+
 def scan_placeholders(jar: Path, rep: Report, scope: str) -> None:
     with zipfile.ZipFile(jar) as z:
         for entry in z.namelist():
@@ -127,8 +211,23 @@ def verify_coordinates(base: Path, artifact: str, version: str, pom_name: str,
         got = pom_text(pom, tag)
         rep.check(scope, got == want, f"pom <{tag}> = {got!r} (want {want!r})")
 
-    # Sources/javadoc jars ship too; a placeholder in any of them is still a shipped bug.
-    for sibling in sorted(base.glob(f"{artifact}-{version}*.jar")):
+    # Sources and javadoc jars are required, per artifact, by name.
+    #
+    # This used to be `base.glob(f"{artifact}-{version}*.jar")`, which reported *nothing* when
+    # it matched nothing: if either jar stopped being produced, this script passed and the
+    # Central Portal rejected the bundle. That is not hypothetical — gradle-plugin's build
+    # file carries a live warning that calling withSourcesJar()/withJavadocJar() there crashes
+    # publishing with duplicate artifacts, and the obvious "fix" for such a crash is to stop
+    # producing the jar. vanniktech configures both automatically; their absence means
+    # somebody turned them off.
+    siblings = [jar]
+    for classifier in ("sources", "javadoc"):
+        extra = base / f"{artifact}-{version}-{classifier}.jar"
+        if rep.check(scope, extra.is_file(), f"{classifier} jar present ({extra.name})"):
+            siblings.append(extra)
+
+    # A placeholder in any of them is still a shipped bug.
+    for sibling in siblings:
         scan_placeholders(sibling, rep, scope)
     return jar
 
@@ -161,6 +260,35 @@ def verify_band(base: Path, artifact: str, version: str, spec: dict, rep: Report
                   f"FMLModType = {got!r} (want {spec['fml_mod_type']!r})")
         rep.check(scope, attrs.get("Automatic-Module-Name") == MOD_ID,
                   f"Automatic-Module-Name = {attrs.get('Automatic-Module-Name')!r}")
+
+
+def verify_plugin_marker(base: Path, version: str, rep: Report) -> None:
+    """The coordinate `plugins { id("de.lhns.mcdp") }` actually resolves.
+
+    Gradle resolves a plugin id to `<id>:<id>.gradle.plugin`, reads that POM, and follows its
+    single dependency to the jar. Nothing in this repo writes that POM — `java-gradle-plugin`
+    generates it — and nothing until now opened it. A marker that points at the wrong
+    coordinate, or that silently stops being published, breaks every consumer's
+    `plugins { }` block while the band jars and the gradle-plugin jar all look perfect.
+
+    It is an alias publication: POM only, no jar, no .module, packaging `pom`.
+    """
+    scope = PLUGIN_MARKER_ARTIFACT
+    pom = base / f"{PLUGIN_MARKER_ARTIFACT}-{version}.pom"
+    if not rep.check(scope, pom.is_file(), f"marker pom present ({pom})"):
+        return
+    for tag, want in (("groupId", PLUGIN_MARKER_GROUP),
+                      ("artifactId", PLUGIN_MARKER_ARTIFACT),
+                      ("version", version),
+                      ("packaging", "pom"),
+                      ("name", PLUGIN_MARKER_POM_NAME)):
+        got = pom_text(pom, tag)
+        rep.check(scope, got == want, f"pom <{tag}> = {got!r} (want {want!r})")
+
+    want_dep = (GROUP, PLUGIN_IMPL_ARTIFACT, version)
+    deps = pom_dependencies(pom)
+    rep.check(scope, deps == [want_dep],
+              f"marker dependency = {deps} (want exactly [{want_dep}])")
 
 
 def verify_band_list(settings: Path, rep: Report) -> None:

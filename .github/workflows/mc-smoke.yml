@@ -128,7 +128,9 @@ jobs:
         run: |
           set -euo pipefail
           LOG=smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
-          grep -q "\[mcdp-smoke\] mod=${{ matrix.platform.modid }} boot ok" "$LOG" || {
+          # These two mods print the ADR-0001 isolation line (mod=<id> name=... cats...),
+          # not the bands' "boot ok" marker. Match the mod= prefix, which both shapes share.
+          grep -q "\[mcdp-smoke\] mod=${{ matrix.platform.modid }} " "$LOG" || {
             echo "ERROR: mcdp smoke marker for ${{ matrix.platform.modid }} not in log"
             grep '\[mcdp-smoke\]' "$LOG" || true
             exit 1
