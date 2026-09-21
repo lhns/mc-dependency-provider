@@ -122,7 +122,14 @@ jobs:
           # `mod=<id> ` prefix that both shapes share.
           - { name: fabric-1.21,     dir: test-mods/fabric-example,          modid: fabric_example,         cache_key: 1.21.1,  loader: fabric,   daemon_jdk: "" }
           - { name: fabric-1.21.11,  dir: test-mods/fabric-example-1.21.11,  modid: fabric_example_12111,   cache_key: 1.21.11, loader: fabric,   daemon_jdk: "" }
-          - { name: fabric-26.3,     dir: test-mods/fabric-example-26.3,     modid: fabric_example_263,     cache_key: "26.3",  loader: fabric,   daemon_jdk: "25" }
+          # No fabric-26.3 row. MC 26.3 ships Mojang's new render abstraction ("renderpearl"),
+          # whose GL backend refuses to create a device on llvmpipe and whose Vulkan backend
+          # reports "Vulkan is not supported" -- it throws BackendCreationException from
+          # Minecraft.<init>, before any mod code runs, so it tests nothing about mcdp.
+          # LIBGL_ALWAYS_SOFTWARE=1 and MESA_GL_VERSION_OVERRIDE=4.6 are already set below and are
+          # not enough. Measured in run 35615852118, where every other cell passed -- including
+          # neoforge-26.2, so the 26 band does have client evidence, just on MC 26.2.
+          # Revisit if the runners gain a GPU or MC 26.x gains a headless/software path.
           # ---- Forge (bands 1.18–1.20; 1.17 excluded, see header) --------------------
           - { name: forge-1.18,      dir: test-mods/forge-example-1.18,      modid: forge_example_118,      cache_key: 1.18.2,  loader: forge,    daemon_jdk: "" }
           - { name: forge-1.19,      dir: test-mods/forge-example-1.19,      modid: forge_example_119,      cache_key: 1.19.2,  loader: forge,    daemon_jdk: "" }
