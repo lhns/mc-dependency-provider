@@ -1,6 +1,6 @@
 // ForgeGradle 6.x supports MC 1.19.2 on Gradle 8 — the official `forge-1.19.2-43.5.2-mdk.zip`
 // declares `id 'net.minecraftforge.gradle' version '[6.0,6.2)'` with a Gradle 8.8 wrapper. So,
-// like forge-example-1.20 and unlike forge-example-1.18, this subproject runs on the parent's
+// like forge-example-1.18 and -1.20 (and unlike forge-example-1.17), this subproject runs on the parent's
 // Gradle 8.x: no wrapper override, and `includeBuild("../..")` stays.
 buildscript {
     repositories {

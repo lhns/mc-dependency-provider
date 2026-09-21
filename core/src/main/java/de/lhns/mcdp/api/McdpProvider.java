@@ -60,15 +60,18 @@ public final class McdpProvider {
      */
     public static int registerAutoBridgeManifestToml(ModClassLoader modLoader, Path tomlFile) {
         Objects.requireNonNull(modLoader, "modLoader");
-        // Null path = adapter found no manifest → no-op. NoSuchFileException = NeoForge's
-        // UnionFileSystem speculatively returned a candidate path for a file that doesn't
-        // actually exist on disk (the mod has no bridges to register), also a no-op. Any other
-        // I/O failure is a real problem (permissions, partial download, …) — throw loudly.
-        if (tomlFile == null) return 0;
+        // Null path = adapter found no manifest → no-op. A loader's virtual filesystem may also
+        // hand back a speculative candidate path for a file that isn't there (NeoForge's
+        // UnionFileSystem, Forge's SecureJar PathFS) — the mod simply has no bridges, also a
+        // no-op. Those two report a missing entry differently: NeoForge throws NoSuchFileException,
+        // Forge throws the older java.io.FileNotFoundException, so both are tolerated and the
+        // existence check comes first. Any other I/O failure is a real problem (permissions,
+        // partial download, …) — throw loudly.
+        if (tomlFile == null || !Files.isRegularFile(tomlFile)) return 0;
         String content;
         try {
             content = Files.readString(tomlFile, StandardCharsets.UTF_8);
-        } catch (java.nio.file.NoSuchFileException nsfe) {
+        } catch (java.nio.file.NoSuchFileException | java.io.FileNotFoundException notThere) {
             return 0;
         } catch (java.io.IOException ioe) {
             throw new IllegalStateException(

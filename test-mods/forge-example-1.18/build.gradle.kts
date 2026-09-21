@@ -1,64 +1,35 @@
-// ForgeGradle 5.1.x for MC 1.18.2 does NOT support Gradle 8.x — rejects with
-// EnvironmentChecks.checkGradleRange. Run this test mod with a Gradle 7.5.x wrapper
-// (override gradle/wrapper/gradle-wrapper.properties for THIS subproject only;
-// the parent mc-scala build is on 8.x and stays there).
+// MC 1.18.2 on ForgeGradle 6, the shape of the official `forge-1.18.2-40.3.12-mdk.zip`:
+// that MDK declares `id 'net.minecraftforge.gradle' version '[6.0,6.2)'` and ships a Gradle
+// 8.8 wrapper. FG 6.0.54's EnvironmentChecks accepts Gradle [8.1, 9.0), so this mod runs on
+// the repo-root 8.11.1 wrapper through `includeBuild("../..")` like every other test mod.
 //
-// ForgeGradle is a Groovy-DSL plugin without a maintained Kotlin-DSL surface.
-// Apply it via the buildscript classpath block (matches fluidphysics's forge-1.18 setup).
-buildscript {
-    repositories {
-        maven("https://maven.minecraftforge.net/")
-        mavenCentral()
-    }
-    dependencies {
-        classpath("net.minecraftforge.gradle:ForgeGradle:5.1.+") {
-            isChanging = true
-        }
-    }
-}
-
+// The older FG 5.1.x / Gradle 7.6 scaffold that used to live here was based on the claim that
+// FG 5.1 is the only ForgeGradle line for MC <= 1.18. It is not — Forge regenerated the MDKs
+// for 1.16.5 and 1.18.2 onto FG6. (forge-example-1.17 is a separate question: its MDK was
+// never regenerated and it has its own JDK-16 constraint.)
+//
+// FG6 is applied through the `plugins {}` block, resolved from the MinecraftForge maven listed
+// in settings.gradle.kts's pluginManagement — the MDK's own form. The Kotlin-DSL surface still
+// reaches the Groovy-typed extension via `configure<UserDevExtension>`.
 plugins {
     `java-library`
-    // Without composite-include we need an explicit version. The mcdp gradle-plugin
-    // is published via the parent's `:gradle-plugin:publishToMavenLocal` to match this
-    // pin, OR resolved from Sonatype snapshots for un-modified branches.
-    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
+    id("net.minecraftforge.gradle") version "[6.0,6.2)"
+    id("de.lhns.mcdp")
 }
-
-apply(plugin = "net.minecraftforge.gradle")
 
 group = "com.example"
 version = "0.1.0"
 
 java {
     toolchain {
+        // MC 1.18.2 requires Java 17. On a JDK-21 Gradle daemon this is a *toolchain*
+        // requirement, which CI satisfies from JAVA_HOME_17_X64 (setup-java still installs 17).
         languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
-repositories {
-    // mavenLocal FIRST and non-optional: with no includeBuild("../.."), the only source of
-    // `de.lhns.mcdp:mcdp-1.18:0.1.0-SNAPSHOT` is the parent build's publishToMavenLocal.
-    // settings.gradle.kts lists mavenLocal only under `pluginManagement`, which covers the
-    // `de.lhns.mcdp` plugin marker but NOT ordinary dependency resolution — and its
-    // `dependencyResolutionManagement` block declares repositoriesMode but no repositories,
-    // so project repositories are the whole story for the mcdp jar.
-    mavenLocal()
-    mavenCentral()
-}
+repositories { mavenCentral() }
 
-// SNAPSHOT dependencies are "changing" modules, which Gradle caches for 24h by default.
-// That defeats the CI preflight: `publishToMavenLocal` writes a fresh mcdp jar, the
-// consumer build resolves the previous one out of ~/.gradle/caches/modules-2, and the
-// build fails against stale bytecode (seen as ASM "Unsupported class file major version"
-// when the plugin's target changed). Re-resolve every build instead -- these test mods
-// exist to exercise whatever was just published.
-configurations.all {
-    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
-}
-
-// ForgeGradle's `minecraft { ... }` block configures MC version + mappings + run tasks.
-// The Kotlin-DSL surface uses `the<...>()` lookup to access the Groovy-typed extension.
 configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
     mappings("official", "1.18.2")
     runs {

@@ -258,6 +258,28 @@ class McdpProviderTest {
         }
     }
 
+    /**
+     * A path that exists but is not a regular file → no-op, not a crash.
+     * <p>
+     * Regression test for the Forge bands: {@code IModFile.findResource} hands back a candidate
+     * path inside SecureJar's virtual filesystem whether or not the entry is there, and reading a
+     * missing one throws {@code java.io.FileNotFoundException} rather than the
+     * {@code NoSuchFileException} this method originally tolerated. Every mixin-less Forge mod
+     * therefore died during {@code loadMod}. A directory reproduces the same shape on the default
+     * filesystem: present enough to open, not readable as a file.
+     */
+    @Test
+    void registerAutoBridgeManifestTomlNoopForNonRegularFile(@TempDir Path tmp) throws Exception {
+        Path implJar = tmp.resolve("impl.jar");
+        compileFakeImplJar(implJar);
+        Path notAFile = Files.createDirectory(tmp.resolve("mcdp-bridges.toml"));
+        try (ModClassLoader mod = new ModClassLoader(
+                "ghost2", new URL[]{implJar.toUri().toURL()},
+                getClass().getClassLoader(), List.of())) {
+            assertEquals(0, McdpProvider.registerAutoBridgeManifestToml(mod, notAFile));
+        }
+    }
+
     /** Incomplete entry (missing required key) → loud throw. */
     @Test
     void registerAutoBridgeManifestTomlThrowsOnIncompleteEntry(@TempDir Path tmp) throws Exception {

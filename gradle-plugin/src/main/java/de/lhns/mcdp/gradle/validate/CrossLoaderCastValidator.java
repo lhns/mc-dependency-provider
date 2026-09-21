@@ -51,13 +51,7 @@ public final class CrossLoaderCastValidator {
         }
         this.crossLoaderAnnotationDescs = List.copyOf(descs);
 
-        List<String> normalized = new ArrayList<>();
-        for (String p : sharedPackages) {
-            String dotted = BridgePolicy.toDotted(p);
-            if (!dotted.endsWith(".")) dotted = dotted + ".";
-            normalized.add(dotted);
-        }
-        this.sharedPackages = List.copyOf(normalized);
+        this.sharedPackages = BridgePolicy.normalizeSharedPackages(sharedPackages);
     }
 
     public List<Diagnostic> validate(List<byte[]> classes) {

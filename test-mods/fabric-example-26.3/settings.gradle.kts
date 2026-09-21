@@ -13,22 +13,22 @@ rootProject.name = "fabric-example-26.3"
 //
 // Instead, exactly like the ForgeGradle bands:
 //     cd ../.. ; ./gradlew :mcdp-26:publishToMavenLocal :gradle-plugin:publishToMavenLocal
-//     cd test-mods/fabric-example-26.3 ; ./gradlew build     # this mod's own Gradle 9.6 wrapper
+//     cd test-mods/fabric-example-26.3 ; ./gradlew build     # this mod's own Gradle 9.7.1 wrapper
 //
 // `de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT` and the `de.lhns.mcdp` plugin marker then resolve
 // from mavenLocal (project `repositories` below and in build.gradle.kts).
 
 pluginManagement {
     repositories {
-        // Snapshot repo of the published de.lhns.mcdp.gradle.plugin marker.
-        maven("https://central.sonatype.com/repository/maven-snapshots/")
+        // mavenLocal FIRST. The published Sonatype snapshot below is a fallback only: listed
+        // ahead of mavenLocal it wins plugin resolution outright, and this mod then builds
+        // against whatever snapshot was last published rather than the tree it sits in. That
+        // silently masked an ASM fix for two CI runs.
         mavenLocal()
+        // Fallback for a checkout that has not run `publishToMavenLocal` from the repo root.
+        maven("https://central.sonatype.com/repository/maven-snapshots/")
         maven("https://maven.fabricmc.net/") { name = "Fabric" }
         gradlePluginPortal()
         mavenCentral()
     }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
 }

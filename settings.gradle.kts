@@ -9,14 +9,6 @@ pluginManagement {
     }
 }
 
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        maven("https://maven.neoforged.net/releases")
-        maven("https://maven.fabricmc.net/")
-    }
-}
-
 include("deps-lib")
 include("core")
 include("gradle-plugin")

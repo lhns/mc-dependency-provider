@@ -5,7 +5,11 @@ import de.lhns.mcdp.gradle.validate.ValidateSharedPackagesTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.file.Directory;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.language.jvm.tasks.ProcessResources;
@@ -57,12 +61,8 @@ public final class McdpProviderPlugin implements Plugin<Project> {
         // `bridges {}` config: bridgePackage = <group>.<projectName>.mcdp_bridges. Bridge impls
         // go in the sibling <bridgePackage>_impl package (ADR-0021 errata).
         ext.getBridges().getEnabled().convention(true);
-        ext.getBridges().getBridgePackage().convention(project.provider(() -> {
-            String group = String.valueOf(project.getGroup());
-            if (group.isEmpty() || "unspecified".equals(group)) return "";
-            String name = project.getName().replace('-', '_');
-            return group + "." + name + ".mcdp_bridges";
-        }));
+        ext.getBridges().getBridgePackage().convention(project.provider(
+                () -> defaultBridgePackage(String.valueOf(project.getGroup()), project.getName())));
         // Annotation seed (ADR-0021). Default covers Sponge-Mixin and NeoForge's automatic event
         // subscriber registrar — the two FML/Sponge side-loads documented as leak-prone in
         // mc-fluid-physics. Override per project to pin to a different NeoForge version's
@@ -263,7 +263,7 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         // exactly the over-share ADR-0024 exists to prevent. Bridges ARE the
                         // mechanism that makes those refs safe; validating them as user code is a
                         // category error.
-                        t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
+                        t.getCompiledClassesDirs().from(compilerOutputDirs(project, main));
                         t.getSharedPackages().set(ext.getSharedPackages());
                         t.getCrossLoaderAnnotations().set(ext.getBridges().getCrossLoaderAnnotations());
                     });
@@ -281,6 +281,9 @@ public final class McdpProviderPlugin implements Plugin<Project> {
      */
     private org.gradle.api.tasks.TaskProvider<BridgeCodegenTask> registerBridgeCodegen(
             Project project, McdpProviderExtension ext, SourceSet main) {
+        // Resolved once, outside the task-configuration lambdas: everything below is serialized
+        // into the configuration cache, which accepts a FileCollection but not a SourceSet.
+        FileCollection compiledClasses = compilerOutputDirs(project, main);
         var bridgeTask = project.getTasks().register(
                 "generateMcdpBridges", BridgeCodegenTask.class, t -> {
                     t.setGroup("mcdepprovider");
@@ -294,7 +297,7 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         // shouldn't be forced through codegen. Walks every output dir in the
                         // SourceSet so multi-language projects (Scala/Kotlin joint compilation
                         // that wipes the empty compileJava output) are still detected.
-                        for (File f : main.getOutput().getClassesDirs().getFiles()) {
+                        for (File f : compiledClasses.getFiles()) {
                             if (f.isDirectory()) return true;
                         }
                         return false;
@@ -303,7 +306,7 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     // joint-compiled by scalac live under the scala output dir; pure-Java mixins
                     // under java; Kotlin joint output under kotlin. The scanner picks the first
                     // dir containing the seeded class.
-                    t.getCompiledClassesDirs().from(main.getOutput().getClassesDirs());
+                    t.getCompiledClassesDirs().from(compiledClasses);
                     // Consumer's compile classpath — fed only to ASM's COMPUTE_FRAMES loader so
                     // common-supertype computation can resolve Minecraft (and any other
                     // off-plugin) types that mixin bytecode pushes across branch joins.
@@ -336,27 +339,94 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                     if (compileKotlin != null) t.dependsOn(compileKotlin);
                 });
 
-        // Layer the rewritten classes onto every Jar task. Set duplicatesStrategy=INCLUDE so the
-        // bridge output (added after the Jar plugin's default from(main.output)) overwrites the
-        // original compiled mixins in the final archive.
-        project.getTasks().withType(Jar.class).configureEach(jar -> {
-            jar.dependsOn(bridgeTask);
-            jar.setDuplicatesStrategy(org.gradle.api.file.DuplicatesStrategy.INCLUDE);
-            jar.from(bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
-            jar.from(bridgeTask.flatMap(BridgeCodegenTask::getManifestOutputDir));
-        });
-        // Also feed processResources so dev-mode runs (Loom/MDG) pick up the META-INF
-        // manifests without rebuilding the jar; rewritten classes flow into runtime classpath
-        // through SourceSet.output below.
+        // Mixin rewriting happens in place in the compiler's own output dir, so the only extra
+        // input is the generated bridge dir — and that reaches every Jar task through the
+        // source-set output registration below. Adding it here as well would archive it twice.
+        project.getTasks().withType(Jar.class).configureEach(jar -> jar.dependsOn(bridgeTask));
+        // The manifest goes through processResources only — never also onto the Jar tasks. Jar
+        // already picks up the processResources output, so adding it in both places emitted
+        // META-INF/mcdp-bridges.toml twice; ForgeGradle's reobf renamer rejects such an archive
+        // outright ("Duplicate entries detected"), and every other jar was quietly malformed.
+        // This also covers dev-mode runs (Loom/MDG), which read the manifest out of the
+        // resources dir without rebuilding the jar; rewritten classes reach the runtime
+        // classpath through SourceSet.output below.
         project.getTasks().named("processResources", ProcessResources.class, resources -> {
             resources.dependsOn(bridgeTask);
             resources.setDuplicatesStrategy(org.gradle.api.file.DuplicatesStrategy.INCLUDE);
             resources.from(bridgeTask.flatMap(BridgeCodegenTask::getManifestOutputDir));
         });
-        // Add bridge classes to the main source set output so dev runs and downstream
-        // dependents see rewritten mixin classes + emitted bridge interfaces / impls.
-        main.getOutput().dir(java.util.Map.of("builtBy", bridgeTask),
-                bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir));
+        // Publish the generated bridge classes on the main source set so dev runs, the jar and
+        // downstream dependents all see them.
+        //
+        // This goes into `classesDirs`, not `output.dir(...)`, because ForgeGradle builds a dev
+        // run's MOD_CLASSES from exactly `getClassesDirs()` + `getResourcesDir()` and ignores the
+        // extra dirs (RunConfigGenerator#mapModClassesToGradle). Registered the other way the
+        // bridge interface is absent from the Forge dev classpath, and Mixin dies pre-processing
+        // the rewritten mixin with ClassMetadataNotFoundException. Loom and ModDevGradle consume
+        // the whole output, so both registrations work there — only Forge distinguishes them.
+        Provider<Directory> bridgeClasses = bridgeTask.flatMap(BridgeCodegenTask::getOutputClassesDir);
+        FileCollection classesDirs = main.getOutput().getClassesDirs();
+        if (classesDirs instanceof ConfigurableFileCollection configurable) {
+            configurable.from(bridgeClasses);
+            configurable.builtBy(bridgeTask);
+        } else {
+            // Not reachable on any Gradle we support; keeps a non-Forge build working if it ever is.
+            main.getOutput().dir(java.util.Map.of("builtBy", bridgeTask), bridgeClasses);
+        }
         return bridgeTask;
     }
+
+    /**
+     * Default bridge package: {@code <group>.<projectName>.mcdp_bridges}, with every segment
+     * coerced into a legal Java identifier. Project names routinely carry characters that are
+     * illegal in a package segment — {@code forge-example-1.20} would otherwise yield the
+     * segment {@code 20}, and the mod would die at boot on {@code Invalid package name}.
+     * Returns {@code ""} when the project has no group, which disables bridge codegen defaults.
+     */
+    static String defaultBridgePackage(String group, String projectName) {
+        if (group == null || group.isEmpty() || "unspecified".equals(group)) return "";
+        StringBuilder out = new StringBuilder();
+        for (String segment : group.split("[.]")) {
+            if (segment.isEmpty()) continue;
+            if (out.length() > 0) out.append('.');
+            out.append(sanitizeSegment(segment));
+        }
+        if (out.length() == 0) return "";
+        // The project name is one segment, not several: `forge-example-1.20` is a single name
+        // that happens to contain a dot, so it becomes `forge_example_1_20`.
+        return out.append('.').append(sanitizeSegment(projectName)).append(".mcdp_bridges").toString();
+    }
+
+    /** One package segment: non-identifier chars become {@code _}, and a leading digit is prefixed. */
+    private static String sanitizeSegment(String segment) {
+        StringBuilder sb = new StringBuilder(segment.length() + 1);
+        if (!Character.isJavaIdentifierStart(segment.charAt(0))) sb.append('_');
+        for (int i = 0; i < segment.length(); i++) {
+            char c = segment.charAt(i);
+            sb.append(Character.isJavaIdentifierPart(c) ? c : '_');
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * The compiler output dirs of {@code main}, minus the codegen's own generated-bridge dir.
+     * <p>
+     * The bridge dir is registered on {@code classesDirs} (see {@code registerBridgeCodegen}), so
+     * a plain {@code getClassesDirs()} reference would make the codegen task and its validator
+     * depend on their own output. Returning bare {@code File}s carries no task dependencies —
+     * both consumers declare their compile-task dependencies explicitly.
+     */
+    private static FileCollection compilerOutputDirs(Project project, SourceSet main) {
+        // Resolve both captures now: the lambda is serialized into the configuration cache, and
+        // neither Project nor SourceSet survives that. A FileCollection and a File do.
+        File generated = project.getLayout().getBuildDirectory()
+                .dir("mcdp-bridges/classes").get().getAsFile();
+        FileCollection classesDirs = main.getOutput().getClassesDirs();
+        return project.files((java.util.concurrent.Callable<Object>) () ->
+                classesDirs.getFiles().stream()
+                        .filter(f -> !f.equals(generated))
+                        .collect(java.util.stream.Collectors.toList()));
+    }
+
 }

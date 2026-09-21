@@ -2,18 +2,40 @@
 
 Forge test mod for **MC 1.18.2**, targeting `de.lhns.mcdp:mcdp-1.18`.
 
-**Deliberately not in CI.** ForgeGradle 5.1 (the only FG line supporting MC ≤ 1.18)
-forces Gradle 7 / Java ≤ 19, while mcdp's `gradle-plugin` compiles to Java 21
-bytecode — so the mcdp plugin path is unusable on this band. The `mcdp-1.18`
-*runtime* works; only manifest generation must happen outside mcdp. (Forge 1.20.x
-is on ForgeGradle 6 + Gradle 8, which is why `forge-example-1.20` *is* in CI.)
+In the nightly `runserver-smoke-bands` matrix (`forge-1.18`). **That cell has not yet
+passed** — no nightly has produced a green result for it — so this band is *wired*, not
+*proven*.
 
-**The committed Gradle 7.6 wrapper here is load-bearing**, not leftover: ForgeGradle
-5.1 rejects Gradle 8.x (`EnvironmentChecks.checkGradleRange`), so this build must
-run on its own `./gradlew` rather than the repo-root 8.11.1 one. For the same reason
-`settings.gradle.kts` omits `includeBuild("../..")` — run
-`../../gradlew :mcdp-1.18:publishToMavenLocal` first, then build here.
+**An ordinary composite-included test mod**, exactly like `forge-example-1.20`: it uses
+ForgeGradle 6 through `plugins { id("net.minecraftforge.gradle") version "[6.0,6.2)" }`,
+`includeBuild("../..")` in `settings.gradle.kts`, and the repo-root Gradle 8.11.1
+wrapper. Build and boot it from the repo root:
 
-See [`../README.md`](../README.md) and ADR-0023 ("Consequences — negative"); the
-exclusion is also recorded in the "Excluded from coverage" comment in
-`.github/workflows/mc-smoke.yml`.
+```
+./gradlew -p test-mods/forge-example-1.18 build
+./gradlew -p test-mods/forge-example-1.18 runServer
+```
+
+(or `../../gradlew build` from inside this directory.) `toolchain { languageVersion = 17 }`
+is resolved as a Gradle *toolchain*, so the daemon can stay on JDK 21 as long as a JDK 17
+is installed or provisionable.
+
+## What changed, and why the old scaffold was wrong
+
+This mod used to carry its own `gradlew` pinning **Gradle 7.6**, omit
+`includeBuild("../..")`, and consume `mcdp-1.18` plus the `de.lhns.mcdp` plugin from
+`mavenLocal()` + a Sonatype snapshot repo. The justification was:
+
+> ForgeGradle 5.1 is the only FG line supporting MC ≤ 1.18, and FG 5.1 rejects Gradle 8.
+
+That is **false**. Forge regenerated the MDKs onto FG6 on both sides of 1.17:
+
+- `forge-1.18.2-40.3.12-mdk.zip` → `id 'net.minecraftforge.gradle' version '[6.0,6.2)'`,
+  **Gradle 8.8** wrapper.
+- `forge-1.16.5-36.2.42-mdk.zip` → same FG range, **Gradle 8.4** wrapper.
+- ForgeGradle 6.0.54's `EnvironmentChecks.checkEnvironment` accepts Gradle `[8.1, 9.0)`;
+  the root wrapper is 8.11.1.
+
+1.17 is the one MC version in this repo for which no FG6 MDK was ever published, so
+`forge-example-1.17` keeps the old shape. See [`../README.md`](../README.md) and
+ADR-0023's errata.

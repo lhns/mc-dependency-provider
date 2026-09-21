@@ -20,22 +20,25 @@ surface exactly. Re-pin `neoForge.version` to `26.3.0.x` the day it goes stable.
 
 ```sh
 cd ../.. && ./gradlew :mcdp-26:publishToMavenLocal :gradle-plugin:publishToMavenLocal
-cd test-mods/neoforge-example-26.2 && ./gradlew build      # Gradle 9.6, JDK 25
+cd test-mods/neoforge-example-26.2 && ./gradlew build      # this dir's own Gradle 9.7.1, JDK 25
 ```
 
-No `includeBuild("../..")`, own Gradle 9.6 wrapper, `mavenLocal()` first,
-`cacheChangingModulesFor(0, "seconds")` — the `forge-example-1.17`/`-1.18` shape.
-The wrapper *binaries* are not committed; see
-`gradle/wrapper/gradle-wrapper.properties`.
+No `includeBuild("../..")`, own Gradle 9.7.1 wrapper (properties **and** binaries
+committed, copied from the repo-root wrapper — they are version-agnostic
+bootstrappers), `mavenLocal()` first, `cacheChangingModulesFor(0, "seconds")` — the
+`forge-example-1.17`/`-1.18` shape. 9.7.1 matches `fabric-example-26.3` so the two
+26.x cells share one downloaded distribution.
 
-**Try the cheaper path first.** Unlike Loom, ModDevGradle resolves the run JVM
-through Gradle's Java toolchain rather than checking the daemon JVM, so this mod may
-well build composite-included on the root Gradle 8.11.1 / JDK 21 daemon with nothing
-but `toolchain { languageVersion = 25 }`. That is unverified (no build was run). If
-it holds, drop the wrapper properties, restore `includeBuild("../..")`, and this
-cell can join CI ahead of the Fabric one.
+**A cheaper path may exist.** Unlike Loom, ModDevGradle 2.0.147 requires only Gradle
+>= 8.8 and a daemon Java >= 17, and resolves the run JVM through Gradle's Java
+toolchain rather than checking the daemon JVM — so this mod may well build
+composite-included on the root Gradle 8.11.1 / JDK 21 daemon with nothing but
+`toolchain { languageVersion = 25 }`. That is unverified (no build was run). If it
+holds, drop the wrapper and restore `includeBuild("../..")`.
 
 ## CI status
 
-**Excluded** pending JDK 25 in the `runserver-smoke-bands` `setup-java` list and the
-wrapper above. See `PHASE4-26.3.md` at the repo root.
+This cell is now a row in `runserver-smoke-bands` (`daemon_jdk: "25"`, `25` added to
+the job's `setup-java` list before `21`). **It has not yet passed** — no nightly has
+run it, so whether the mcdp Gradle plugin even loads on a Gradle 9.x daemon is still
+unproven.

@@ -36,10 +36,10 @@ exercised that mod — read it as *unproven*, not *known broken*.
 | `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands` (nightly) |
 | `fabric-example-1.21.11` | Fabric 1.21.11 (loader 0.19.5) | java | **not in CI** — new today, never built (below) |
 | `neoforge-example-1.21.11` | NeoForge 21.11.45 / MC 1.21.11 | java | **not in CI** — new today, never built (below) |
-| `fabric-example-26.3` | Fabric / MC 26.3 | java | **excluded** — toolchain, not Minecraft (below) |
-| `neoforge-example-26.2` | NeoForge 26.2.0.88 / MC 26.2 | java | **excluded** — toolchain, not Minecraft (below) |
+| `fabric-example-26.3` | Fabric / MC 26.3 | java | **No cell** — no Mojang mappings and no yarn exist for any 26.x release; see below |
+| `neoforge-example-26.2` | NeoForge 26.2.0.88 / MC 26.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed** |
 | `forge-example-1.17` | Forge 1.17.1 | java | **excluded** — toolchain (no JDK 16 on runners; below) |
-| `forge-example-1.18` | Forge 1.18.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed** |
+| `forge-example-1.18` | Forge 1.18.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed**; ported to ForgeGradle 6 / root wrapper |
 
 ## The four new mods: never built
 
@@ -61,7 +61,7 @@ change once someone has run them locally:
   the 1.9 line (1.10+ needs Gradle 8.12), and whether Loom 1.9 can provision MC
   1.21.11 has not been confirmed. If it cannot, the fix is a root wrapper bump to
   >= 8.12 plus a current Loom (1.18.2), or a committed per-mod wrapper the way
-  `forge-example-1.18` carries its own. The same note is in that mod's
+  `forge-example-1.17` carries its own. The same note is in that mod's
   `build.gradle.kts`.
 
 ## Why the others are excluded
@@ -76,44 +76,96 @@ calendar-versioning line (26.1 / 26.2 / 26.3) — see
 **The old exclusion reason — "MC 26.1.x is scaffold-only, Mojang has not shipped
 real artifacts" — is obsolete.** 26.1, 26.2 and 26.3 are all in the version manifest
 with real downloads (26.3 released 2026-09-15), and fabric-loader 0.19.5, Fabric API
-`0.161.0+26.3` and Loom 1.18.2 are published and stable. What actually blocks these
-two cells is **the build toolchain, not Minecraft**: MC 26.1+ declare
+`0.161.0+26.3` and Loom 1.18.2 are published and stable. What blocks the **NeoForge**
+cell is **the build toolchain, not Minecraft** (the Fabric one is blocked by missing
+mappings — see the end of this section): MC 26.1+ declare
 `javaVersion.majorVersion = 25`; Loom refuses a MC version whose required Java
 exceeds the **Gradle daemon** JVM (`26.1.2 requires Java 25 but Gradle is using 21`);
 and Gradle 8.11.1, the repo root, cannot run on JDK 25 at all.
 
 So these two mods take the `forge-example-1.17` / `-1.18` shape in the other
-direction: their **own Gradle 9.6.1 wrapper**, no `includeBuild("../..")`,
+direction: their **own Gradle 9.7.1 wrapper**, no `includeBuild("../..")`,
 `mavenLocal()` first in project `repositories`, and `cacheChangingModulesFor(0,
-"seconds")`. Their `gradle/wrapper/gradle-wrapper.properties` is committed; the
-wrapper **jar and scripts are not**, because they cannot be generated without a local
-Gradle 9.6.1 — regenerate with `gradle wrapper --gradle-version 9.6.1`, or have CI use
-`gradle/actions/setup-gradle@v4`. The workflow's `setup-java` list also needs **JDK
-25** added.
+"seconds")`. The full wrapper — `gradlew`, `gradlew.bat` and
+`gradle/wrapper/gradle-wrapper.jar` — **is committed**, copied from the root wrapper.
+(An earlier note here claimed the binaries "cannot be generated without a local Gradle
+9.6.1". That was wrong: the wrapper jar and launcher scripts are version-agnostic
+bootstrappers that read `distributionUrl` from the properties file beside them. The
+root and `forge-example-1.17` jars are byte-identical yet launch 8.11.1 and 7.6
+respectively.)
+
+**9.7.1, not 9.6.x**, and the reason is not the daemon JDK: Loom 1.18.x
+(1.18.0-alpha.23 / 1.18.1 / 1.18.2) publishes `runtimeElements` with
+`org.gradle.plugin.api-version = 9.7.0` and `org.gradle.jvm.version = 25`, so a 9.6.1
+consumer is rejected at *variant selection* and never even loads the plugin. 9.7.0 is
+the hard floor; 9.7.1 is the current release.
+
+The repo-root wrapper stays at **8.11.1** and must not be bumped: ForgeGradle 6.0.54's
+`EnvironmentChecks.checkEnvironment` accepts Gradle `[8.1, 9.0)`, and
+`forge-example-1.19` / `-1.20` composite-include the root build.
+
+`neoforge-example-26.2` is a row in `runserver-smoke-bands` with `daemon_jdk: "25"`, and
+**25** is in the workflow's `setup-java` list (before `21`, which stays last so it keeps
+winning `JAVA_HOME` for every other cell).
+
+**Both open questions are now answered, and `neoforge-example-26.2` is green on both
+OSes (run 35549061543).**
+
+*The mcdp Gradle plugin does load on a Gradle 9.7.1 daemon.* Both cells got past plugin
+resolution and configuration; the NeoForge one reached `:generateMcdpBridges` and failed
+there on `Unsupported class file major version 69` — the bundled ASM predated Java 25.
+Fixed by pinning ASM 9.10.1 *and* relocating it into the plugin jar — Gradle exports its own
+`org.objectweb.asm` to the plugin classloader, so the pin alone changed nothing. Two further
+runs still failed identically because `pluginManagement` listed the Sonatype snapshot repo
+ahead of `mavenLocal()`, so the mod never loaded the jar the preflight step had just built.
+`ClassFileVersionSupportTest` pins the dependency version and `verifyAsmRelocated` pins that
+the plugin actually uses it.
+
+*`fabric-example-26.3` has no CI cell, and the blocker is upstream.* Loom got as far as
+mapping resolution and stopped: **Mojang publishes no `client_mappings`/`server_mappings`
+for any 26.x release**, and **Fabric has no yarn builds for the line either** —
+`meta.fabricmc.net/v2/versions/yarn/26.1|26.2|26.3` all return `[]`. Compare 1.21.11,
+whose version JSON carries both mapping downloads. So Loom has no mapping source at all,
+for any 26.x version, with any mappings setting. This is not a toolchain problem and
+nothing in this repo can fix it; the Fabric half of `mcdp-26` stays compile-only until
+upstream publishes mappings. The mod keeps its 9.7.1 wrapper — that part is correct and
+was verified in CI.
 
 `neoforge-example-26.2` pins MC 26.2 / NeoForge **26.2.0.88** rather than 26.3 because
 **NeoForge has no stable 26.3** — that line is `26.3.0.0-beta` … `26.3.0.7-beta`.
 Coverage is unaffected: the SPI is byte-identical across fancymodloader 11.0.15,
-11.0.16 and 12.0.0 (ADR-0032). It is also worth checking whether that mod needs the
-standalone shape at all — unlike Loom, ModDevGradle picks its run JVM via Gradle
-toolchains, so it may build composite-included on the root Gradle 8.11.1 daemon with
-just `toolchain { languageVersion = 25 }`.
+11.0.16 and 12.0.0 (ADR-0032). Its constraint is weaker than the Fabric cell's:
+ModDevGradle 2.0.147 requires only Gradle >= 8.8 and a daemon Java >= 17, and picks the
+run JVM via toolchains — it has no Loom-style daemon-JVM check. It carries the same
+9.7.1 wrapper anyway so the two 26.x cells share one distribution; whether it could
+instead stay composite-included on the root 8.11.1 daemon with just
+`toolchain { languageVersion = 25 }` is still untested.
 
-### `forge-example-1.17` (and the FG 5.1 shape it shares with `forge-example-1.18`)
+### `forge-example-1.17` (the last FG 5.1 mod)
 
-ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18, and it forces Gradle 7
-(Java ≤ 19), so these two mods run on their own Gradle 7.6 wrapper (see below).
+**Correction to what this section used to say.** "ForgeGradle 5.1 is the only FG line
+that supports MC ≤ 1.18" is **false**. Forge regenerated its MDKs onto FG6 on both
+sides of 1.17: `forge-1.18.2-40.3.12-mdk.zip` declares
+`id 'net.minecraftforge.gradle' version '[6.0,6.2)'` with a **Gradle 8.8** wrapper, and
+`forge-1.16.5-36.2.42-mdk.zip` is FG6 / **Gradle 8.4**. FG 6.0.54's
+`EnvironmentChecks.checkEnvironment` accepts Gradle `[8.1, 9.0)`, and the root wrapper
+is 8.11.1 — inside that window. So FG6 handles MC ≤ 1.18 userdev configs fine.
+
+`forge-example-1.18` has been ported to that shape: FG6 through `plugins { id(...) }`,
+`includeBuild("../..")`, the root wrapper, no `mavenLocal()`, no wrapper of its own.
+It is an ordinary composite-included test mod now, exactly like `forge-example-1.20`.
+**Its cell has not yet passed** — it has never produced a green nightly — so MC
+1.18.2-on-Forge is *wired*, not *proven*.
+
+`forge-example-1.17` is the one mod left on the FG 5.1 / Gradle 7.6 shape, because 1.17
+is the one MC version Forge never regenerated an MDK for. Whether the same FG6 migration
+works there is **untested**; it also has an independent JDK-16 constraint (below).
 
 **The mcdp plugin path works on these bands, and so does the Forge adapter.** This
-section previously claimed the *plugin* did not work under Gradle 7. Half of that was
+section also once claimed the *plugin* did not work under Gradle 7. Half of that was
 real — `:gradle-plugin` published `org.gradle.jvm.version=21`, which a Gradle 7.6
 daemon rejects outright — and is fixed: the plugin now targets **Java 17**. The other
 half, "uses Gradle 8 APIs", was simply false. See ADR-0023's errata for the audit.
-
-`forge-example-1.18` is therefore in the nightly `runserver-smoke-bands` matrix.
-**That cell has not yet passed** — it was added along with the Java-17 plugin
-target and no nightly has produced a green result for it, so MC 1.18.2-on-Forge is
-*wired*, not *proven*.
 
 `forge-example-1.17` is not in the matrix at all, but no longer because of the
 adapter: that band was long believed stuck on forgespi 3.2.x, and it isn't — Forge
@@ -132,20 +184,24 @@ its adapter was a stub. That is stale: the aggregator now emits
 auto-registration is not implemented on Forge — it is NeoForge-only (ADR-0027/0028).
 Forge test mods register subscribers explicitly.
 
-### The Gradle 7.6 wrappers in `forge-example-1.17` / `forge-example-1.18`
+### The Gradle 7.6 wrapper in `forge-example-1.17`
 
-These two mods commit a full wrapper (`gradlew`, `gradlew.bat`, `gradle/wrapper/*`)
-pinning **Gradle 7.6**, while the repo root wrapper is 8.11.1. (The two MC 26.x mods
-above also carry wrapper *properties*, pinning Gradle 9.6.1 — same pattern, opposite
-direction, and without the binaries.) That is **load-bearing, not cruft**:
+This mod commits a full wrapper (`gradlew`, `gradlew.bat`, `gradle/wrapper/*`) pinning
+**Gradle 7.6**, while the repo root wrapper is 8.11.1. (The two MC 26.x mods above carry
+a full wrapper too, pinning Gradle 9.7.1 — same pattern, opposite direction.) It is
+load-bearing *for 1.17 specifically*:
 
-- ForgeGradle 5.1 rejects Gradle 8.x outright (`EnvironmentChecks.checkGradleRange`),
-  so these builds must run on a Gradle 7 distribution.
-- Consequently their `settings.gradle.kts` also omit `includeBuild("../..")` — the
+- Forge published no FG6 MDK for 1.17, so this mod is still on ForgeGradle 5.1, which
+  rejects Gradle 8.x outright (`EnvironmentChecks.checkGradleRange`).
+- Consequently its `settings.gradle.kts` also omits `includeBuild("../..")` — the
   parent build needs Gradle 8 (Shadow 8.3.5), so it cannot be composite-included
-  from a Gradle 7 build. Build them with `./gradlew` *from inside the mod
-  directory*, after `../../gradlew :mcdp-1.17:publishToMavenLocal` (resp.
-  `:mcdp-1.18:…`) has populated mavenLocal.
+  from a Gradle 7 build. Build it with `./gradlew` *from inside the mod directory*,
+  after `../../gradlew :mcdp-1.17:publishToMavenLocal` has populated mavenLocal.
+
+`forge-example-1.18` used to be in this list on the (false) premise that FG 5.1 was the
+only option for MC ≤ 1.18. It is not: it runs FG6 on the root wrapper now, so its
+wrapper, its `mavenLocal()` repos, its snapshot repo, its explicit `de.lhns.mcdp`
+version pin and its `cacheChangingModulesFor(0, "seconds")` block are all gone.
 
 Every other test-mod — including the four new 1.19 / 1.21.11 mods — intentionally has
 no wrapper at all and is driven by `../../gradlew` through `includeBuild("../..")`.

@@ -1,0 +1,102 @@
+# MIRROR — do not edit here. Canonical source: .github/workflows/published-artifacts.yml
+# Edit the .github copy, then copy it verbatim to this path (only this header differs).
+name: CI — Published artifact check
+
+# Opens what the release path actually produces and asserts the contract on it.
+#
+# Motivating incident: `"version": "${version}"` shipped to Maven Central. Every existing
+# workflow was green throughout — Tier 1 runs unit/TestKit tests, Tier 2 boots MC from the
+# *composite build*, and neither ever opened a published jar. This job closes that gap by
+# publishing to the local Maven repo and reading the jars, POMs and manifests back.
+#
+# Local only, on purpose: `publishToMavenLocal` produces byte-identical artifacts to the
+# staging upload (same shadowJar, same generated POM), so a staging repo would add network,
+# credentials and cleanup for no extra signal.
+#
+# Runs on PRs too, not just push:main — a bad band adapter is a PR-review-time problem, and
+# the job is one Gradle build plus a few seconds of zip reading.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: published-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-published-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'build.gradle.kts', 'settings.gradle.kts', '*/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Compute version
+        id: ver
+        shell: bash
+        # Mirrors publish.yml's version rule, so a release event verifies the very
+        # coordinates the publish job is about to upload.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            version="${tag#v}"
+          else
+            version="0.1.0-SNAPSHOT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Verifying version: $version"
+
+      - name: Wipe stale de.lhns.mcdp artifacts from the local repo
+        shell: bash
+        # The Gradle-home cache does not cover ~/.m2, but a restored runner image or a
+        # retried job could. Removing the group dir guarantees every assertion below reads
+        # a jar this run produced.
+        run: rm -rf ~/.m2/repository/de/lhns/mcdp
+
+      - name: publishToMavenLocal
+        run: ./gradlew publishToMavenLocal --no-daemon --stacktrace -Pversion=${{ steps.ver.outputs.version }}
+
+      - name: Verify published artifacts
+        shell: bash
+        run: python3 scripts/verify_artifacts.py --version ${{ steps.ver.outputs.version }}
+
+      - name: Upload published metadata on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-artifacts-metadata
+          # Jars are large and mostly bytecode; the POMs plus module metadata are what a
+          # human needs to read a failure. The jar-internal files are already quoted in the
+          # script's output.
+          path: |
+            ~/.m2/repository/de/lhns/mcdp/**/*.pom
+            ~/.m2/repository/de/lhns/mcdp/**/*.module
+          if-no-files-found: ignore
