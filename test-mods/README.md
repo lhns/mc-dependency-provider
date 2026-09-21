@@ -121,7 +121,7 @@ ahead of `mavenLocal()`, so the mod never loaded the jar the preflight step had 
 `ClassFileVersionSupportTest` pins the dependency version and `verifyAsmRelocated` pins that
 the plugin actually uses it.
 
-*`fabric-example-26.3` does have a cell — the "no mappings" reading was wrong.* Loom stopped at
+*`fabric-example-26.3` is green on both OSes (run 35586616010) — the "no mappings" reading was wrong.* Loom stopped at
 mapping resolution, and the reason is that **MC 26.x ships deobfuscated**: the 26.3 client jar
 carries 10,737 real `net/minecraft/…` class names and zero obfuscated ones, where 1.21.11 carries
 10,201 obfuscated and only 33 real. Mojang publishes no `client_mappings`/`server_mappings` for
