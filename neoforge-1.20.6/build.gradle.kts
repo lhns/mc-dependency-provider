@@ -1,10 +1,5 @@
 plugins {
-    id("mcdp.band-adapter")
-}
-
-repositories {
-    maven("https://maven.neoforged.net/releases")
-    maven("https://libraries.minecraft.net/")
+    id("mcdp.neoforge-band")
 }
 
 // NeoForge for MC 1.20.6 — first JPMS-era band, NeoForge SPI 8.0.x. Adapter ported from
@@ -27,14 +22,4 @@ dependencies {
     compileOnly(libs.neoforge.spi.mc1206)
     compileOnly(libs.neoforge.fml.loader.mc1206)
     compileOnly(libs.neoforge.bus)
-}
-
-// LoggingProgressListener is identical on every NeoForge band -- it touches only deps-lib
-// and slf4j, and reaches FML's StartupNotificationManager reflectively by name, so it
-// compiles unchanged against loader 3.0.45 / 4.0.42 / 10.0.36. One canonical copy,
-// compiled into each band's own jar so it stays package-private.
-sourceSets {
-    main {
-        java.srcDir(rootProject.file("neoforge-shared/src/main/java"))
-    }
 }

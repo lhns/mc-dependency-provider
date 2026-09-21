@@ -15,3 +15,7 @@ run/
 */run/
 *.hprof
 .claude/
+
+# Python bytecode from scripts/ (mc_smoke.py, verify_artifacts.py, verify_spi_identity.py).
+__pycache__/
+*.pyc

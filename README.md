@@ -4,7 +4,7 @@ A JVM-language mod provider for **Fabric**, **Forge** and **NeoForge** (Minecraf
 
 First-class support for **Java, Scala, Kotlin** — one provider, one pipeline, pluggable entry points.
 
-**Status:** v0.1.2 is published to Maven Central as a single `de.lhns.mcdp:mcdp` runtime jar (plus `de.lhns.mcdp:gradle-plugin`). The next release publishes **per-MC-band** instead: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26`. All eight are wired in `settings.gradle.kts`; **they are not equally proven** — see the table below. Every band except `mcdp-1.17`'s Forge half now boots a real server in CI on both Linux and Windows. MC 1.21.1 has the most coverage: Fabric and NeoForge boot a real server and a real client in CI, and mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
+**Status:** v0.1.2 is published to Maven Central as a single `de.lhns.mcdp:mcdp` runtime jar (plus `de.lhns.mcdp:gradle-plugin`). The next release publishes **per-MC-band** instead: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26`. All eight are wired in `settings.gradle.kts`; **they are not equally proven** — see the table below. Every band now boots a real server in CI on both Linux and Windows, on every loader it supports, and every cell but one also boots a real client (nightly, Linux + xvfb). MC 1.21.1 has the most coverage: mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
 
 ## Why
 
@@ -26,11 +26,11 @@ See [`docs/`](docs/) for the full architecture and the [ADRs](docs/adr/) for the
 
 mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod's target MC version.
 
-**Read the Status column literally.** Every band's adapter is *implemented* — none is a stub. What differs is how much of it has been proven: **CI-verified** = a real server for that loader/band boots to first tick through mcdp in CI, asserted on the mod's marker line; **boot-verified** = a real server of that band booted through mcdp on a developer machine, and a CI cell exists but has not yet run a full nightly; **compile-verified** = compiles against that band's real SPI coordinates and shares source with a CI-verified band, but no server of this band has booted; **never built** = wired into `settings.gradle.kts`, sources exist, no build or boot yet — treat as unproven.
+**Read the Status column literally.** Every band's adapter is *implemented* — none is a stub. What differs is how much of it has been proven: **CI-verified** = a real server for that loader/band boots to first tick through mcdp in CI, asserted on the mod's marker line; **compile-verified** = compiles against that band's real SPI coordinates and shares source with a CI-verified band, but no server of this band has booted.
 
 | Artifact | MC versions | JDK | Loaders | Status |
 |---|---|---|---|---|
-| `de.lhns.mcdp:mcdp-1.17` | 1.17.1 | 16 | Fabric + Forge | Fabric **CI-verified** (nightly). Forge **compile-verified** — shares the 1.18 adapter (ADR-0029); no CI cell yet (runners ship no JDK 16) |
+| `de.lhns.mcdp:mcdp-1.17` | 1.17.1 | 16 | Fabric + Forge | Fabric **and** Forge **CI-verified** (run 35613364172) — shares the 1.18 adapter (ADR-0029); its cell runs the mod's Gradle 7.6 wrapper on a JDK 17 daemon with a JDK 16 toolchain. The only mod with no client cell |
 | `de.lhns.mcdp:mcdp-1.18` | 1.18.2 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** (run 35549061543) — the Forge cell passed for the first time once the mod moved off ForgeGradle 5.1 onto FG6 and the repo wrapper |
 | `de.lhns.mcdp:mcdp-1.19` | 1.19.2 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** (run 35549061543). Forge half shares the 1.18 adapter against forgespi 6.0.x (ADR-0031) |
 | `de.lhns.mcdp:mcdp-1.20` | 1.20.1 | 17 | Fabric + Forge | Fabric **and** Forge **CI-verified** — both booted a real server (run 35526039405) |
@@ -42,7 +42,7 @@ mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod
 ### Gaps and caveats
 
 - **MC 1.21.2 – 1.21.9 are uncovered, deliberately.** `mcdp-1.21` is 1.21.1-only and `mcdp-1.21.11` jumps straight to 1.21.10/1.21.11. NeoForge's loader SPI churned across that stretch (FML 5.0 → 9.0) and then broke outright at FML 9.0 → 10.0, at MC 1.21.10 — which is why 1.21.11 is its own band with its own NeoForge source rather than a widening of `mcdp-1.21`. [ADR-0030](docs/adr/0030-mc-1-21-11-band.md).
-- **`mcdp-26` covers the whole 26.x calendar line** (26.1/26.2/26.3), because the SPI is byte-identical across it. MC 26.x *runs* on a JVM 25; the band targets **Java 21 bytecode**, which loads fine there, so the artifact is not the obstacle. The build toolchain is: Gradle 8.11.1 (this repo's wrapper) cannot run on JDK 25, and Loom refuses an MC version whose required Java exceeds the Gradle daemon JVM — so the 26.x test mods are out of CI ([`test-mods/README.md`](test-mods/README.md)). [ADR-0032](docs/adr/0032-single-26x-band.md).
+- **`mcdp-26` covers the whole 26.x calendar line** (26.1/26.2/26.3), because the SPI is byte-identical across it. MC 26.x *runs* on a JVM 25; the band targets **Java 21 bytecode**, which loads fine there, so the artifact is not the obstacle. The build toolchain is the awkward part: Gradle 8.11.1 (this repo's wrapper) cannot run on JDK 25, and Loom refuses an MC version whose required Java exceeds the Gradle daemon JVM — so the 26.x test mods carry their own Gradle 9.7.1 wrapper and run their CI cells on a JDK 25 daemon ([`test-mods/README.md`](test-mods/README.md)). [ADR-0032](docs/adr/0032-single-26x-band.md).
 - **Forge (bands 1.17 – 1.20) has one gap relative to NeoForge:** `@EventBusSubscriber` auto-registration is not implemented. Register subscribers manually from your entry point. Lifecycle events, mixin bridges, stdlib promotion and download progress all work ([ADR-0027](docs/adr/0027-forge-lifecycle-staging.md) / [ADR-0028](docs/adr/0028-forge-cross-mod-registration.md)).
 - **1.15.2 and 1.16.x are out of scope** (Java 8 + Mixin 0.7 era) — see [ADR-0023](docs/adr/0023-multi-mc-band-publication.md) for the band-selection rationale, and [ADR-0031](docs/adr/0031-mc-1-19-band.md) for why 1.19 was missing from the repo until now.
 
@@ -136,8 +136,8 @@ multi-{1.17,1.18,1.19,1.20,1.20.6,1.21.11,26}/
                      to :fabric-1.21 / :neoforge-1.21.
 cli/                 mcdepprovider-prefetch — offline cache pre-population for modpack authors
 test-mods/           real-world test projects exercising the full stack via composite
-                     build. test-mods/README.md tables all 20, says which of them
-                     run in CI, and why the rest do not.
+                     build. test-mods/README.md tables all 20 and the CI cells
+                     that exercise them.
 docs/                end-to-end "how it works" walkthrough + ADRs (decision history)
 .github/workflows/   CI — canonical. Edit workflows here.
 .gitea/workflows/    verbatim mirror for Gitea Actions; every file carries a

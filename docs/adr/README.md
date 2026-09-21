@@ -51,6 +51,6 @@ When a decision is revisited, a new ADR supersedes (not edits) the old one, with
 | [0027](0027-forge-lifecycle-staging.md) | Forge mod construction moves to the `CONSTRUCT` stage; classloader setup stays in `loadMod` | Accepted; applies 0017 to Forge |
 | [0028](0028-forge-cross-mod-registration.md) | Forge cross-mod registration: one idempotent `ensureRegistered`, reached from a reflective `LoadingModList` walk | Accepted; completes 0027, applies 0010/0019 to Forge |
 | [0029](0029-forge-1-17-shares-the-4-0-adapter.md) | Forge 1.17 runs forgespi 4.0.x; the band shares the 1.18 adapter source | Accepted; corrects 0023's SPI premise |
-| [0030](0030-mc-1-21-11-band.md) | MC 1.21.11 gets its own band — the NeoForge SPI broke at FML 10.0 | Accepted; corrects 0023's `mcdp-1.21` scope |
-| [0031](0031-mc-1-19-band.md) | MC 1.19 band — shares the Forge adapter; the gap was never rationalised | Accepted |
-| [0032](0032-single-26x-band.md) | One `mcdp-26` band for Mojang's whole calendar-versioning line | Accepted; supersedes `mcdp-26.1` |
+| [0030](0030-mc-1-21-11-band.md) | MC 1.21.11 gets its own band — the NeoForge SPI broke at FML 10.0 | Accepted; corrects 0023's `mcdp-1.21` scope. Band now CI-verified — see its errata |
+| [0031](0031-mc-1-19-band.md) | MC 1.19 band — shares the Forge adapter; the gap was never rationalised | Accepted; band now CI-verified (erratum) |
+| [0032](0032-single-26x-band.md) | One `mcdp-26` band for Mojang's whole calendar-versioning line | Accepted; supersedes `mcdp-26.1`. Errata: MC 26.x ships deobfuscated (identity intermediary, not Mojang mappings), and the band is CI-verified |

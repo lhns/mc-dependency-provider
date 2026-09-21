@@ -1,5 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import com.vanniktech.maven.publish.SonatypeHost
 import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.plugin.devel.tasks.PluginUnderTestMetadata
 import org.gradle.process.CommandLineArgumentProvider
@@ -9,7 +8,7 @@ plugins {
     `java-gradle-plugin`
     // Versions come from buildSrc's classpath; see the note in the root build.gradle.kts.
     id("com.gradleup.shadow")
-    id("com.vanniktech.maven.publish")
+    id("mcdp.maven-central")
 }
 
 // vanniktech-maven-publish auto-configures sources + javadoc jars; do not call
@@ -155,35 +154,11 @@ gradlePlugin {
 // (and per-plugin marker publications); vanniktech picks them up automatically. We don't apply
 // `com.gradle.plugin-publish` here — Plugin Portal publication is out of scope; consumers can
 // resolve the plugin from Maven Central via `pluginManagement { repositories { mavenCentral() } }`.
+// Everything but the POM `<name>`/`<description>` comes from the shared
+// `mcdp.maven-central` convention, applied in the plugins block above.
 mavenPublishing {
-    // vanniktech 0.32.0 — same shape as the band aggregators; see the comment in
-    // buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts for what
-    // automaticRelease=true implies (ADR-0026).
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
-    signAllPublications()
-    coordinates("de.lhns.mcdp", "gradle-plugin", project.version.toString())
     pom {
         name.set("mcdp Gradle plugin")
         description.set("Generates Maven dependency manifests and configures dev-mode runs for mcdp mods.")
-        url.set("https://github.com/lhns/mc-dependency-provider")
-        licenses {
-            license {
-                name.set("Apache License 2.0")
-                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
-                distribution.set("repo")
-            }
-        }
-        developers {
-            developer {
-                id.set("lhns")
-                name.set("Pierre Kisters")
-                email.set("pierrekisters@gmail.com")
-            }
-        }
-        scm {
-            url.set("https://github.com/lhns/mc-dependency-provider")
-            connection.set("scm:git:https://github.com/lhns/mc-dependency-provider.git")
-            developerConnection.set("scm:git:ssh://git@github.com/lhns/mc-dependency-provider.git")
-        }
     }
 }

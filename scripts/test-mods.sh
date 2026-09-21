@@ -18,7 +18,15 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-GRADLEW="$REPO_ROOT/gradlew"
+
+# A mod that ships its own wrapper pins a Gradle version for a reason, and gradlew reads
+# gradle-wrapper.properties from its OWN directory -- so running the root wrapper against such a
+# mod silently uses the wrong distribution. Three mods need this today: forge-example-1.17
+# (Gradle 7.6, ForgeGradle 5.1) and the two 26.x mods (9.7.1, required by Loom 1.18.x).
+# scripts/mc_smoke.py grew the same walk-up plus a hard failure; this never did.
+wrapper_for() {
+  if [ -x "$1/gradlew" ]; then printf '%s/gradlew' "$1"; else printf '%s' "$REPO_ROOT/gradlew"; fi
+}
 
 if [ "$#" -eq 0 ]; then
   echo "usage: $0 <gradle-args...>" >&2
@@ -48,8 +56,9 @@ for d in "$REPO_ROOT"/test-mods/*/; do
     echo ">>> skip $name"
     continue
   fi
-  echo ">>> $name: gradlew $*"
-  if ! ( cd "$d" && "$GRADLEW" "$@" ); then
+  echo ">>> $name: $(basename "$(dirname "$(wrapper_for "${d%/}")")")/gradlew $*"
+  gw="$(wrapper_for "${d%/}")"
+  if ! ( cd "$d" && "$gw" "$@" ); then
     echo "!!! $name failed" >&2
     fail=1
   fi

@@ -2,23 +2,25 @@
 
 Forge test mod for **MC 1.17.1**, targeting `de.lhns.mcdp:mcdp-1.17`.
 
-**Deliberately not in CI.** ForgeGradle 5.1 — which is what MC 1.17.1's MDK was built
-against, and 1.17 is the one version Forge never regenerated an FG6 MDK for (1.16.5 and
-1.18.2 both got one, so FG 5.1 was never "the only FG line supporting MC ≤ 1.18"; see
-ADR-0023's errata) — forces Gradle 7 / Java ≤ 19, while mcdp's `gradle-plugin` compiles to Java 21
-bytecode — so the mcdp plugin path is unusable on this band. The `mcdp-1.17`
-*runtime* works; only manifest generation must happen outside mcdp. This band also
-still has a **stub adapter** (forgespi 3.2.x `loadMod` predates `ModuleLayer`;
-`IModFileInfo.getFile()` is missing) — the real port is a follow-up.
+In the nightly `runserver-smoke-bands` matrix (`forge-1.17`, `daemon_jdk: "17"`), on both
+OSes. There is no Tier-3 `runClient` cell — that one exclusion, and its reasoning, is in
+`.github/workflows/mc-client-nightly.yml`'s header.
 
-**The committed Gradle 7.6 wrapper here is load-bearing**, not leftover: ForgeGradle
-5.1 rejects Gradle 8.x, so this build must run on its own `./gradlew` rather than
-the repo-root 8.11.1 one. (`forge-example-1.18` no longer needs one — it moved to FG6
-on the root wrapper. Whether the same migration works for 1.17, which has no FG6 MDK to
-copy, is untested.) For the same reason `settings.gradle.kts` omits
-`includeBuild("../..")` — run `../../gradlew :mcdp-1.17:publishToMavenLocal` first,
-then build here.
+The band is **not** a stub. Forge 1.17.1-37.1.2 requires `forgespi 4.0.+`, so `forge-1.17`
+compiles `forge-1.18`'s adapter source verbatim and pins only its own coordinates and the
+Java 16 target ([ADR-0029](../../docs/adr/0029-forge-1-17-shares-the-4-0-adapter.md)). The
+mcdp Gradle plugin works here too: it targets Java 17 bytecode, inside Gradle 7.6's Java
+8–19 window (ADR-0023's errata).
 
-See [`../README.md`](../README.md) and ADR-0023 ("Consequences — negative"); the
-exclusion is also recorded in the "Excluded from coverage" comment in
-`.github/workflows/mc-smoke.yml`.
+**The committed Gradle 7.6 wrapper here is load-bearing**, not leftover: ForgeGradle 5.1
+rejects Gradle 8.x, and 1.17 is the one MC version Forge never regenerated an FG6 MDK for.
+(`forge-example-1.18` did get one and moved to FG6 on the root wrapper; whether the same
+migration works here is untested.) For the same reason `settings.gradle.kts` omits
+`includeBuild("../..")` — the parent build needs Gradle 8 — so run
+`../../gradlew :mcdp-1.17:publishToMavenLocal` first, then `./gradlew build` from here.
+
+The JDK split follows from that: the **daemon** is JDK 17 (Gradle 7.6 cannot run on 21),
+while `toolchain { languageVersion = 16 }` is resolved as a Gradle toolchain. `setup-java`
+installs Adoptium's `jdk-16.0.2+7` for it.
+
+See [`../README.md`](../README.md) and ADR-0023.

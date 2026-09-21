@@ -30,11 +30,11 @@ dependencies {
     // fmlcore for Forge 1.19.2 — supplies net.minecraftforge.fml.ModContainer base class
     // and lifecycle types (ModLoadingStage, IExtensionPoint, IModBusEvent).
     compileOnly(libs.forge.fmlcore.mc119)
-    // EventBus + ASM (TypeRef in ModFileScanData) — transitive of fmlcore at runtime, needed
-    // explicitly at compile time. `fmlcore-1.19.2-43.5.2.pom` declares eventbus 6.0.3.
-    compileOnly("net.minecraftforge:eventbus:6.0.3")
+    // EventBus + ASM (TypeRef in ModFileScanData) — transitives of fmlcore at runtime, needed
+    // explicitly at compile time; the catalog documents which eventbus line each band takes.
+    compileOnly(libs.forge.eventbus.mc119)
     compileOnly(libs.asm)
-    compileOnly("org.apache.maven:maven-artifact:3.8.5")  // ArtifactVersion in IModInfo
+    compileOnly(libs.maven.artifact)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

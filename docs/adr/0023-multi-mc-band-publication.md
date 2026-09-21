@@ -79,7 +79,7 @@ The "Consequences — negative" bullet above gave two reasons the mcdp `gradle-p
 
 **Consequence.** `forge-example-1.18` joined the nightly `runserver-smoke-bands` matrix. `forge-example-1.17` did not, for an unrelated reason that this ADR already records: its adapter is a stub that throws. The plugin-path exclusion no longer applies to either band.
 
-> **Correction.** The `forge-1.17` "stub that throws" reason was itself wrong — the band was never actually blocked. Forge 1.17.1-37.1.2 runs **forgespi 4.0.x**, not the 3.2.x this ADR assumed, so `forge-1.17` shares `forge-1.18`'s working adapter verbatim ([ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)). No Forge band ships a stub today. `forge-example-1.17` is still out of the CI matrix, but now for a purely mechanical reason: it pins a Java 16 toolchain and GitHub runners ship no JDK 16.
+> **Correction.** The `forge-1.17` "stub that throws" reason was itself wrong — the band was never actually blocked. Forge 1.17.1-37.1.2 runs **forgespi 4.0.x**, not the 3.2.x this ADR assumed, so `forge-1.17` shares `forge-1.18`'s working adapter verbatim ([ADR-0029](0029-forge-1-17-shares-the-4-0-adapter.md)). No Forge band ships a stub today. `forge-example-1.17` is still out of the CI matrix, but now for a purely mechanical reason: it pins a Java 16 toolchain and GitHub runners ship no JDK 16. **(2026-09-21: that second reason was wrong too. Adoptium publishes `jdk-16.0.2+7` GA and `setup-java` installs it, and the mod needs 16 only as a *toolchain* — its Gradle 7.6 wrapper runs on the JDK 17 daemon. The cell exists and is green; every band now has one.)**
 
 ### "ForgeGradle 5.1 is the only FG line that supports MC ≤ 1.18" — false
 
@@ -191,7 +191,7 @@ Two mechanical notes for anyone touching this: `expand()` runs Groovy's `SimpleT
 
 `mc-smoke.yml` adds a `runserver-smoke-bands` job (nightly only) that boots `fabric-example-1.17`, `1.18`, `1.20`, `1.20.6`, `neoforge-example-1.20.6`, and `forge-example-1.20`, asserting the `[mcdp-smoke] mod=… boot ok` marker. The 1.21 cell stays in the existing `runserver-smoke` (push + nightly) for fast PR signal. 26.1 and Forge 1.17/1.18 are excluded for the reasons above.
 
-> **Updated.** `forge-example-1.18` is no longer excluded — it joined the matrix once `:gradle-plugin` dropped to Java 17 bytecode (errata above), giving seven cells. `forge-example-1.17` is still out (JDK 16 toolchain, no JDK 16 on GitHub runners), and the 26.x cells are still out, but for a **toolchain** reason, not a Mojang-artifact one — see the amendments below. The bands added in ADR-0030/0031/0032 have no cells yet. The workflow's own "Excluded from coverage" comment block is the authoritative list.
+> **Updated.** `forge-example-1.18` is no longer excluded — it joined the matrix once `:gradle-plugin` dropped to Java 17 bytecode (errata above), giving seven cells. `forge-example-1.17` is still out (JDK 16 toolchain, no JDK 16 on GitHub runners), and the 26.x cells are still out, but for a **toolchain** reason, not a Mojang-artifact one — see the amendments below. The bands added in ADR-0030/0031/0032 have no cells yet. **(2026-09-21: every exclusion in this paragraph is now gone — 14 server cells × 2 OSes cover all eight bands, plus 15 client cells. The authoritative list is the comment block heading `runserver-smoke-bands`, and `mc-client-nightly.yml`'s header for the client side; the "Excluded from coverage" block it used to name no longer exists, because nothing is excluded for a toolchain reason any more.)**
 
 ## Amendments (2026-09-20)
 
@@ -258,8 +258,12 @@ The "six bands → a lot of `build.gradle.kts` files / up to 18 CI cells" conseq
 with the table: eight bands × three subprojects = 24 band subprojects, plus `core`, `deps-lib`,
 `gradle-plugin`, `cli`. CI has **not** grown to match — the nightly `runserver-smoke-bands` matrix
 is 7 cells × 2 OSes, and the bands added today have no cells (their test mods are unbuilt, and the
-26.x ones are unbuildable on the current root toolchain). `mc-smoke.yml`'s "Excluded from coverage"
-comment is the authoritative account of what is and is not covered.
+26.x ones are unbuildable on the current root toolchain).
+
+> **Updated.** CI has since grown to match: `runserver-smoke-bands` is **14 cells × 2 OSes** —
+> every band, on every loader it supports — plus 15 Tier-3 `runClient` cells, with one deliberate
+> exclusion (a client cell for `forge-example-1.17`). The authoritative account is the comment
+> block heading that job in `mc-smoke.yml`, and `mc-client-nightly.yml`'s header for Tier 3.
 
 ## Cross-references
 
