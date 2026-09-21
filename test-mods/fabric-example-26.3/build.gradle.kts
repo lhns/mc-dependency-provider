@@ -46,16 +46,20 @@ dependencies {
     // Yarn, NOT used. `net.fabricmc:yarn` stops at 1.21.11 — there is no yarn build for any
     // 26.x version (meta.fabricmc.net/v2/versions/yarn/26.3 is an empty array), and the
     // calendar line publishes a single rolling `net.fabricmc:intermediary:0.0.0`. Official
-    // BLOCKED, and not by tooling: Mojang publishes no client_mappings/server_mappings for ANY
-    // 26.x release (compare 1.21.11, which has both), and Fabric has no yarn builds for the line
-    // either. Loom therefore has no mapping source and fails configuration with
-    // "Failed to find official mojang mappings for 26.3". There is no CI cell for this mod for
-    // that reason; the Fabric half of mcdp-26 stays compile-only until upstream publishes
-    // mappings. The Gradle 9.7.1 / JDK 25 wrapper below is correct and was verified in CI — it
-    // got Loom as far as mapping resolution before this stopped it.
-    mappings(loom.officialMojangMappings())
+    // MC 26.x ships DEOBFUSCATED — the 26.3 client jar has 10,737 real net/minecraft/ class
+    // names and zero obfuscated ones, where 1.21.11 has 10,201 obfuscated. So Mojang publishes
+    // no client_mappings/server_mappings for the line and yarn has no 26.x builds: there is
+    // nothing left to map. `net.fabricmc:intermediary:0.0.0` is Fabric's identity mappings
+    // artifact for exactly this case, and fabric-meta returns it for every 26.x version.
+    mappings("net.fabricmc:intermediary:0.0.0:v2")
     modImplementation("net.fabricmc:fabric-loader:0.19.5")
-    modImplementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")
+    // `implementation`, not `modImplementation`, and that is a consequence of the line above:
+    // Loom remaps every `modImplementation` dependency, including its sources jar, and source
+    // remapping needs a "named" namespace that the identity intermediary does not have
+    // ("Could not find namespace \"named\" in provided tiny tree"). Nothing here needs remapping
+    // anyway — MC 26.x is already deobfuscated — and Fabric's ClasspathModCandidateFinder
+    // discovers mcdp from the plain classpath in a dev run.
+    implementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

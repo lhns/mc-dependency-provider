@@ -36,7 +36,7 @@ exercised that mod — read it as *unproven*, not *known broken*.
 | `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands` (nightly) |
 | `fabric-example-1.21.11` | Fabric 1.21.11 (loader 0.19.5) | java | **not in CI** — new today, never built (below) |
 | `neoforge-example-1.21.11` | NeoForge 21.11.45 / MC 1.21.11 | java | **not in CI** — new today, never built (below) |
-| `fabric-example-26.3` | Fabric / MC 26.3 | java | **No cell** — no Mojang mappings and no yarn exist for any 26.x release; see below |
+| `fabric-example-26.3` | Fabric / MC 26.3 | java | `runserver-smoke-bands` (nightly) — uses Fabric's identity intermediary; MC 26.x is deobfuscated |
 | `neoforge-example-26.2` | NeoForge 26.2.0.88 / MC 26.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed** |
 | `forge-example-1.17` | Forge 1.17.1 | java | **excluded** — toolchain (no JDK 16 on runners; below) |
 | `forge-example-1.18` | Forge 1.18.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed**; ported to ForgeGradle 6 / root wrapper |
@@ -121,15 +121,20 @@ ahead of `mavenLocal()`, so the mod never loaded the jar the preflight step had 
 `ClassFileVersionSupportTest` pins the dependency version and `verifyAsmRelocated` pins that
 the plugin actually uses it.
 
-*`fabric-example-26.3` has no CI cell, and the blocker is upstream.* Loom got as far as
-mapping resolution and stopped: **Mojang publishes no `client_mappings`/`server_mappings`
-for any 26.x release**, and **Fabric has no yarn builds for the line either** —
-`meta.fabricmc.net/v2/versions/yarn/26.1|26.2|26.3` all return `[]`. Compare 1.21.11,
-whose version JSON carries both mapping downloads. So Loom has no mapping source at all,
-for any 26.x version, with any mappings setting. This is not a toolchain problem and
-nothing in this repo can fix it; the Fabric half of `mcdp-26` stays compile-only until
-upstream publishes mappings. The mod keeps its 9.7.1 wrapper — that part is correct and
-was verified in CI.
+*`fabric-example-26.3` is green on both OSes (run 35586616010) — the "no mappings" reading was wrong.* Loom stopped at
+mapping resolution, and the reason is that **MC 26.x ships deobfuscated**: the 26.3 client jar
+carries 10,737 real `net/minecraft/…` class names and zero obfuscated ones, where 1.21.11 carries
+10,201 obfuscated and only 33 real. Mojang publishes no `client_mappings`/`server_mappings` for
+the line and Fabric publishes no yarn for it because **there is nothing left to map** — which is
+also how `fabric-api:0.161.0+26.3` builds. Fabric signals this through fabric-meta, which returns
+the sentinel `net.fabricmc:intermediary:0.0.0` for every 26.x version; that identity artifact is
+what the mod now passes to `mappings(...)`.
+
+One consequence: the identity intermediary has no `named` namespace, so Loom cannot remap a
+*sources* jar through it (`Could not find namespace "named" in provided tiny tree`), and it tries
+to for every `modImplementation` dependency. `mcdp-26` is therefore consumed via plain
+`implementation` — nothing needs remapping against an unobfuscated game, and Fabric's
+`ClasspathModCandidateFinder` discovers it from the plain classpath in a dev run.
 
 `neoforge-example-26.2` pins MC 26.2 / NeoForge **26.2.0.88** rather than 26.3 because
 **NeoForge has no stable 26.3** — that line is `26.3.0.0-beta` … `26.3.0.7-beta`.
