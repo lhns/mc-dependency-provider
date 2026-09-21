@@ -307,22 +307,60 @@ def main() -> int:
                     help="Local Maven repository root")
     ap.add_argument("--settings", default="settings.gradle.kts",
                     help="settings.gradle.kts, cross-checked against the band table")
+    ap.add_argument("--signatures", choices=("auto", "require", "skip"), default="auto",
+                    help="'require': every published file must have an armored .asc beside "
+                         "it — what the release dry run passes, so a signing configuration "
+                         "that produces nothing fails here instead of at the Portal. "
+                         "'auto' (default): require them only if this repository contains "
+                         "any .asc at all, so an unsigned -SNAPSHOT publishToMavenLocal run "
+                         "(which has no key and, being a snapshot, is not required to sign) "
+                         "still passes. 'skip': never look. The blind spot in 'auto' is "
+                         "deliberate and bounded: it can only miss signing being off "
+                         "*everywhere*, which is precisely the case the dry run pins down "
+                         "with 'require'.")
     args = ap.parse_args()
 
     root = Path(args.m2) / Path(*GROUP.split("."))
     rep = Report()
 
-    print(f"repo: {root}\nversion: {args.version}\n")
+    signatures = args.signatures
+    if signatures == "auto":
+        signatures = "require" if signing_is_active(root) else "skip"
+
+    print(f"repo: {root}\nversion: {args.version}")
+    print(f"signatures: {args.signatures}"
+          + (f" -> {signatures}" if args.signatures == "auto" else "")
+          + ("" if signatures == "require"
+             else "  (no .asc anywhere: signing is not active in this publish)"))
+    print()
     verify_band_list(Path(args.settings), rep)
+
+    # (directory, scope) pairs to sweep for signatures once the contents have been checked.
+    signed_dirs: list[tuple[Path, str]] = []
 
     for band, spec in BANDS.items():
         artifact = f"mcdp-{band}"
         print(f"\n{artifact}")
-        verify_band(root / artifact / args.version, artifact, args.version, spec, rep)
+        base = root / artifact / args.version
+        verify_band(base, artifact, args.version, spec, rep)
+        signed_dirs.append((base, artifact))
 
     for artifact, pom_name in EXTRA_ARTIFACTS.items():
         print(f"\n{artifact}")
-        verify_coordinates(root / artifact / args.version, artifact, args.version, pom_name, rep)
+        base = root / artifact / args.version
+        verify_coordinates(base, artifact, args.version, pom_name, rep)
+        signed_dirs.append((base, artifact))
+
+    print(f"\n{PLUGIN_MARKER_ARTIFACT}")
+    marker_base = (Path(args.m2) / Path(*PLUGIN_MARKER_GROUP.split("."))
+                   / PLUGIN_MARKER_ARTIFACT / args.version)
+    verify_plugin_marker(marker_base, args.version, rep)
+    signed_dirs.append((marker_base, PLUGIN_MARKER_ARTIFACT))
+
+    if signatures == "require":
+        print("\nsignatures")
+        for base, scope in signed_dirs:
+            verify_signatures(base, scope, rep)
 
     print()
     if rep.failures:
@@ -330,7 +368,9 @@ def main() -> int:
         for f in rep.failures:
             print(f"  - {f}")
         return 1
-    print(f"OK: {len(BANDS)} bands + {len(EXTRA_ARTIFACTS)} extra artifact(s) verified.")
+    print(f"OK: {len(BANDS)} bands + {len(EXTRA_ARTIFACTS)} extra artifact(s) "
+          f"+ the {PLUGIN_MARKER_ARTIFACT} marker verified"
+          + (" (signed)." if signatures == "require" else ", signatures not checked."))
     return 0
 
 

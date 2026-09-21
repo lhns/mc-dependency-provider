@@ -1,0 +1,226 @@
+name: CI — Release dry run (signed, no upload)
+
+# A rehearsal of the release publish path, stopping one step short of the upload.
+#
+# What had never run before this job existed:
+#   * a non-SNAPSHOT, tag-shaped version through the publish path. `published-artifacts.yml`
+#     computes one on `release: published` but cannot get past signing (see below), and
+#     everything else publishes `0.1.0-SNAPSHOT`.
+#   * `signAllPublications()`. It is configured in
+#     buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts and gradle-plugin/build.gradle.kts
+#     and only ever executed inside publish.yml with the production key — so a broken signing
+#     configuration would first have been reported by the Sonatype Portal, *after*
+#     `automaticRelease = true` had already released the bundle and made it immutable.
+#   * the staging-repository layout itself: signatures, checksums and the plugin marker POM.
+#
+# Nothing is uploaded, and nothing here can upload. See "Assemble the staging bundle" below
+# and gradle/dry-run-staging.init.gradle for why that is structural rather than a promise:
+# the publish target is a `file://` repository and vanniktech's Sonatype build service — the
+# only thing in the build that talks to the Portal — is never instantiated.
+#
+# Deliberately NOT a real secret: the PGP key is generated inside the job, used once, and
+# thrown away with the runner. The point is to prove the signing *configuration* works, which
+# is key-independent; proving the production key works is publish.yml's job and cannot be
+# rehearsed without it.
+
+on:
+  # A release still gets the rehearsal, against the real tag, alongside publish.yml. This is
+  # the coverage `published-artifacts.yml` used to claim on this event and could never deliver.
+  release:
+    types: [published]
+  push:
+    branches: [main]
+  pull_request:
+    # Everything that can change what gets published or how it is signed.
+    paths:
+      - "**/build.gradle.kts"
+      - "settings.gradle.kts"
+      - "buildSrc/**"
+      - "gradle/libs.versions.toml"
+      - "gradle/wrapper/**"
+      - "gradle/dry-run-staging.init.gradle"
+      - "scripts/verify_artifacts.py"
+      - ".github/workflows/release-dry-run.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to rehearse (leading v is stripped, exactly as publish.yml does)"
+        required: false
+        default: "v0.0.0-dry-run"
+
+concurrency:
+  group: release-dry-run-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'build.gradle.kts', 'settings.gradle.kts', '*/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Compute version
+        id: ver
+        shell: bash
+        # Mirrors publish.yml's version rule verbatim — `version="${tag#v}"` — because the
+        # whole point is to rehearse the coordinates publish.yml would upload. Off a release
+        # that is the real tag; otherwise a synthetic tag that sorts below every real one.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            tag="${{ github.event.inputs.tag }}"
+            [ -n "$tag" ] || tag="v0.0.0-dry-run"
+          fi
+          version="${tag#v}"
+          case "$version" in
+            *-SNAPSHOT)
+              echo "::error::'$version' is a snapshot. This job exists to rehearse the"
+              echo "::error::RELEASE routing path; a -SNAPSHOT version takes the other branch"
+              echo "::error::in vanniktech and skips signing entirely."
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Rehearsing tag '$tag' as version: $version"
+
+      - name: Generate a throwaway PGP signing key
+        shell: bash
+        # No repository secret is involved. `%no-protection` makes the key passphrase-less,
+        # which is what `signingInMemoryKeyPassword: ''` below pairs with: Gradle's in-memory
+        # signatory is null unless BOTH the key and the password are non-null, so an *absent*
+        # password variable silently disables signing just as hard as an absent key — the
+        # exact trap published-artifacts.yml fell into. `Key-Usage: sign` on the primary key
+        # (and no subkey) keeps the exported ring unambiguous for that signatory.
+        #
+        # The armored secret key is handed to Gradle through ORG_GRADLE_PROJECT_signingInMemoryKey,
+        # the same property publish.yml feeds from the PGP_PRIVATE_KEY secret, via a
+        # heredoc-delimited multi-line entry in $GITHUB_ENV.
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          cat > "$GNUPGHOME/keyparams" <<'PARAMS'
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 3072
+          Key-Usage: sign
+          Name-Real: mcdp release dry run
+          Name-Comment: throwaway - generated in CI, never published
+          Name-Email: dry-run@mcdp.invalid
+          Expire-Date: 0
+          %commit
+          PARAMS
+          gpg --batch --pinentry-mode loopback --generate-key "$GNUPGHOME/keyparams"
+          fpr="$(gpg --batch --with-colons --list-secret-keys \
+                 | awk -F: '/^fpr:/ { print $10; exit }')"
+          [ -n "$fpr" ] || { echo "::error::no secret key was generated"; exit 1; }
+          echo "Generated throwaway key $fpr"
+          {
+            echo "ORG_GRADLE_PROJECT_signingInMemoryKey<<MCDP_PGP_KEY_EOF"
+            gpg --batch --armor --export-secret-keys "$fpr"
+            echo "MCDP_PGP_KEY_EOF"
+          } >> "$GITHUB_ENV"
+          # Empty, not absent: see the note above.
+          echo "ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=" >> "$GITHUB_ENV"
+
+      - name: Assemble the signed staging bundle (no upload)
+        id: assemble
+        shell: bash
+        # vanniktech 0.32.0 has no "build the Central Portal bundle but do not send it" task.
+        # `publishToMavenCentral` is an alias that only dependsOn
+        # `publishAllPublicationsToMavenCentralRepository`, and the upload is an end-of-build
+        # action armed by the `createStagingRepository` task that those publish tasks depend
+        # on — so there is no supported way to run that task graph with the upload disarmed.
+        #
+        # gradle/dry-run-staging.init.gradle therefore adds a plain `file://` Maven repository
+        # and we publish to that instead. It is the same PublishToMavenRepository task type,
+        # the same generated POMs and module metadata, the same Sign tasks, plus the
+        # md5/sha1/sha256/sha512 checksums a repository publish writes and publishToMavenLocal
+        # does not — and vanniktech's Sonatype build service is never even constructed.
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_WORKSPACE/build/dry-run-staging"
+          rm -rf "$repo"
+          ./gradlew publishAllPublicationsToDryRunStagingRepository \
+            --no-daemon --stacktrace --no-configuration-cache \
+            -I gradle/dry-run-staging.init.gradle \
+            -Dmcdp.dryRunRepo="$repo" \
+            -Pversion=${{ steps.ver.outputs.version }}
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+
+      - name: Assert nothing took the upload path
+        shell: bash
+        # Belt and braces. If a future vanniktech upgrade or build edit ever routes this job
+        # through the Sonatype build service, that service materialises its staging tree under
+        # build/publish/staging/<uuid> before POSTing it. Its existence means the upload path
+        # ran, and this job must never reach it.
+        run: |
+          set -euo pipefail
+          if [ -e build/publish/staging ]; then
+            echo "::error::build/publish/staging exists — the Sonatype upload path ran."
+            exit 1
+          fi
+          echo "No Sonatype staging tree: the upload path was never entered."
+
+      - name: Verify the bundle
+        shell: bash
+        # --signatures require, not the default 'auto': "no signatures anywhere" is the
+        # failure mode this whole job exists to catch, so here it must be an error rather
+        # than a reason to skip the check.
+        run: |
+          python3 scripts/verify_artifacts.py \
+            --version ${{ steps.ver.outputs.version }} \
+            --m2 "${{ steps.assemble.outputs.repo }}" \
+            --signatures require
+
+      - name: Zip the bundle the way the Portal receives it
+        if: always()
+        shell: bash
+        # vanniktech zips exactly this directory and POSTs it. Producing the zip here makes
+        # the rehearsal's output the same artifact a release would upload, and makes it
+        # downloadable for inspection. Runs on failure too — a bundle that failed
+        # verification is the thing a human most wants to open.
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_WORKSPACE/build/dry-run-staging"
+          if [ ! -d "$repo" ]; then
+            echo "No bundle was assembled; nothing to zip."
+            exit 0
+          fi
+          cd "$repo"
+          zip -qr "$GITHUB_WORKSPACE/central-bundle.zip" .
+          echo "Bundle contents:"
+          unzip -l "$GITHUB_WORKSPACE/central-bundle.zip"
+
+      - name: Upload the rehearsed bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-bundle-${{ steps.ver.outputs.version }}
+          path: central-bundle.zip
+          if-no-files-found: warn
