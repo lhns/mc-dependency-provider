@@ -109,17 +109,25 @@ class McdpProviderPluginTest {
                 // doFirst runs before the main action; once it logs the strip count we're done.
                 tasks.register<JavaExec>("runServer") {
                     classpath = sourceSets["main"].runtimeClasspath
-                    mainClass.set("non.existent.Main")
+                    mainClass.set("Noop")
+                    doLast {
+                        file("patched-classpath.txt").writeText(
+                            classpath.files.joinToString(" ") { it.name })
+                    }
                 }
                 """);
 
         Files.writeString(tmp.resolve("settings.gradle.kts"), "rootProject.name = \"test-mod\"\n");
 
+        Path noop = tmp.resolve("src/main/java/Noop.java");
+        Files.createDirectories(noop.getParent());
+        Files.writeString(noop, "public final class Noop { public static void main(String[] a) {} }\n");
+
         BuildResult result = GradleRunner.create()
                 .withProjectDir(tmp.toFile())
                 .withArguments("runServer", "--stacktrace")
                 .withPluginClasspath()
-                .buildAndFail();
+                .build();
 
         String out = result.getOutput();
         // Lifecycle log from RunTaskClasspathPatch. Format: "stripped N manifest-listed jars from <task> classpath".
@@ -137,6 +145,18 @@ class McdpProviderPluginTest {
         Manifest manifest = ManifestIo.read(manifestFile);
         assertEquals(manifest.libraries().size(), stripped,
                 "strip count should equal manifest library count; manifest=" + manifest.libraries());
+
+        // The assertion that matters: every manifest-listed artifact is absent from the classpath
+        // the task actually ran with. ADR-0007 parity is about the classpath, not about the log --
+        // a patch that counted correctly and then assigned the unfiltered collection passed before.
+        String patched = Files.readString(tmp.resolve("patched-classpath.txt"));
+        assertFalse(manifest.libraries().isEmpty(), "fixture must resolve at least one mcdep");
+        for (Manifest.Library lib : manifest.libraries()) {
+            String[] gav = lib.coords().split(":");
+            String jarName = gav[1] + "-" + gav[2] + ".jar";
+            assertFalse(patched.contains(jarName),
+                    "manifest-listed jar " + jarName + " survived the patch; classpath:\n" + patched);
+        }
     }
 
     /**

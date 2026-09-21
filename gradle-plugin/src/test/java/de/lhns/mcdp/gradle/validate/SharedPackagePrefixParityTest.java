@@ -1,12 +1,12 @@
 package de.lhns.mcdp.gradle.validate;
 
 import de.lhns.mcdp.gradle.bridges.BridgePolicy;
+import de.lhns.mcdp.gradle.testfixtures.RuntimeLoaderSource;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,8 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The three plugin-side sites now share {@link BridgePolicy#normalizeSharedPackages}. The
  * runtime keeps its own copy, because {@code :gradle-plugin} deliberately has no dependency on
  * {@code :core} — a Gradle plugin must not drag the runtime's Minecraft-facing classpath into
- * the build classpath. {@code modClassLoaderRule} below is that copy, transcribed, and the
- * parity tests are what stop the two from drifting apart unnoticed.
+ * the build classpath. The parity tests below stop the two copies from drifting apart by running
+ * the runtime's real rule through {@link RuntimeLoaderSource}, which compiles core's source
+ * rather than depending on {@code :core}.
  *
  * <p>The trailing dot is the part that used to differ: {@code BridgePolicy} normalized slashes
  * only, so a bare {@code "com.example.api"} entry also swallowed the sibling package
@@ -68,21 +69,14 @@ class SharedPackagePrefixParityTest {
     }
 
     /**
-     * Verbatim transcription of {@code ModClassLoader.normalizePrefixes}. Not reflection and not
-     * a source parse: {@code :core} is not on this test's classpath at all, and keeping it off is
-     * the whole point — see {@code BridgePolicyPrefixParityTest} for the same reasoning applied
-     * to the platform-prefix list.
-     *
-     * <p><b>Keep in sync with</b> {@code core/src/main/java/de/lhns/mcdp/core/ModClassLoader.java},
-     * method {@code normalizePrefixes}.
+     * The runtime rule, executed rather than transcribed: {@link RuntimeLoaderSource} compiles
+     * core's real {@code ModClassLoader} source and runs its normalization. This used to be a
+     * hand-copied body, which made every assertion below a comparison of the plugin against the
+     * test's own idea of the runtime — deleting the runtime's blank-entry guard changed nothing
+     * here.
      */
     private static List<String> modClassLoaderRule(List<String> raw) {
-        List<String> out = new ArrayList<>(raw.size());
-        for (String p : raw) {
-            if (p == null || p.isBlank()) continue;
-            out.add(p.endsWith(".") ? p : p + ".");
-        }
-        return List.copyOf(out);
+        return RuntimeLoaderSource.normalizePrefixes(raw);
     }
 
     /**
@@ -124,6 +118,11 @@ class SharedPackagePrefixParityTest {
      *       whereas in the plugin it only makes the codegen bridge nothing. Still a footgun, but
      *       fixing it is a behaviour change for the plugin, not a de-duplication.</li>
      * </ul>
+     *
+     * <p>Both halves of each pair execute production code, so this pins the divergences to
+     * exactly the two described: if the runtime stops dropping blanks, or starts translating
+     * slashes, the assertion for that half goes red. Previously the runtime half asserted the
+     * test's own transcription against a literal and ran no production code at all.
      */
     @Test
     void documentedDivergencesFromTheRuntimeRule() {

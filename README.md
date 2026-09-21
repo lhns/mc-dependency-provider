@@ -170,6 +170,8 @@ MCDP_REPO_WHITELIST=https://repo1.maven.org/maven2/,https://maven.example.org/re
 
 Any library whose URL does not start with one of the prefixes is rejected **before** the request is sent, so a tampered manifest can't reach an attacker-controlled repo even though the SHA check would have caught the bytes later. Unset or blank means no enforcement — the default, so existing installs keep working. Useful for modpack authors and locked-down servers.
 
+One thing to be aware of: **a library already in the shared cache is served without consulting the whitelist.** That is deliberate — nothing is fetched, and the bytes are the ones the manifest's SHA-256 already demands — but it means enabling the whitelist does not retroactively quarantine what a previous run cached. Clear `~/.cache/mcdepprovider/libs/` if you need enforcement over existing content.
+
 ## Known limitations
 
 - **Mixins go through the bridge pattern.** A mixin class can't reference mod-private Scala/Kotlin types directly; calls are routed through a bridge interface living in a `sharedPackages` prefix. mcdp generates the bridges for you, but a few shapes still need manual `sharedPackages` entries — see [`docs/bridges.md`](docs/bridges.md).

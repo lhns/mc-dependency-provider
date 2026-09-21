@@ -8,11 +8,20 @@ name: CI — Tier 2 (MC runServer smoke)
 #   nightly, not on every PR, so unit-level signal stays fast.
 #
 # Coverage goals:
-#   1. NeoForge adapter boots MC 1.21.1 to first tick through mcdepprovider.
-#   2. Fabric adapter boots MC 1.21.1 to first tick through mcdepprovider.
-#   3. Dev-mode parity (ADR-0007): no manifest-listed jar ends up on MC classpath.
-#   4. Second-boot offline: cache populated on first boot serves the second boot
-#      without any network access.
+#   1. NeoForge adapter boots MC 1.21.1 to first tick through mcdepprovider,
+#      and prints its [mcdp-smoke] marker (so "MC booted" cannot pass for "mcdp ran").
+#   2. Fabric adapter, same.
+#   3. Second boot is served entirely from the cache the first boot populated —
+#      every library line reads "(cached)", none reports a byte size.
+#
+# NOT a goal here, deliberately: ADR-0007 dev-mode classpath parity. ADR-0025 reversed
+# `patchRunTasks` to opt-in and neither smoke mod opts in, so there is nothing to assert
+# on these classpaths. A step claiming to check it lived here for a long time and never
+# ran once -- it invoked a `:runServerClasspath` task that exists nowhere in the repo,
+# swallowed the failure with `||`, then guarded its assertion on a file that was
+# therefore never written. The opt-in path is covered by
+# McdpProviderPluginTest.stripsManifestJarsFromRunTaskClasspath, which asserts the
+# patched classpath itself rather than the strip-count log line.
 #
 # Cache policy:
 #   - Gradle home YES (per-OS, keyed on libs.versions.toml + *.gradle.kts).
@@ -43,8 +52,8 @@ jobs:
         # a pure-JVM project whose platform surface is the cache dir.
         os: [ubuntu-latest, windows-latest]
         platform:
-          - { name: neoforge, dir: test-mods/neoforge-example }
-          - { name: fabric,   dir: test-mods/fabric-example   }
+          - { name: neoforge, dir: test-mods/neoforge-example, modid: neoforge_example }
+          - { name: fabric,   dir: test-mods/fabric-example,   modid: fabric_example   }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
 
@@ -113,45 +122,50 @@ jobs:
             --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
         shell: bash
 
-      - name: Classpath parity check (ADR-0007)
-        # Dumps the runServer classpath at configuration-time (no MC boot) and asserts
-        # that no manifest-listed jar appears on it. If any does, RunTaskClasspathPatch
-        # didn't strip them — dev-mode parity is broken.
-        working-directory: ${{ matrix.platform.dir }}
+      - name: Assert mcdp actually loaded the mod (first boot)
+        # Without this the job proves only that Minecraft started. It is the sole Tier-2 job
+        # that runs on push, so it is the one `publish.yml`'s gate reads — it has to be able
+        # to tell "mcdp loaded the mod" from "MC booted and mcdp did nothing".
         shell: bash
         run: |
           set -euo pipefail
-          M="build/mcdepprovider/META-INF/mcdepprovider.toml"
-          COORDS=$(grep -oE 'coords = "[^"]+"' "$M" | sed -E 's/.*"([^"]+)".*/\1/')
-          # Ask Gradle to dump the runServer classpath to a file for inspection.
-          ../../gradlew :runServerClasspath --no-daemon --stacktrace 2>/dev/null \
-            || echo "note: :runServerClasspath task not present — skipping parity check"
-          CP_FILE="build/runServer-classpath.txt"
-          if [ -f "$CP_FILE" ]; then
-            FAIL=0
-            for coord in $COORDS; do
-              artifact=$(echo "$coord" | awk -F: '{print $2"-"$3".jar"}')
-              if grep -q "/$artifact" "$CP_FILE"; then
-                echo "ERROR: manifest-listed jar '$artifact' is still on MC classpath"
-                FAIL=1
-              fi
-            done
-            [ "$FAIL" = 0 ] || exit 1
-          fi
+          LOG=smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot1.log
+          grep -q "\[mcdp-smoke\] mod=${{ matrix.platform.modid }} boot ok" "$LOG" || {
+            echo "ERROR: mcdp smoke marker for ${{ matrix.platform.modid }} not in log"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
 
-      - name: Second boot — offline, cache-hit only
+      - name: Second boot — must be served entirely from cache
         working-directory: ${{ matrix.platform.dir }}
         shell: bash
-        # NOTE: this step used to set MCDP_HTTP_TIMEOUT_MS as a "defensive" offline
-        # guard, but no such env var is read anywhere in the runtime -- it was a no-op.
-        # The real assertion is below: if the first boot's cache is complete, the second
-        # boot makes no HTTP call at all, which mc_smoke.py checks from the log.
         run: |
-          python3 ../../scripts/mc_smoke.py \
-            --cwd . \
-            --task :runServer \
-            --timeout 600 \
-            --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot2.log
+          python3 ../../scripts/mc_smoke.py             --cwd .             --task :runServer             --timeout 600             --log-file ../../smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot2.log
+
+      - name: Assert the second boot downloaded nothing
+        # The real cache assertion, and the reason ci.yml deliberately does not cache
+        # ~/.cache/mcdepprovider across jobs. LoggingProgressListener prints one line per
+        # library: "(cached)" when served from the cache, a byte size when fetched. After a
+        # complete first boot every line must be "(cached)".
+        #
+        # The first grep is the anti-vacuous guard: if no resolve lines are present at all,
+        # the download check below would pass without proving anything.
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-${{ matrix.platform.name }}-${{ runner.os }}-boot2.log
+          RESOLVED=$(grep -cE 'mcdp\[[^]]+\]: \([0-9]+/[0-9]+\)' "$LOG" || true)
+          echo "mcdp library-resolution lines on second boot: $RESOLVED"
+          [ "$RESOLVED" -gt 0 ] || {
+            echo "ERROR: no mcdp library resolution happened at all — nothing was verified"
+            exit 1
+          }
+          if grep -E 'mcdp\[[^]]+\]: \([0-9]+/[0-9]+\) .* [0-9.]+ (B|KB|MB)$' "$LOG"; then
+            echo "ERROR: the above libraries were downloaded on the second boot;"
+            echo "the first boot's cache is incomplete, so ADR-0006 cache reuse is broken."
+            exit 1
+          fi
+          echo "all $RESOLVED libraries served from cache"
 
       - name: Upload MC logs + crash reports on failure
         if: failure()

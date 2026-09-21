@@ -54,6 +54,113 @@ class LoaderCoordinatorTest {
         }
     }
 
+    /** Mod jar with a single Entry class, so each mod has its own distinct root. */
+    private static Path modJar(Path tmp, String modId) throws Exception {
+        Path p = tmp.resolve(modId + ".jar");
+        SyntheticJar.writeJar(p, Map.of("com/example/" + modId + "/Entry.class",
+                SyntheticJar.emptyClass("com/example/" + modId + "/Entry")));
+        return p;
+    }
+
+    @Test
+    void coalescesAcrossDistinctPathsWithIdenticalContent(@TempDir Path tmp) throws Exception {
+        // ADR-0006's actual claim: the *SHA* is the key, not the cache path. Two mods that
+        // resolved byte-identical content into different cache directories must still share a
+        // loader, or Class identity splits for every cross-mod API using that library's types.
+        String libInternal = "com/example/lib/Shared";
+        Path libInA = tmp.resolve("cacheA/lib.jar");
+        SyntheticJar.writeJar(libInA, Map.of(libInternal + ".class", SyntheticJar.emptyClass(libInternal)));
+        Path libInB = tmp.resolve("cacheB/lib.jar");
+        Files.createDirectories(libInB.getParent());
+        Files.copy(libInA, libInB); // byte-identical -> same SHA, different path
+
+        String libSha = Sha256.hex(Files.readAllBytes(libInA));
+        assertEquals(libSha, Sha256.hex(Files.readAllBytes(libInB)));
+        assertNotEquals(libInA, libInB);
+
+        Manifest man = new Manifest("java", List.of(),
+                List.of(new Manifest.Library("c:lib:1", "http://x/lib.jar", libSha)));
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        try {
+            ModClassLoader clA = coordinator.register("modA", man, modJar(tmp, "modA"), List.of(libInA));
+            ModClassLoader clB = coordinator.register("modB", man, modJar(tmp, "modB"), List.of(libInB));
+
+            assertEquals(1, coordinator.libraryLoaders().size(),
+                    "same SHA at two paths must still coalesce into one library loader");
+            assertSame(clA.loadClass("com.example.lib.Shared"),
+                    clB.loadClass("com.example.lib.Shared"));
+        } finally {
+            closeAll(coordinator);
+        }
+    }
+
+    @Test
+    void distinctShasAtTheSamePathStayDistinct(@TempDir Path tmp) throws Exception {
+        // The mirror of the above: one path, two declared SHAs. Separates "different SHA" from
+        // "different path" in the negative direction -- keying on the path would fuse these.
+        Path lib = tmp.resolve("lib.jar");
+        SyntheticJar.writeJar(lib, Map.of("com/example/lib/V.class",
+                SyntheticJar.emptyClass("com/example/lib/V")));
+
+        Manifest manA = new Manifest("java", List.of(),
+                List.of(new Manifest.Library("c:lib:1", "http://x/lib.jar", "a".repeat(64))));
+        Manifest manB = new Manifest("java", List.of(),
+                List.of(new Manifest.Library("c:lib:2", "http://x/lib.jar", "b".repeat(64))));
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        try {
+            ModClassLoader clA = coordinator.register("modA", manA, modJar(tmp, "modA"), List.of(lib));
+            ModClassLoader clB = coordinator.register("modB", manB, modJar(tmp, "modB"), List.of(lib));
+
+            assertEquals(2, coordinator.libraryLoaders().size(),
+                    "declared SHAs differ -> separate loaders even though the path is identical");
+            assertNotSame(clA.loadClass("com.example.lib.V"), clB.loadClass("com.example.lib.V"));
+        } finally {
+            closeAll(coordinator);
+        }
+    }
+
+    @Test
+    void firstRegistrationsUrlsWinWhenDeclaredShasMatchButContentDiffers(@TempDir Path tmp) throws Exception {
+        // Two different paths, different *content*, but both manifests declare the same SHA.
+        // Current behaviour, pinned deliberately: computeIfAbsent means the loader is built from
+        // whichever registration arrived first, and the second mod silently reads the first mod's
+        // bytes -- its extra class is not on any loader it can reach.
+        //
+        // Intended contract: only the "SHA is the identity of the content" half (ADR-0006).
+        // "First registration wins the URLs" is a consequence of the cache, not a designed
+        // guarantee -- a manifest whose SHA does not match its jar is already lying. Recorded
+        // here so a re-key (e.g. to paths) cannot change it unnoticed.
+        String shared = "com/example/lib/Shared";
+        Path libOne = tmp.resolve("cacheA/lib.jar");
+        SyntheticJar.writeJar(libOne, Map.of(shared + ".class", SyntheticJar.emptyClass(shared)));
+        Path libTwo = tmp.resolve("cacheB/lib.jar");
+        SyntheticJar.writeJar(libTwo, Map.of(
+                shared + ".class", SyntheticJar.emptyClass(shared),
+                "com/example/lib/Marker.class", SyntheticJar.emptyClass("com/example/lib/Marker")));
+        assertNotEquals(Sha256.hex(Files.readAllBytes(libOne)), Sha256.hex(Files.readAllBytes(libTwo)));
+
+        String declaredSha = Sha256.hex(Files.readAllBytes(libOne));
+        Manifest man = new Manifest("java", List.of(),
+                List.of(new Manifest.Library("c:lib:1", "http://x/lib.jar", declaredSha)));
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        try {
+            ModClassLoader clA = coordinator.register("modA", man, modJar(tmp, "modA"), List.of(libOne));
+            ModClassLoader clB = coordinator.register("modB", man, modJar(tmp, "modB"), List.of(libTwo));
+
+            assertEquals(1, coordinator.libraryLoaders().size(), "equal declared SHAs -> one loader");
+            assertSame(clA.loadClass("com.example.lib.Shared"),
+                    clB.loadClass("com.example.lib.Shared"));
+            assertThrows(ClassNotFoundException.class,
+                    () -> clB.loadClass("com.example.lib.Marker"),
+                    "modB's own jar was never opened: the SHA-keyed loader came from modA's path");
+        } finally {
+            closeAll(coordinator);
+        }
+    }
+
     @Test
     void promotedParentSharesClassAcrossDistinctShaMods(@TempDir Path tmp) throws Exception {
         // Two mods pin DIFFERENT Scala 3 patch versions. SHA-keyed coalescing alone would give

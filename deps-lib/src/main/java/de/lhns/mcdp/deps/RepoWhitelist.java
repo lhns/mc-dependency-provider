@@ -39,7 +39,15 @@ public final class RepoWhitelist {
      * meaning no enforcement. Callers opt in by checking for null.
      */
     public static RepoWhitelist fromEnv() {
-        String raw = System.getenv(ENV_VAR);
+        return parse(System.getenv(ENV_VAR));
+    }
+
+    /**
+     * Parsing half of {@link #fromEnv()}, split out so it can be tested: the JDK 17+ process
+     * environment map is immutable, so no test can drive this logic through {@code fromEnv}.
+     * Package-private — not API.
+     */
+    static RepoWhitelist parse(String raw) {
         if (raw == null || raw.isBlank()) return null;
         List<String> parts = Arrays.stream(raw.split(","))
                 .map(String::trim)
