@@ -37,7 +37,7 @@ mcdp publishes per-Minecraft-band artifacts. Pick the band that matches your mod
 | `de.lhns.mcdp:mcdp-1.20.6` | 1.20.6 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **CI-verified** (run 35526039405) |
 | `de.lhns.mcdp:mcdp-1.21` | **1.21.1 only** | 21 | Fabric + NeoForge | **CI-verified, server *and* client.** Shipped (v0.1.x as `mcdp:VERSION`; v0.2+ as `mcdp-1.21:VERSION`) |
 | `de.lhns.mcdp:mcdp-1.21.11` | 1.21.10, 1.21.11 | 21 | Fabric + NeoForge | Fabric **and** NeoForge **boot-verified** locally; CI cells added, first nightly pending. Own NeoForge source for the FML-10 SPI (ADR-0030) |
-| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | **Never built.** CI cells now exist (own Gradle 9.7.1 wrapper, JDK 25 daemon) but have not yet run. One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
+| `de.lhns.mcdp:mcdp-26` | 26.1, 26.2, 26.3 | 21 | Fabric + NeoForge | NeoForge has a CI cell (own Gradle 9.7.1 wrapper, JDK 25 daemon); first run pending. Fabric is **compile-verified only and blocked upstream** — no 26.x release ships Mojang mappings and yarn has no 26.x builds, so Loom has no mapping source. One band for the whole calendar line (ADR-0032); replaces the never-published `mcdp-26.1` |
 
 ### Gaps and caveats
 

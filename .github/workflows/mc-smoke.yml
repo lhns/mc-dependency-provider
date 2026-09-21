@@ -325,7 +325,10 @@ jobs:
           # The only band left with its own distribution. Needs the JDK 25 daemon: MC 26.x declares
           # javaVersion 25, Loom's MinecraftProvider#verifyJavaVersion checks it against
           # the *daemon* JVM, and Gradle 8.11.1 cannot run on JDK 25 anyway.
-          - { name: fabric-26.3,   dir: test-mods/fabric-example-26.3,   modid: fabric_example_263,   cache_key: "26.3",   loader: fabric,   daemon_jdk: "25" }
+          # No fabric-26.3 row: Mojang publishes no client_mappings/server_mappings for any
+          # 26.x release and Fabric has no yarn builds for the line, so Loom has no mapping
+          # source at all. Not a toolchain problem and not fixable here — the Fabric half of
+          # mcdp-26 stays compile-only until upstream publishes mappings.
           - { name: neoforge-26.2, dir: test-mods/neoforge-example-26.2, modid: neoforge_example_262, cache_key: "26.2",   loader: neoforge, daemon_jdk: "25" }
     runs-on: ${{ matrix.os }}
     # Backstop, not a budget. Measured real work is 3–5 min/cell; the sibling

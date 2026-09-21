@@ -46,7 +46,13 @@ dependencies {
     // Yarn, NOT used. `net.fabricmc:yarn` stops at 1.21.11 — there is no yarn build for any
     // 26.x version (meta.fabricmc.net/v2/versions/yarn/26.3 is an empty array), and the
     // calendar line publishes a single rolling `net.fabricmc:intermediary:0.0.0`. Official
-    // Mojang mappings are the only option, and this mod touches no MC types anyway.
+    // BLOCKED, and not by tooling: Mojang publishes no client_mappings/server_mappings for ANY
+    // 26.x release (compare 1.21.11, which has both), and Fabric has no yarn builds for the line
+    // either. Loom therefore has no mapping source and fails configuration with
+    // "Failed to find official mojang mappings for 26.3". There is no CI cell for this mod for
+    // that reason; the Fabric half of mcdp-26 stays compile-only until upstream publishes
+    // mappings. The Gradle 9.7.1 / JDK 25 wrapper below is correct and was verified in CI — it
+    // got Loom as far as mapping resolution before this stopped it.
     mappings(loom.officialMojangMappings())
     modImplementation("net.fabricmc:fabric-loader:0.19.5")
     modImplementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")

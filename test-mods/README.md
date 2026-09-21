@@ -36,7 +36,7 @@ exercised that mod — read it as *unproven*, not *known broken*.
 | `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands` (nightly) |
 | `fabric-example-1.21.11` | Fabric 1.21.11 (loader 0.19.5) | java | **not in CI** — new today, never built (below) |
 | `neoforge-example-1.21.11` | NeoForge 21.11.45 / MC 1.21.11 | java | **not in CI** — new today, never built (below) |
-| `fabric-example-26.3` | Fabric / MC 26.3 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed** |
+| `fabric-example-26.3` | Fabric / MC 26.3 | java | **No cell** — no Mojang mappings and no yarn exist for any 26.x release; see below |
 | `neoforge-example-26.2` | NeoForge 26.2.0.88 / MC 26.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed** |
 | `forge-example-1.17` | Forge 1.17.1 | java | **excluded** — toolchain (no JDK 16 on runners; below) |
 | `forge-example-1.18` | Forge 1.18.2 | java | `runserver-smoke-bands` (nightly) — cell exists but **has not yet passed**; ported to ForgeGradle 6 / root wrapper |
@@ -76,8 +76,9 @@ calendar-versioning line (26.1 / 26.2 / 26.3) — see
 **The old exclusion reason — "MC 26.1.x is scaffold-only, Mojang has not shipped
 real artifacts" — is obsolete.** 26.1, 26.2 and 26.3 are all in the version manifest
 with real downloads (26.3 released 2026-09-15), and fabric-loader 0.19.5, Fabric API
-`0.161.0+26.3` and Loom 1.18.2 are published and stable. What actually blocks these
-two cells is **the build toolchain, not Minecraft**: MC 26.1+ declare
+`0.161.0+26.3` and Loom 1.18.2 are published and stable. What blocks the **NeoForge**
+cell is **the build toolchain, not Minecraft** (the Fabric one is blocked by missing
+mappings — see the end of this section): MC 26.1+ declare
 `javaVersion.majorVersion = 25`; Loom refuses a MC version whose required Java
 exceeds the **Gradle daemon** JVM (`26.1.2 requires Java 25 but Gradle is using 21`);
 and Gradle 8.11.1, the repo root, cannot run on JDK 25 at all.
@@ -103,12 +104,26 @@ The repo-root wrapper stays at **8.11.1** and must not be bumped: ForgeGradle 6.
 `EnvironmentChecks.checkEnvironment` accepts Gradle `[8.1, 9.0)`, and
 `forge-example-1.19` / `-1.20` composite-include the root build.
 
-These two cells are now rows in `runserver-smoke-bands` with `daemon_jdk: "25"`, and
+`neoforge-example-26.2` is a row in `runserver-smoke-bands` with `daemon_jdk: "25"`, and
 **25** is in the workflow's `setup-java` list (before `21`, which stays last so it keeps
-winning `JAVA_HOME` for every other cell). **They have not yet passed** — no nightly has
-run them. Two things in particular are wired but unproven: whether Loom 1.18.2 can
-actually provision MC 26.3, and whether the mcdp Gradle plugin loads on a Gradle 9.x
-daemon at all.
+winning `JAVA_HOME` for every other cell).
+
+**Both open questions were answered by run 35545861369, and one of them badly.**
+
+*The mcdp Gradle plugin does load on a Gradle 9.7.1 daemon.* Both cells got past plugin
+resolution and configuration; the NeoForge one reached `:generateMcdpBridges` and failed
+there on `Unsupported class file major version 69` — the bundled ASM predated Java 25.
+Fixed by pinning ASM 9.10.1, with `ClassFileVersionSupportTest` to keep it fixed.
+
+*`fabric-example-26.3` has no CI cell, and the blocker is upstream.* Loom got as far as
+mapping resolution and stopped: **Mojang publishes no `client_mappings`/`server_mappings`
+for any 26.x release**, and **Fabric has no yarn builds for the line either** —
+`meta.fabricmc.net/v2/versions/yarn/26.1|26.2|26.3` all return `[]`. Compare 1.21.11,
+whose version JSON carries both mapping downloads. So Loom has no mapping source at all,
+for any 26.x version, with any mappings setting. This is not a toolchain problem and
+nothing in this repo can fix it; the Fabric half of `mcdp-26` stays compile-only until
+upstream publishes mappings. The mod keeps its 9.7.1 wrapper — that part is correct and
+was verified in CI.
 
 `neoforge-example-26.2` pins MC 26.2 / NeoForge **26.2.0.88** rather than 26.3 because
 **NeoForge has no stable 26.3** — that line is `26.3.0.0-beta` … `26.3.0.7-beta`.

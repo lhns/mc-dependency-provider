@@ -35,7 +35,7 @@ forge-fmlcore-mc117 = "1.17.1-37.1.2"
 forge-fmlcore-mc118 = "1.18.2-40.3.12"
 forge-fmlcore-mc120 = "1.20.1-47.4.20"
 forge-fmlcore-mc119 = "1.19.2-43.5.2"   # eventbus 6.0.3 per its POM
-asm = "9.7.1"
+asm = "9.10.1"
 vanniktech-maven-publish = "0.32.0"
 
 [libraries]
