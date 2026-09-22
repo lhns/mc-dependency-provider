@@ -8,15 +8,23 @@ import org.junit.jupiter.api.io.TempDir;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The parts of {@link LoaderCoordinator}'s contract that every platform adapter branches on but
  * that the coalescing tests never reach: the guard throws, the {@code null} return for an empty
- * promotion set, the cache key, and what a repeated {@code modId} does.
+ * promotion set, the cache key, the promoted loader's name, and the rejection of a repeated
+ * {@code modId}.
  */
 class LoaderCoordinatorContractTest {
 
@@ -125,31 +133,98 @@ class LoaderCoordinatorContractTest {
     }
 
     @Test
-    void reRegisteringAModIdReplacesTheLoaderAndStrandsTheOldOne(@TempDir Path tmp) throws Exception {
-        // Current behaviour, pinned deliberately: modLoaders is a plain put, so the newest
-        // registration wins lookups while the previous loader stays open, keeps its jar handles
-        // (a hard pin on Windows) and stays reachable through McdpProvider's own id->loader map,
-        // which is never cleaned up either. Any change here — putIfAbsent, a reject, a close of
-        // the loser — should have to update this test on purpose.
+    void reRegisteringAModIdIsRejectedAndBuildsNothing(@TempDir Path tmp) throws Exception {
+        // A second register() used to replace the first loader while it stayed open, kept its
+        // jar handles (a hard pin on Windows) and stayed referenced from McdpProvider. It is
+        // now rejected, naming the mod, before anything is built: the second call's library set
+        // differs from the first, so a library loader built for it would show up in the count.
         Path lib = libJar(tmp, "lib.jar", "com/example/lib/V");
-        String libSha = Sha256.hex(Files.readAllBytes(lib));
+        Path otherLib = libJar(tmp, "other.jar", "com/example/other/W");
         Manifest man = new Manifest("java", List.of(),
-                List.of(new Manifest.Library("c:lib:1", "http://x/lib.jar", libSha)));
+                List.of(new Manifest.Library("c:lib:1", "http://x/lib.jar", Sha256.hex(Files.readAllBytes(lib)))));
+        Manifest otherMan = new Manifest("java", List.of(),
+                List.of(new Manifest.Library("c:other:1", "http://x/other.jar", Sha256.hex(Files.readAllBytes(otherLib)))));
 
         LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
         ModClassLoader first = null;
         try {
             first = coordinator.register("dup", man, modJar(tmp, "dupOne"), List.of(lib));
-            ModClassLoader second = coordinator.register("dup", man, modJar(tmp, "dupTwo"), List.of(lib));
+            Path secondJar = modJar(tmp, "dupTwo");
 
-            assertNotSame(first, second, "a second register() builds a second loader");
-            assertSame(second, coordinator.loaderFor("dup"), "the later registration wins lookups");
-            assertEquals(1, coordinator.allLoaders().size(), "the map is keyed by modId, so it holds one");
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> coordinator.register("dup", otherMan, secondJar, List.of(otherLib)));
+            assertTrue(e.getMessage().startsWith("mcdepprovider:"), e.getMessage());
+            assertTrue(e.getMessage().contains("'dup'"), e.getMessage());
 
-            // The stranded loader is still fully alive — nothing closed it.
-            assertNotNull(first.loadClass("com.example.dupOne.Entry"));
+            assertSame(first, coordinator.loaderFor("dup"), "the first registration stays in place");
+            assertEquals(1, coordinator.allLoaders().size());
+            assertEquals(1, coordinator.libraryLoaders().size(), "the rejected call must not build a library loader");
+            assertNotNull(first.loadClass("com.example.dupOne.Entry"), "the first loader is still usable");
         } finally {
+            // Also closed directly: if a second loader ever replaced it, closeAll would miss it.
             if (first != null) first.close();
+            closeAll(coordinator);
+        }
+    }
+
+    @Test
+    void concurrentRegistrationsOfOneModIdLetExactlyOneWin(@TempDir Path tmp) throws Exception {
+        // The pre-check alone is check-then-act: threads arriving together can all pass it.
+        // The putIfAbsent behind it must still let exactly one of them win. (Racing test: it
+        // fails the old plain put every time, but cannot reliably tell a lost putIfAbsent from
+        // the pre-check, since the pre-check turns most losers away first.)
+        int threads = 8;
+        List<Path> jars = new ArrayList<>();
+        for (int i = 0; i < threads; i++) jars.add(modJar(tmp, "race" + i));
+        Manifest man = new Manifest("java", List.of(), List.of());
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        CyclicBarrier start = new CyclicBarrier(threads);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        List<ModClassLoader> winners = new ArrayList<>();
+        try {
+            List<Future<ModClassLoader>> results = new ArrayList<>();
+            for (Path jar : jars) {
+                results.add(pool.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    return coordinator.register("raced", man, jar, List.of());
+                }));
+            }
+            int rejected = 0;
+            for (Future<ModClassLoader> f : results) {
+                try {
+                    winners.add(f.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException ex) {
+                    assertInstanceOf(IllegalStateException.class, ex.getCause());
+                    rejected++;
+                }
+            }
+            assertEquals(1, winners.size(), "exactly one registration may succeed");
+            assertEquals(threads - 1, rejected);
+            assertSame(winners.get(0), coordinator.loaderFor("raced"));
+        } finally {
+            pool.shutdownNow();
+            for (ModClassLoader w : winners) w.close();
+            closeAll(coordinator);
+        }
+    }
+
+    @Test
+    void promotedLoaderIsNamedAfterTheFirstSortedSha(@TempDir Path tmp) throws Exception {
+        // The name is the diagnostic handle for the promoted stdlib in thread dumps and
+        // ClassCastException messages. It used to cut the key at index 10 behind a 9-char
+        // "promoted:" prefix, dropping the first hex digit of the SHA it claims to show.
+        Path a = libJar(tmp, "a.jar", "com/example/stdlib/A");
+        Path b = libJar(tmp, "b.jar", "com/example/stdlib/B");
+        String shaA = Sha256.hex(Files.readAllBytes(a));
+        String shaB = Sha256.hex(Files.readAllBytes(b));
+        String firstSorted = shaA.compareTo(shaB) <= 0 ? shaA : shaB;
+
+        LoaderCoordinator coordinator = new LoaderCoordinator(getClass().getClassLoader());
+        try {
+            URLClassLoader promoted = coordinator.buildSharedLibraryLoader(List.of(b, a), List.of(shaB, shaA));
+            assertEquals("mcdepprovider-promoted:" + firstSorted.substring(0, 16), promoted.getName());
+        } finally {
             closeAll(coordinator);
         }
     }

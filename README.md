@@ -96,6 +96,17 @@ Declared the normal platform way:
 
 Per-language details: **Scala** `object` resolves via `MODULE$`. **Kotlin** `object` resolves via `INSTANCE`. Class-form entries on either go through ctor dispatch.
 
+On Fabric, `value` also takes fabric-loader's member forms, with the same rules as its default adapter:
+
+| `value` | Result |
+|---|---|
+| `com.example.MyMod` | an instance of the class (the singleton for a Scala/Kotlin `object`) |
+| `com.example.MyMod::FIELD` | the value of a **static** field, which must be of the entrypoint type |
+| `com.example.MyMod::method` | a proxy of the entrypoint interface that calls `method`; there must be exactly one method of that name (no overloads), and the entrypoint type must be an interface |
+| `com.example.MyMod::<init>` | a proxy whose method constructs a new `MyMod` each call (the class needs exactly one constructor) |
+
+One difference from fabric-loader: an **instance** method is bound to the same object the class form produces, so on a Kotlin or Scala `object` it runs on `INSTANCE` / `MODULE$`, not on a fresh instance (whose constructor is private anyway). On a plain class it is a new instance from the no-arg constructor, as in Fabric. The class is always loaded through the mod's own classloader; members must be public.
+
 ## Mods with Mixins or annotation-driven side-loads
 
 Sponge Mixin is hosted by the game-layer classloader, but mod-private Scala/Kotlin classes live behind a per-mod `ModClassLoader` — so a mixin holding `import com.example.MyMod` throws `NoClassDefFoundError` at runtime. The same problem hits any class FML side-loads from class-level annotations: NeoForge's `@EventBusSubscriber` registrar calls `Class.forName(fqn)` against FML's loader, freezing the subscriber's defining loader at FML and locking it out of Scala/Kotlin stdlib too. mcdp closes both gaps automatically: the Gradle plugin scans seeded classes (mixins from `*.mixins.json` plus any class with a configured class-level annotation — defaults cover `@Mixin` and `@EventBusSubscriber`), emits a bridge interface plus a per-mod impl, rewrites method bodies and `INVOKEDYNAMIC LambdaMetafactory` sites to dispatch through bridges, and wires the impls in at mod load. You write plain Sponge-Common-style mixins or NeoForge-style subscribers with direct calls to your mod code — no annotations, no manual `sharedPackages` entries for ordinary call sites. Codegen is on by default; there is nothing to add to your build.

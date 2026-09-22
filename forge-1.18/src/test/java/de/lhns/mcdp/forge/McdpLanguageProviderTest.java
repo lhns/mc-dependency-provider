@@ -379,4 +379,27 @@ class McdpLanguageProviderTest {
             jos.closeEntry();
         }
     }
+
+    /**
+     * Once the body has registered the mod's loader, a retry cannot succeed — the coordinator and
+     * McdpProvider reject a second registration — so the retry must report the first failure,
+     * not an "already registered" that hides it. The lazy populator retries by design.
+     */
+    @Test
+    void aFailureAfterTheLoaderIsRegisteredIsWhatARetryReports(@TempDir Path tmp) throws Exception {
+        String modId = "retry_after_register_mod";
+        Path root = Files.createDirectories(tmp.resolve("retry"));
+        ForgeStubs.writeManifest(root, langOnly("java"));
+        Files.writeString(root.resolve("META-INF/mcdp-bridges.toml"), "this is [[ not toml");
+        IModInfo info = modInfo(modId, fileInfo(modFile(root, root::resolve), List.of()));
+
+        IllegalStateException first = assertThrows(IllegalStateException.class,
+                () -> McdpLanguageProvider.ensureRegistered(info));
+        assertNotNull(McdpProvider.loaderFor(modId),
+                "premise: the body failed after registering the loader");
+        IllegalStateException retry = assertThrows(IllegalStateException.class,
+                () -> McdpLanguageProvider.ensureRegistered(info));
+        assertSame(first, retry.getCause(),
+                "the retry must carry the first failure, got: " + retry);
+    }
 }

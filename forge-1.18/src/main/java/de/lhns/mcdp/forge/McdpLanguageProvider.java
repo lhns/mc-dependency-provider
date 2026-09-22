@@ -126,6 +126,13 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
      */
     private static final ConcurrentHashMap<String, Object> REGISTRATION_LOCKS = new ConcurrentHashMap<>();
 
+    /**
+     * Registrations whose body threw after the mod's loader was already registered, which makes
+     * them unretryable. See {@link #ensureRegistered}.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, RuntimeException>
+            FAILED_AFTER_REGISTER = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Override
     public String name() {
         return LANGUAGE_ID;
@@ -206,18 +213,32 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
         synchronized (REGISTRATION_LOCKS.computeIfAbsent(modId, k -> new Object())) {
             cached = REGISTERED.get(modId);
             if (cached != null) return cached;
-            return registerNow(info, modId);
+            RuntimeException earlier = FAILED_AFTER_REGISTER.get(modId);
+            if (earlier != null) {
+                throw new IllegalStateException("mcdepprovider: registration of " + modId
+                        + " already failed; its first failure is the cause", earlier);
+            }
+            try {
+                return registerNow(info, modId);
+            } catch (RuntimeException e) {
+                // Once the body got as far as registering the loader, a retry can never succeed:
+                // McdpProvider and LoaderCoordinator reject a second registration of the same
+                // modId. Remember the real failure so the retry reports it — the lazy populator
+                // retries by design — instead of an "already registered" that hides the cause.
+                // A failure before that point (a transient download error) stays retryable.
+                if (McdpProvider.loaderFor(modId) != null) FAILED_AFTER_REGISTER.put(modId, e);
+                throw e;
+            }
         }
     }
 
     /**
      * The body of {@link #ensureRegistered}, called under that mod's registration lock.
      * <p>
-     * It must not run twice for one modId: it ends in a plain
-     * {@link McdpProvider#registerMod(String, ModClassLoader)} put, so two concurrent runs would
-     * leave {@code McdpProvider} holding one {@code ModClassLoader} and {@link #REGISTERED} the
-     * other — splitting {@code Class} identity for that mod's auto-bridges, which resolve through
-     * {@code McdpProvider}.
+     * It must not run twice for one modId: {@link McdpProvider#registerMod(String, ModClassLoader)}
+     * and the coordinator reject a second registration of the same modId, so a second run fails —
+     * and before they did, it silently split {@code Class} identity for that mod's auto-bridges,
+     * which resolve through {@code McdpProvider}.
      */
     private static Registered registerNow(IModInfo info, String modId) {
         Path modFile = info.getOwningFile().getFile().getFilePath();

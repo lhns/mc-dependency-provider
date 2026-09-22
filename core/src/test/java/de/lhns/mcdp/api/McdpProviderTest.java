@@ -448,6 +448,46 @@ class McdpProviderTest {
     }
 
     /**
+     * A second registration of a modId used to replace the first loader silently, while mixin
+     * owners and auto-bridges registered against the first kept pointing at it. It is rejected,
+     * naming the mod, and the first registration stays in place.
+     */
+    @Test
+    void registerModRejectsASecondRegistrationOfTheSameModId() throws Exception {
+        try (ModClassLoader first = new ModClassLoader("dup-mod", new URL[0], getClass().getClassLoader(), List.of());
+             ModClassLoader second = new ModClassLoader("dup-mod", new URL[0], getClass().getClassLoader(), List.of())) {
+            McdpProvider.registerMod("dup-mod", first);
+
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> McdpProvider.registerMod("dup-mod", second));
+            assertTrue(ex.getMessage().startsWith("mcdepprovider:"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("'dup-mod'"), ex.getMessage());
+            assertSame(first, McdpProvider.loaderFor("dup-mod"), "the first registration must stay in place");
+
+            // Re-registering the very same loader is a second registration too.
+            assertThrows(IllegalStateException.class, () -> McdpProvider.registerMod("dup-mod", first));
+        }
+    }
+
+    /**
+     * {@code loaderForMixin} reads what {@code registerMixinOwner} recorded, and nothing else:
+     * with two mods registered it must name the owner, not the other mod, and it answers null for
+     * a mixin nobody registered (no single-mod or annotation fallback).
+     */
+    @Test
+    void loaderForMixinReturnsTheRegisteredOwnersLoader() throws Exception {
+        try (ModClassLoader decoy = new ModClassLoader("lfm-other", new URL[0], getClass().getClassLoader(), List.of());
+             ModClassLoader owner = new ModClassLoader("lfm-owner", new URL[0], getClass().getClassLoader(), List.of())) {
+            McdpProvider.registerMod("lfm-other", decoy);
+            McdpProvider.registerMod("lfm-owner", owner);
+            McdpProvider.registerMixinOwner("com.example.mixin.OwnedMixin", "lfm-owner");
+
+            assertSame(owner, McdpProvider.loaderForMixin("com.example.mixin.OwnedMixin"));
+            assertNull(McdpProvider.loaderForMixin("com.example.mixin.NobodysMixin"));
+        }
+    }
+
+    /**
      * Compile a tiny Java source that implements {@link Logic} and package it into a jar.
      * Uses {@link javax.tools.JavaCompiler} so we don't have to emit class-file bytes by hand.
      */

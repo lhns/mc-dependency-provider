@@ -2,6 +2,7 @@ package de.lhns.mcdp.core;
 
 import de.lhns.mcdp.deps.Manifest;
 
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -18,6 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Thread-safe; platform adapters can register mods from multiple threads during boot.
  */
 public final class LoaderCoordinator {
+
+    /** Prefix of a promoted loader's cache key; its loader name carries the first SHA's first 16 hex chars. */
+    private static final String PROMOTED_KEY_PREFIX = "promoted:";
 
     private final ClassLoader parent;
     private final Map<String, URLClassLoader> libraryLoaders = new ConcurrentHashMap<>();
@@ -71,10 +75,11 @@ public final class LoaderCoordinator {
         }
         List<String> sortedShas = new ArrayList<>(sha256s);
         Collections.sort(sortedShas);
-        String key = "promoted:" + String.join(",", sortedShas);
+        String key = PROMOTED_KEY_PREFIX + String.join(",", sortedShas);
         final URL[] urlsFinal = urls;
         return libraryLoaders.computeIfAbsent(key, k ->
-                new LibraryClassLoader("mcdepprovider-promoted:" + k.substring(10, Math.min(26, k.length())),
+                new LibraryClassLoader("mcdepprovider-promoted:" + k.substring(PROMOTED_KEY_PREFIX.length(),
+                        Math.min(PROMOTED_KEY_PREFIX.length() + 16, k.length())),
                         urlsFinal, parent));
     }
 
@@ -83,9 +88,16 @@ public final class LoaderCoordinator {
      * NeoForge {@code McdpLanguageLoader}) call this form directly so the stdlib-promoted parent
      * loader can be spliced in above the per-mod libs. The 3-arg and 4-arg overloads delegate here
      * with {@link #parent} as the library-loader parent and exist for tests and external callers.
+     *
+     * @throws IllegalStateException if {@code modId} already has a loader in this coordinator;
+     *         nothing is built in that case
      */
     public ModClassLoader register(String modId, Manifest manifest, List<Path> modPaths,
                                    List<Path> libraryJars, ClassLoader parentLibLoader) {
+        // Checked before anything is built, so a rejected duplicate leaves no loader behind.
+        // Every adapter registers each mod exactly once; a second registration used to replace
+        // the first loader while it stayed open and stayed referenced from McdpProvider.
+        if (modLoaders.containsKey(modId)) throw alreadyRegistered(modId);
         if (manifest.libraries().size() != libraryJars.size()) {
             throw new IllegalArgumentException(
                     "library-count mismatch: manifest=" + manifest.libraries().size() + ", paths=" + libraryJars.size());
@@ -132,8 +144,23 @@ public final class LoaderCoordinator {
         }
 
         ModClassLoader modCl = new ModClassLoader(modId, modUrls, libsLoader, manifest.sharedPackages());
-        modLoaders.put(modId, modCl);
+        // A concurrent register of the same modId can pass the check above too; the first
+        // putIfAbsent wins and the loser closes the loader it built before failing, so no
+        // loader is ever stranded. The shared library loader is cached, not stranded.
+        if (modLoaders.putIfAbsent(modId, modCl) != null) {
+            try {
+                modCl.close();
+            } catch (IOException ignored) {
+                // nothing loaded through it yet; a failed close leaves at most an open handle
+            }
+            throw alreadyRegistered(modId);
+        }
         return modCl;
+    }
+
+    private static IllegalStateException alreadyRegistered(String modId) {
+        return new IllegalStateException("mcdepprovider: a ModClassLoader for modId '" + modId
+                + "' is already registered; each mod may be registered only once");
     }
 
     public ModClassLoader loaderFor(String modId) {
