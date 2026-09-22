@@ -205,8 +205,16 @@ class ClassRefCollectorTest {
         assertTrue(refs.contains("com/example/Result"), refs.toString());
     }
 
+    /**
+     * LocalVariableTable descriptors are deliberately not collected: the JVM never resolves one
+     * (JVMS 4.7.13), so they can only produce false positives. This is not hypothetical --
+     * BridgeRewriter preserves the LVT verbatim, so a javac-compiled `T t = bridgedCall();` in a
+     * shared package kept an entry naming the mod-private T and failed a mod that runs clean.
+     *
+     * <p>Mutation caught: restoring the `m.localVariables` loop in {@link ClassRefCollector}.
+     */
     @Test
-    void collectsLocalVariableDescriptors() {
+    void doesNotCollectLocalVariableDescriptors() {
         Set<String> refs = refsOf(cw -> {
             MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "f", "()V", null, null);
             Label start = new Label(), end = new Label();
@@ -220,7 +228,8 @@ class ClassRefCollectorTest {
             mv.visitMaxs(4, 4);
             mv.visitEnd();
         });
-        assertTrue(refs.contains(MARKER), refs.toString());
+        assertFalse(refs.contains(MARKER),
+                "an LVT descriptor is debug-only and must not be collected: " + refs);
     }
 
     @Test

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "shared_mixin_example",
+  "version": "${version}",
+  "name": "mcdepprovider shared-mixin-package example",
+  "description": "Smoke-test mod whose sharedPackages names the package its mixins live in — the mc-fluid-physics configuration (ADR-0024 validator A + ADR-0018 codegen).",
+  "authors": ["mcdepprovider contributors"],
+  "license": "Apache-2.0",
+
+  "environment": "*",
+
+  "mixins": [
+    "shared_mixin_example.mixins.json"
+  ],
+
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "mcdepprovider",
+        "value": "com.example.sharedmixin.SharedMixinExampleEntry"
+      }
+    ]
+  },
+
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "mcdepprovider": "*"
+  }
+}

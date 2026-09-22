@@ -827,6 +827,48 @@ jobs:
             fi
           done
 
+      - name: Build shared-mixin-example — the consumer shape validator A never saw
+        # This mod shares the package its mixins live in, which is what mc-fluid-physics does
+        # and what no other in-tree mod does: every other one shares a dedicated
+        # `com.example.api`, and mixin-example deliberately shares nothing. Validator A had
+        # therefore never produced a non-trivial result in CI, and a false positive that failed
+        # a working consumer went unnoticed until someone pointed mcdp at a real mod.
+        #
+        # `build`, not just `runServer`: validateSharedPackages is wired to `check`, so a boot
+        # alone would not run it.
+        working-directory: test-mods/shared-mixin-example
+        shell: bash
+        run: ../../gradlew build --no-daemon --stacktrace
+
+      - name: Boot shared-mixin-example and assert every bridged shape applied
+        # The constructor shape fails at mixin-apply with a VerifyError, not at compile, so the
+        # boot is the only thing that can catch it. Each shape is its own mixin class because a
+        # mixin apply failure is per-class -- co-located, one broken shape would mask the others.
+        working-directory: test-mods/shared-mixin-example
+        shell: bash
+        run: |
+          python3 ../../scripts/mc_smoke.py \
+            --cwd . \
+            --task :runServer \
+            --timeout 900 \
+            --log-file ../../shared-mixin.log
+
+      - name: Assert the shared-mixin markers fired
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=shared-mixin.log
+          echo "=== [mcdp-smoke] lines ==="
+          grep '\[mcdp-smoke\]' "$LOG" | sort -u
+          MISSING=0
+          for shape in bridged-call-to-local bridged-call-on-stack ctor-to-local; do
+            grep -q "shared-mixin shape=$shape ok" "$LOG" || {
+              echo "ERROR: shape '$shape' did not apply"; MISSING=1; }
+          done
+          grep -q 'mod=shared_mixin_example boot ok' "$LOG" || {
+            echo "ERROR: the mod never initialised"; MISSING=1; }
+          [ "$MISSING" = 0 ] || exit 1
+
       - name: Upload logs + codegen report on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -834,6 +876,9 @@ jobs:
           name: mixin-codegen
           path: |
             mixin-codegen.log
+            shared-mixin.log
+            test-mods/shared-mixin-example/run/logs/**
+            test-mods/shared-mixin-example/run/crash-reports/**
             test-mods/mixin-example/run/logs/**
             test-mods/mixin-example/run/crash-reports/**
             test-mods/mixin-example/build/mcdp-bridges/**

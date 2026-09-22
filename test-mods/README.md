@@ -1,6 +1,6 @@
 # test-mods
 
-Twenty standalone example mods that exercise the full mcdp stack end to end.
+Twenty-one standalone example mods that exercise the full mcdp stack end to end.
 
 Each directory is its **own** Gradle build (Loom, ModDevGradle or ForgeGradle) that
 pulls mcdp in through composite-build `includeBuild("../..")` — they are not
@@ -14,8 +14,8 @@ explained below.
 
 ## Coverage
 
-Every mod here runs in CI. The workflows are canonical — this table follows their
-matrices, not the other way round.
+Every mod here runs in CI, with one exception noted in the table. The workflows are
+canonical — this table follows their matrices, not the other way round.
 
 | Mod | Loader / MC band | Lang | CI |
 |---|---|---|---|
@@ -23,6 +23,7 @@ matrices, not the other way round.
 | `fabric-example-v2` | Fabric 1.21.1 | scala | `version-isolation-fabric` (second mod, conflicting stdlib version) |
 | `neoforge-example` | NeoForge 21.1 / MC 1.21.1 | scala | `runserver-smoke` (push + nightly, incl. the NeoForge mixin-bridge assertion), `runclient-smoke` |
 | `mixin-example` | Fabric 1.21.1 | scala | `mixin-codegen-smoke` |
+| `shared-mixin-example` | Fabric 1.21.1 | java | not yet wired — see the mod's `README.md` |
 | `kotlin-example` | NeoForge 21.1 / MC 1.21.1 | kotlin | `ci.yml` build, `modcontainer-smoke`, `scripts/test-mods.sh` |
 | `scala-example` | no loader — manifest/jar only | scala | `ci.yml` build (Tier-1 manifest smoke) |
 | `fabric-example-1.17` | Fabric 1.17.1 | java | `runserver-smoke-bands`, `runclient-smoke` |

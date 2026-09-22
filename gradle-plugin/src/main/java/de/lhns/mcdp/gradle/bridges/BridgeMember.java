@@ -57,7 +57,14 @@ public final class BridgeMember {
             case STATIC_METHOD, VIRTUAL_METHOD, INTERFACE_METHOD -> name;
             case STATIC_FIELD_GET, INSTANCE_FIELD_GET -> "get_" + name;
             case STATIC_FIELD_SET, INSTANCE_FIELD_SET -> "set_" + name;
-            case CONSTRUCTOR -> "newInstance";
+            // "_new", not "newInstance", and for the same reason CLASS_LITERAL uses "_class":
+            // a method bridge keeps the target's own method name, so a plain identifier can
+            // collide. Now that a constructor bridge returns L<target>; rather than Object, a
+            // target with a static `newInstance()` factory returning itself would emit two
+            // members with an identical name and descriptor -- ClassFormatError: Duplicate
+            // method name. The leading underscore is not a Java method-name convention, so
+            // real code is very unlikely to claim it. The emitters do no name deduplication.
+            case CONSTRUCTOR -> "_new";
             case CLASS_LITERAL -> "_class";
         };
     }
@@ -94,12 +101,23 @@ public final class BridgeMember {
             case INSTANCE_FIELD_GET -> "(L" + ownerInternal + ";)" + descriptor;
             case STATIC_FIELD_SET -> "(" + descriptor + ")V";
             case INSTANCE_FIELD_SET -> "(L" + ownerInternal + ";" + descriptor + ")V";
-            // CONSTRUCTOR: original desc has return-type V; bridge returns the constructed
-            // instance as Object (the surrounding mixin code never holds it as the mod-private
-            // type — that would be an unbridgeable locals-typing case).
+            // CONSTRUCTOR: original desc has return-type V; the bridge returns the constructed
+            // instance as the target type, not as Object.
+            //
+            // This used to erase to Object, justified by "the surrounding mixin code never holds
+            // it as the mod-private type — that would be an unbridgeable locals-typing case".
+            // That case is detected only for CHECKCAST/INSTANCEOF/ANEWARRAY (BridgeScanner), and
+            // javac's `T t = new T(); t.f();` emits NEW/DUP/INVOKESPECIAL/ASTORE/ALOAD with no
+            // CHECKCAST at all. The slot then verified as Object while the following bridge call
+            // expected L<target>;, which is a VerifyError at mixin apply.
+            //
+            // Naming the target type here is consistent with every other Kind — an instance
+            // bridge already takes its receiver as L<target>; — and is safe for the same reason:
+            // resolving an invoke* does not load the descriptor's classes with the referencing
+            // class's loader. The impl already ARETURNs a real instance.
             case CONSTRUCTOR -> {
                 Type[] cargs = Type.getArgumentTypes(descriptor);
-                yield Type.getMethodDescriptor(Type.getObjectType("java/lang/Object"), cargs);
+                yield Type.getMethodDescriptor(Type.getObjectType(ownerInternal), cargs);
             }
             case CLASS_LITERAL -> "()Ljava/lang/Class;";
         };
