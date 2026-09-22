@@ -16,7 +16,6 @@ import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InnerClassNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
-import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
@@ -35,7 +34,7 @@ import java.util.Set;
  * {@code ConstantDynamic} constants, {@code INVOKEDYNAMIC} bootstrap methods and args,
  * {@code CHECKCAST}/{@code INSTANCEOF}/{@code NEW}/{@code ANEWARRAY} type operands, exception
  * table catch types, annotation values (including nested and {@code Class} members), type and
- * parameter annotations, local-variable descriptors, and the nest/inner/permitted-subclass/
+ * parameter annotations, and the nest/inner/permitted-subclass/
  * record-component tables.
  * <p>
  * Internal names are returned in JVM-internal form ({@code java/lang/String}). Caller
@@ -176,12 +175,17 @@ public final class ClassRefCollector {
                         collectFromAnnotations(tcb.invisibleTypeAnnotations, refs);
                     }
                 }
-                if (m.localVariables != null) {
-                    for (LocalVariableNode lv : m.localVariables) {
-                        if (lv.desc != null) addType(Type.getType(lv.desc), refs);
-                        if (lv.signature != null) collectFromSignature(lv.signature, refs);
-                    }
-                }
+                // LocalVariableTable is deliberately NOT collected. The JVM never resolves an
+                // LVT descriptor -- it is a debug attribute (JVMS 4.7.13) read only by debuggers
+                // and stack-walking tools -- so unlike a catch type or an LDC MethodType it
+                // cannot cause a load, and collecting it can only ever produce false positives.
+                // It cannot hide a real one either: any local typed T took its value from an
+                // instruction, and that instruction's owner, descriptor or CHECKCAST is already
+                // collected -- except when the producer is a bridge call, which is exactly the
+                // reference the bridge exists to make safe. That exception is why this matters:
+                // BridgeRewriter reads with SKIP_FRAMES and never touches localVariables, so a
+                // javac-compiled `T t = bridgedCall();` in a shared package kept an LVT entry
+                // naming T and failed a mod that runs clean.
                 collectFromAnnotations(m.visibleLocalVariableAnnotations, refs);
                 collectFromAnnotations(m.invisibleLocalVariableAnnotations, refs);
                 if (m.instructions != null) {

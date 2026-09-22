@@ -176,6 +176,55 @@ class BridgeRewriterEndToEndTest {
     }
 
     @Test
+    void constructorResultStoredInLocalIsUsableAsTheTargetType() throws Exception {
+        // The shape javac emits for `T t = new T(); t.val();` — the constructed value goes
+        // through a local slot and is then used as a receiver. Nothing declares the slot's type,
+        // so the verifier infers it from the instruction that produced the value: the bridge's
+        // return type. If that is erased to Object, the slot verifies as Object while the
+        // receiver bridge for val() expects L<target>; — a VerifyError at class link time.
+        //
+        // Deliberately no CHECKCAST anywhere: CHECKCAST on a mod-private type is what
+        // BridgeScanner flags as unbridgeable, so inserting one would divert this to a
+        // different code path and stop exercising the bug.
+        byte[] target = targetClassWithInstanceMethod("com/example/TargetK");
+        byte[] mixin = mixinClassConstructingIntoLocal("com/example/TargetK");
+
+        BridgeScanner scanner = new BridgeScanner(policy);
+        BridgeScanResult result = scanner.scan(mixin);
+        assertEquals(BridgeScanResult.Status.REWRITABLE, result.status());
+        // Guard the premise: no warning means the scanner saw nothing unbridgeable here, so the
+        // rewriter really is expected to produce working bytecode for this shape.
+        assertTrue(result.warnings().isEmpty(), "unexpected scanner warnings: " + result.warnings());
+
+        BridgeRewriter rewriter = new BridgeRewriter(policy, BRIDGE_PKG);
+        byte[] rewritten = rewriter.rewrite(mixin, result.targets());
+
+        BridgeInterfaceEmitter ifaceEmitter = new BridgeInterfaceEmitter(BRIDGE_PKG);
+        BridgeImplEmitter implEmitter = new BridgeImplEmitter(BRIDGE_PKG);
+        byte[] iface = ifaceEmitter.emit("com/example/TargetK",
+                result.targets().get("com/example/TargetK"));
+        byte[] impl = implEmitter.emit("com/example/TargetK",
+                result.targets().get("com/example/TargetK"));
+
+        Map<String, byte[]> classes = new HashMap<>();
+        classes.put("com.example.TargetK", target);
+        classes.put("com.example.MixinK", rewritten);
+        classes.put(ifaceEmitter.interfaceFqn("com/example/TargetK"), iface);
+        classes.put(implEmitter.implFqn("com/example/TargetK"), impl);
+
+        InMemLoader loader = new InMemLoader(classes, getClass().getClassLoader());
+        Class<?> mixinClass = loader.loadClass("com.example.MixinK");
+        Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetK"));
+        Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
+        McdpProvider.registerForTest("com.example.MixinK",
+                BridgeRewriter.logicFieldName("com/example/TargetK"), bridgeInstance);
+
+        // Invoking is the assertion that matters: it forces linking, hence verification.
+        Method handler = mixinClass.getDeclaredMethod("handler");
+        assertEquals(7, handler.invoke(null));
+    }
+
+    @Test
     void putStaticDispatchesThroughBridge() throws Exception {
         byte[] target = targetClassWithMutableStaticField("com/example/TargetS");
         byte[] mixin = mixinClassWritingThenReadingStatic("com/example/TargetS");
@@ -385,6 +434,58 @@ class BridgeRewriterEndToEndTest {
         mv.visitInsn(Opcodes.DUP);
         mv.visitMethodInsn(Opcodes.INVOKESPECIAL, targetInternal, "<init>", "()V", false);
         mv.visitInsn(Opcodes.ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+        MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        ctor.visitCode();
+        ctor.visitVarInsn(Opcodes.ALOAD, 0);
+        ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        ctor.visitInsn(Opcodes.RETURN);
+        ctor.visitMaxs(0, 0);
+        ctor.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] targetClassWithInstanceMethod(String internalName) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null,
+                "java/lang/Object", null);
+        // public int val() { return 7; }
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "val", "()I", null, null);
+        mv.visitCode();
+        mv.visitIntInsn(Opcodes.BIPUSH, 7);
+        mv.visitInsn(Opcodes.IRETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+        MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        ctor.visitCode();
+        ctor.visitVarInsn(Opcodes.ALOAD, 0);
+        ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        ctor.visitInsn(Opcodes.RETURN);
+        ctor.visitMaxs(0, 0);
+        ctor.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] mixinClassConstructingIntoLocal(String targetInternal) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/MixinK", null,
+                "java/lang/Object", null);
+        // public static int handler() { TargetK t = new TargetK(); return t.val(); }
+        // Round-tripping the instance through a local is the whole point: it is what makes the
+        // verifier record a type for the constructed value instead of consuming it immediately.
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                "handler", "()I", null, null);
+        mv.visitCode();
+        mv.visitTypeInsn(Opcodes.NEW, targetInternal);
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, targetInternal, "<init>", "()V", false);
+        mv.visitVarInsn(Opcodes.ASTORE, 0);
+        mv.visitVarInsn(Opcodes.ALOAD, 0);
+        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, targetInternal, "val", "()I", false);
+        mv.visitInsn(Opcodes.IRETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
         MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);

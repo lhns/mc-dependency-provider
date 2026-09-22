@@ -143,7 +143,7 @@ public final class BridgeImplEmitter {
                 mv.visitInsn(Opcodes.RETURN);
             }
             case CONSTRUCTOR -> {
-                // public Object newInstance(args) { return new T(args); }
+                // public T newInstance(args) { return new T(args); }
                 mv.visitTypeInsn(Opcodes.NEW, targetInternal);
                 mv.visitInsn(Opcodes.DUP);
                 int local = 1; // skip 'this'
