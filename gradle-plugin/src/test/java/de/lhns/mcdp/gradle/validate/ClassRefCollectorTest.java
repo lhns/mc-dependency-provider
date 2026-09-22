@@ -324,8 +324,124 @@ class ClassRefCollectorTest {
         assertFalse(refs.contains("[[I"), "raw array descriptor leaked: " + refs);
     }
 
+    // ---- bridge awareness (collect(ClassNode, String)) --------------------------------------
+
+    private static final String BRIDGE_PKG = "com.example.mcdp_bridges";
+    private static final String BRIDGE = "com/example/mcdp_bridges/ConfigBridge";
+
+    /**
+     * The one exemption: a call whose OWNER is a generated bridge carries the mod-private type it
+     * exists to reach in its own descriptor. The bridge is recorded, what it reaches is not.
+     *
+     * <p>Mutation caught: dropping the {@code isBridgeOwner} guard on the {@code MethodInsnNode}
+     * branch of {@link ClassRefCollector} (i.e. going back to an unconditional
+     * {@code addMethodType(mi.desc, refs)}) — the false positive this whole change exists to
+     * kill comes straight back.
+     */
+    @Test
+    void bridgeOwnedDescriptorTypesAreNotCollected() {
+        Set<String> refs = refsOf(BRIDGE_PKG, cw -> {
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "f", "()V", null, null);
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitTypeInsn(Opcodes.CHECKCAST, BRIDGE);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, BRIDGE, "isEnabledFor",
+                    "(L" + MARKER + ";)Z", true);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(2, 1);
+            mv.visitEnd();
+        });
+        assertFalse(refs.contains(MARKER), "bridge descriptor type leaked: " + refs);
+        assertTrue(refs.contains(BRIDGE), "bridge owner itself must stay collected: " + refs);
+    }
+
+    /**
+     * Same call, no bridge package configured: nothing is exempt. Guards against the exemption
+     * turning on by accident for callers that pass nothing (notably
+     * {@link CrossLoaderCastValidator}, which still uses the one-argument overload).
+     *
+     * <p>Mutation caught: making {@code bridgeOwnerPrefix(null)} fall back to a non-null value,
+     * or having {@code collect(ClassNode)} delegate with anything other than {@code null}.
+     */
+    @Test
+    void withoutABridgePackageNothingIsExempt() {
+        Set<String> refs = refsOf(cw -> {
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "f", "()V", null, null);
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitTypeInsn(Opcodes.CHECKCAST, BRIDGE);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, BRIDGE, "isEnabledFor",
+                    "(L" + MARKER + ";)Z", true);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(2, 1);
+            mv.visitEnd();
+        });
+        assertTrue(refs.contains(MARKER), "exemption applied with no bridge package: " + refs);
+    }
+
+    /**
+     * A {@code MethodHandle} constant naming a bridge method is NOT exempt: resolving a handle
+     * eagerly loads every class in its descriptor with the referencing class's loader, so unlike
+     * an invoke instruction it really would fail on the platform loader. (The rewriter never
+     * emits one — lambda sites become {@code INVOKEINTERFACE make(..)} — so this costs nothing.)
+     *
+     * <p>Mutation caught: pushing the bridge-owner check down into {@code addHandle} or
+     * {@code addConstant} "for symmetry", which would hide a genuine hard failure.
+     */
+    @Test
+    void bridgeOwnedMethodHandleDescriptorIsStillCollected() {
+        Set<String> refs = refsOf(BRIDGE_PKG, cw -> {
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "f", "()V", null, null);
+            mv.visitCode();
+            mv.visitLdcInsn(new Handle(Opcodes.H_INVOKEINTERFACE, BRIDGE, "isEnabledFor",
+                    "(L" + MARKER + ";)Z", true));
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(1, 1);
+            mv.visitEnd();
+        });
+        assertTrue(refs.contains(MARKER), "method-handle descriptor wrongly exempted: " + refs);
+    }
+
+    /**
+     * The sibling {@code <bridgePackage>_impl} package is not shared (ADR-0021 errata), so it
+     * gets no exemption — and neither does any other package that merely starts with the bridge
+     * package's spelling.
+     *
+     * <p>Mutation caught: dropping the trailing {@code '/'} from
+     * {@code ClassRefCollector.bridgeOwnerPrefix}, which would make {@code mcdp_bridges_impl}
+     * (and {@code mcdp_bridgesAnything}) match the prefix.
+     */
+    @Test
+    void implPackageGetsNoExemption() {
+        String impl = "com/example/mcdp_bridges_impl/ConfigBridgeImpl";
+        Set<String> refs = refsOf(BRIDGE_PKG, cw -> {
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "f", "()V", null, null);
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitTypeInsn(Opcodes.CHECKCAST, impl);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, impl, "isEnabledFor",
+                    "(L" + MARKER + ";)Z", false);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(2, 1);
+            mv.visitEnd();
+        });
+        assertTrue(refs.contains(MARKER), "_impl descriptor wrongly exempted: " + refs);
+        assertTrue(refs.contains(impl), "_impl owner must be collected: " + refs);
+    }
+
     /** Build a minimal class named {@code com/example/shared/Probe} configured by the caller. */
     private static Set<String> refsOf(Consumer<ClassWriter> body) {
+        return refsOf(null, body);
+    }
+
+    private static Set<String> refsOf(String bridgePackage, Consumer<ClassWriter> body) {
         ClassWriter cw = new ClassWriter(0);
         cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/shared/Probe", null,
                 "java/lang/Object", null);
@@ -338,6 +454,6 @@ class ClassRefCollectorTest {
         ctor.visitMaxs(1, 1);
         ctor.visitEnd();
         cw.visitEnd();
-        return ClassRefCollector.collect(cw.toByteArray());
+        return ClassRefCollector.collect(cw.toByteArray(), bridgePackage);
     }
 }

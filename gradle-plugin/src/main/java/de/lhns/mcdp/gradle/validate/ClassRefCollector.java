@@ -1,5 +1,6 @@
 package de.lhns.mcdp.gradle.validate;
 
+import de.lhns.mcdp.gradle.bridges.BridgePolicy;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ConstantDynamic;
 import org.objectweb.asm.Handle;
@@ -51,12 +52,61 @@ public final class ClassRefCollector {
     private ClassRefCollector() {}
 
     public static Set<String> collect(byte[] classBytes) {
+        return collect(classBytes, null);
+    }
+
+    /**
+     * @param bridgePackage dotted package the bridge codegen emits its interfaces into
+     *                      (trailing dot optional), or {@code null}/empty for no bridge
+     *                      awareness. See {@link #collect(ClassNode, String)}.
+     */
+    public static Set<String> collect(byte[] classBytes, String bridgePackage) {
         ClassNode cn = new ClassNode();
         new ClassReader(classBytes).accept(cn, 0);
-        return collect(cn);
+        return collect(cn, bridgePackage);
     }
 
     public static Set<String> collect(ClassNode cn) {
+        return collect(cn, null);
+    }
+
+    /**
+     * Bridge-aware walk. When {@code bridgePackage} is non-empty, the parameter/return types in
+     * the descriptor of an {@code INVOKE*} instruction <em>whose owner lives in that package</em>
+     * are not reported. Those descriptors are the one place where a mod-private
+     * type legitimately appears inside a shared class: the bridge codegen rewrites
+     * {@code config.isEnabledFor(..)} into
+     * {@code INVOKEINTERFACE ConfigBridge.isEnabledFor(LConfig;..)Z}, and {@code Config} is
+     * exactly the type the bridge exists to reach across the loader boundary. HotSpot does not
+     * load a descriptor's classes when it resolves an invoke instruction, so these never throw
+     * — {@code McdpProviderPlugin} already refuses to scan the generated bridge interfaces for
+     * the same reason; this closes the gap for the rewritten caller, which <em>is</em> scanned.
+     * <p>
+     * The exemption is deliberately confined to instruction operands:
+     * <ul>
+     *   <li>The <em>owner</em> is still recorded — the bridge interface itself must be
+     *       loadable, and it is, because the codegen auto-shares its package.</li>
+     *   <li>Any other appearance of the mod-private type (a {@code NEW}, a {@code CHECKCAST},
+     *       a field of that type, a method signature on the shared class, a catch type, an
+     *       annotation value) is still reported: those are genuine over-shares that the bridge
+     *       does not make safe.</li>
+     *   <li>{@code LDC MethodHandle}/{@code MethodType} constants are <em>not</em> exempted
+     *       even with a bridge owner. Unlike an invoke instruction, resolving a method handle
+     *       or method type eagerly loads every class in its descriptor with the referencing
+     *       class's loader, so such a reference really would fail on the platform loader. The
+     *       rewriter never emits one (lambda sites become {@code INVOKEINTERFACE make(..)}), so
+     *       nothing legitimate is lost.</li>
+     *   <li>The sibling {@code <bridgePackage>_impl} package is <em>not</em> covered: the
+     *       trailing {@code /} in the prefix excludes it by construction. Impls are
+     *       intentionally not shared (ADR-0021 errata) and are child-loaded by the per-mod
+     *       loader, so a shared class naming one is a real {@code NoClassDefFoundError}.</li>
+     * </ul>
+     *
+     * @param bridgePackage dotted bridge-interface package (trailing dot optional), or
+     *                      {@code null}/empty to disable the exemption entirely.
+     */
+    public static Set<String> collect(ClassNode cn, String bridgePackage) {
+        String bridgeOwnerPrefix = bridgeOwnerPrefix(bridgePackage);
         Set<String> refs = new LinkedHashSet<>();
 
         // Class header.
@@ -152,12 +202,23 @@ public final class ClassRefCollector {
                             addType(Type.getObjectType(t.desc), refs);
                         } else if (insn instanceof FieldInsnNode f) {
                             refs.add(f.owner);
+                            // No bridge exemption here on purpose: neither BridgeInterfaceEmitter
+                            // nor LambdaWrapperEmitter ever emits a field on a bridge type
+                            // (they emit interfaces; the rewriter turns every field access on a
+                            // bridged target into an INVOKEINTERFACE getter/setter). A GETFIELD
+                            // with a bridge owner therefore cannot come from the codegen, and
+                            // exempting it would only widen the hole for hand-written code.
                             addType(Type.getType(f.desc), refs);
                         } else if (insn instanceof MethodInsnNode mi) {
                             // `owner` is an array descriptor for array-member calls
                             // such as `arr.clone()`; same normalisation as above.
                             addType(Type.getObjectType(mi.owner), refs);
-                            addMethodType(mi.desc, refs);
+                            // A call routed through a generated bridge carries the mod-private
+                            // types it exists to reach in its descriptor. Record the bridge, not
+                            // what the bridge reaches. See collect(ClassNode, String).
+                            if (!isBridgeOwner(mi.owner, bridgeOwnerPrefix)) {
+                                addMethodType(mi.desc, refs);
+                            }
                         } else if (insn instanceof LdcInsnNode l) {
                             addConstant(l.cst, refs);
                         } else if (insn instanceof InvokeDynamicInsnNode idy) {
@@ -175,6 +236,25 @@ public final class ClassRefCollector {
         }
 
         return refs;
+    }
+
+    /**
+     * Normalize a dotted bridge package into an internal-name prefix with a trailing {@code /},
+     * or {@code null} when bridge awareness is off. The trailing separator is what keeps the
+     * sibling {@code <bridgePackage>_impl} package (and any {@code mcdp_bridgesOther} package)
+     * outside the exemption.
+     */
+    static String bridgeOwnerPrefix(String bridgePackage) {
+        if (bridgePackage == null) return null;
+        String p = bridgePackage.trim();
+        while (p.endsWith(".")) p = p.substring(0, p.length() - 1);
+        if (p.isEmpty()) return null;
+        return BridgePolicy.toInternal(p) + "/";
+    }
+
+    private static boolean isBridgeOwner(String ownerInternal, String bridgeOwnerPrefix) {
+        return bridgeOwnerPrefix != null && ownerInternal != null
+                && ownerInternal.startsWith(bridgeOwnerPrefix);
     }
 
     private static void addMethodType(String methodDesc, Set<String> refs) {

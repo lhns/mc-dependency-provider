@@ -4,8 +4,10 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
@@ -45,6 +47,17 @@ public abstract class ValidateSharedPackagesTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getCrossLoaderAnnotations();
 
+    /**
+     * The project's {@code bridges.bridgePackage}, or unset when bridge codegen is disabled.
+     * Validator A needs it to tell the auto-added bridge prefix apart from the user's own
+     * {@code sharedPackages} entries; a call routed through a generated bridge is not an
+     * over-share even though the bridge's descriptor names a mod-private type
+     * (see {@link SharedPackageContentValidator#SharedPackageContentValidator(List, String)}).
+     */
+    @Input
+    @Optional
+    public abstract Property<String> getBridgePackage();
+
     @TaskAction
     public void run() throws IOException {
         List<String> shared = getSharedPackages().get();
@@ -65,7 +78,7 @@ public abstract class ValidateSharedPackagesTask extends DefaultTask {
         List<Diagnostic> diagnostics = new ArrayList<>();
 
         // Validator A: over-share.
-        SharedPackageContentValidator overShare = new SharedPackageContentValidator(shared);
+        SharedPackageContentValidator overShare = new SharedPackageContentValidator(shared, getBridgePackage().getOrNull());
         for (byte[] b : classes) {
             diagnostics.addAll(overShare.validate(b));
         }
