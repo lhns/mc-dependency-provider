@@ -24,7 +24,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -34,21 +36,23 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Forge {@link IModLanguageProvider} for mcdp on MC 1.18.x (forgespi 4.0.x) and
- * MC 1.20.x (forgespi 7.x); this source is shared by both bands.
+ * Forge {@link IModLanguageProvider} for mcdp on MC 1.17.x and 1.18.x (forgespi 4.0.x),
+ * MC 1.19.x (forgespi 6.0.x) and MC 1.20.x (forgespi 7.x); this source is shared by all four
+ * Forge bands (forge-1.18 owns it, the others point their source sets here).
  * Discovered by Forge via
  * {@code META-INF/services/net.minecraftforge.forgespi.language.IModLanguageProvider}.
  * Mods opt in by setting {@code modLoader = "mcdepprovider"} in their {@code mods.toml}.
  *
- * <p>Lifecycle (per Forge FML's invocation order, identical on both bands):
+ * <p>Lifecycle (per Forge FML's invocation order, identical on all four bands):
  * <ol>
  *   <li>FML scans every mod jar's class file annotations into a {@link ModFileScanData}
  *       and invokes {@link #getFileVisitor()} once per mod jar that declares
- *       {@code modLoader = "mcdepprovider"}. The visitor reads the {@code @Mod}-annotated
+ *       {@code modLoader = "mcdepprovider"}. The visitor reads every {@code @Mod}-annotated
  *       entry class out of the scan data and registers an {@link IModLanguageLoader} for
- *       that mod ID.</li>
+ *       each of their mod IDs — one jar may declare several mods.</li>
  *   <li>FML then calls {@link IModLanguageLoader#loadMod(IModInfo, ModFileScanData,
- *       ModuleLayer)} per mod. We construct a {@link McdpModContainer} which extends
+ *       ModuleLayer)} per mod. We pick the {@code @Mod} class whose value is that mod's ID
+ *       and construct a {@link McdpModContainer} for it, which extends
  *       {@code net.minecraftforge.fml.ModContainer} and serves as FML's handle on
  *       the mod for lifecycle events.</li>
  * </ol>
@@ -90,8 +94,10 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
 
     /**
      * {@code net.minecraftforge.fml.loading.LoadingModList} lives in the {@code fmlloader}
-     * artifact, which is on <em>neither</em> band's compile classpath (verified: the class is
+     * artifact, which is on <em>no</em> Forge band's compile classpath (verified: the class is
      * absent from fmlcore 1.18.2-40.3.12 and 1.20.1-47.4.20, and from forgespi 4.0.11 / 7.1.6).
+     * fmlcore declares fmlloader as a runtime dependency only, so it <em>is</em> on each band's
+     * unit-test runtime classpath — where {@code get()} returns null, nothing having built it.
      * It is present at runtime on FML's boot layer, so we reach it reflectively. See ADR-0028.
      */
     private static final String LOADING_MOD_LIST_FQN = "net.minecraftforge.fml.loading.LoadingModList";
@@ -127,20 +133,51 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
 
     @Override
     public Consumer<ModFileScanData> getFileVisitor() {
-        // The scanData annotation set lists every annotation found across the mod jar; the
-        // @Mod-annotated class is the mod's entry point and its annotation value is the mod ID.
-        return scanData -> scanData.getAnnotations().stream()
-                .filter(a -> MOD_ANNOTATION_DESC.equals(a.annotationType().getDescriptor()))
-                .findFirst()
-                .ifPresent(a -> {
-                    String fqn = a.clazz().getClassName();
-                    Object value = a.annotationData().get("value");
-                    String modId = (value instanceof String s) ? s : fqn;
-                    LOG.info("mcdepprovider: discovered @Mod entry " + fqn + " for modId " + modId);
-                    // FML reads getTargets() per mod and dispatches loadMod through the loader
-                    // registered here for that mod ID.
-                    scanData.addLanguageLoader(Map.of(modId, new McdpModLanguageLoader()));
-                });
+        // The scanData annotation set lists every annotation found across the mod jar; each
+        // @Mod-annotated class is one mod's entry point and its annotation value is that mod's
+        // ID. A jar may declare several mods, so every @Mod gets a loader — registering only the
+        // first one found left the others with no loader at all.
+        return scanData -> {
+            Map<String, IModLanguageProvider.IModLanguageLoader> loaders = new LinkedHashMap<>();
+            for (ModFileScanData.AnnotationData a : scanData.getAnnotations()) {
+                if (!isModAnnotation(a)) continue;
+                String fqn = a.clazz().getClassName();
+                String modId = modIdOf(a);
+                LOG.info("mcdepprovider: discovered @Mod entry " + fqn + " for modId " + modId);
+                loaders.put(modId, new McdpModLanguageLoader());
+            }
+            // FML reads getTargets() per mod and dispatches loadMod through the loader
+            // registered here for that mod ID.
+            if (!loaders.isEmpty()) scanData.addLanguageLoader(loaders);
+        };
+    }
+
+    private static boolean isModAnnotation(ModFileScanData.AnnotationData a) {
+        return MOD_ANNOTATION_DESC.equals(a.annotationType().getDescriptor());
+    }
+
+    /** The {@code @Mod} value; the class name for the (invalid) value-less annotation. */
+    private static String modIdOf(ModFileScanData.AnnotationData a) {
+        Object value = a.annotationData().get("value");
+        return (value instanceof String s) ? s : a.clazz().getClassName();
+    }
+
+    /**
+     * The entry class for {@code modId}: the {@code @Mod} class whose value is that ID. Taking
+     * the first {@code @Mod} instead would hand every mod of a multi-mod jar the same (arbitrary)
+     * entry class: the annotation set is in class-scan order, which says nothing about mods.
+     */
+    static String entryClassFor(String modId, ModFileScanData scanResults) {
+        List<String> others = new ArrayList<>();
+        for (ModFileScanData.AnnotationData a : scanResults.getAnnotations()) {
+            if (!isModAnnotation(a)) continue;
+            String id = modIdOf(a);
+            if (id.equals(modId)) return a.clazz().getClassName();
+            others.add(id);
+        }
+        throw new IllegalStateException("mcdepprovider: no @Mod(\"" + modId
+                + "\")-annotated class in the mod file of " + modId
+                + (others.isEmpty() ? "" : " (it declares @Mod for " + others + ")"));
     }
 
     @Override
@@ -336,16 +373,7 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
                 promotionSelection = Collections.emptyMap();
                 return;
             }
-            List<Manifest> allManifests = new ArrayList<>(mods.size());
-            for (IModInfo info : mods) {
-                Path modFile = info.getOwningFile().getFile().getFilePath();
-                Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
-                try {
-                    allManifests.add(readManifest(modFile, resource, info.getModId()));
-                } catch (IllegalStateException ignored) {
-                    // Skip mods we can't parse; ensureRegistered fails loud when they come through.
-                }
-            }
+            List<Manifest> allManifests = manifestsForPromotion(mods);
 
             Map<String, Manifest.Library> selected = PROMOTION_POLICY.selectPromotions(allManifests);
             if (!selected.isEmpty()) {
@@ -374,12 +402,56 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
     }
 
     /**
+     * Every mod's manifest that can take part in the promotion selection, in {@code mods} order.
+     *
+     * <p>A mod whose manifest cannot be read, or whose library coordinates the selection cannot
+     * parse, is left out with a warning rather than failing the whole pass. The selection is
+     * computed once for everyone and cached only on success, so one broken manifest escaping
+     * here would fail every mcdp mod's registration, not just its own. What reaches this method
+     * is not only {@link IllegalStateException}: {@link ManifestIo} throws
+     * {@link ClassCastException} for a wrongly-typed field, {@link Manifest.Library} throws
+     * {@link IllegalArgumentException} for a short SHA-256, {@link StdlibPromotion#stemOf} for a
+     * coordinate without a version, and the jar-filesystem fallback can throw
+     * {@code ProviderNotFoundException}. The excluded mod's own {@link #ensureRegistered} call
+     * reads the same manifest again and fails loudly, naming it.
+     */
+    static List<Manifest> manifestsForPromotion(List<IModInfo> mods) {
+        List<Manifest> out = new ArrayList<>(mods.size());
+        for (IModInfo info : mods) {
+            String modId = modIdForLog(info);
+            try {
+                Path modFile = info.getOwningFile().getFile().getFilePath();
+                Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+                Manifest manifest = readManifest(modFile, resource, modId);
+                // Selecting over this manifest alone parses every library coordinate, so a bad
+                // one surfaces here, attributed to this mod, instead of inside the shared pass.
+                PROMOTION_POLICY.selectPromotions(List.of(manifest));
+                out.add(manifest);
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "mcdepprovider: leaving " + modId
+                        + " out of stdlib promotion: its " + MANIFEST_PATH
+                        + " is unusable (" + e + "); its own registration will fail on it", e);
+            }
+        }
+        return out;
+    }
+
+    /** {@code info.getModId()} for a log line, which must not itself throw. */
+    private static String modIdForLog(IModInfo info) {
+        try {
+            return info.getModId();
+        } catch (RuntimeException e) {
+            return "<mod with unreadable id>";
+        }
+    }
+
+    /**
      * Every {@code modLoader = "mcdepprovider"} mod FML knows about, or an empty list when the
      * mod list isn't reachable. Reflective because {@code LoadingModList} is in {@code fmlloader}
      * (see {@link #LOADING_MOD_LIST_FQN}); the elements are plain {@code IModInfo}, which
-     * <em>is</em> a compile-time type from forgespi on both bands.
+     * <em>is</em> a compile-time type from forgespi on every band.
      */
-    private static List<IModInfo> allMcdpMods() {
+    static List<IModInfo> allMcdpMods() {
         try {
             Class<?> lml = loadLoadingModList();
             Method get = lml.getMethod("get");
@@ -419,7 +491,7 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
      * {@link IModFileInfo#requiredLanguageLoaders()}. Falls back to the presence of
      * {@link #MANIFEST_PATH} for mod files whose language spec isn't populated yet.
      */
-    private static boolean isMcdpMod(IModInfo info) {
+    static boolean isMcdpMod(IModInfo info) {
         try {
             IModFileInfo fileInfo = info.getOwningFile();
             if (fileInfo == null) return false;
@@ -429,11 +501,17 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
             Path manifest = fileInfo.getFile().findResource(MANIFEST_PATH);
             return manifest != null && Files.isRegularFile(manifest);
         } catch (RuntimeException e) {
+            // Not silent: if this is an mcdp mod, it now drops out of the promotion selection
+            // while stripPromoted still strips its stdlib stems by name — so it runs against
+            // whatever promoted version the other mods picked, possibly older than its own.
+            LOG.log(Level.WARNING, "mcdepprovider: could not tell whether " + modIdForLog(info)
+                    + " is an mcdp mod; leaving it out of stdlib promotion (if it is one, it"
+                    + " will run on the stdlib version selected for the other mods)", e);
             return false;
         }
     }
 
-    private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
+    static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
         try {
             // Dev runs: `modFile` is a source-set output dir; `manifestResource` points at the
             // unified resources view. Production: `modFile` is a jar and `manifestResource` is a
@@ -475,9 +553,9 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
      *
      * <p>Deliberately <em>not</em> wired to FML's {@code ProgressMeter}: that type lives in
      * {@code net.minecraftforge.fml.loading.progress}, i.e. in {@code fmlloader}, which is on
-     * neither band's compile classpath (ADR-0027, ADR-0028).
+     * no Forge band's compile classpath (ADR-0027, ADR-0028).
      */
-    private static final class JulProgressListener implements ProgressListener {
+    static final class JulProgressListener implements ProgressListener {
 
         private final String modId;
         private long startNanos;
@@ -519,8 +597,9 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
 
         static String humanBytes(long bytes) {
             if (bytes < 1024) return bytes + " B";
-            if (bytes < 1024L * 1024L) return String.format("%.1f KB", bytes / 1024.0);
-            return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+            // Locale.ROOT: the default locale would log "1,5 KB" on a de_DE machine.
+            if (bytes < 1024L * 1024L) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+            return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
         }
     }
 
@@ -535,12 +614,7 @@ public final class McdpLanguageProvider implements IModLanguageProvider {
         @SuppressWarnings("unchecked")
         @Override
         public <T> T loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
-            String entryFqn = scanResults.getAnnotations().stream()
-                    .filter(a -> MOD_ANNOTATION_DESC.equals(a.annotationType().getDescriptor()))
-                    .findFirst()
-                    .map(a -> a.clazz().getClassName())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "mcdepprovider: no @Mod-annotated class in " + info.getModId()));
+            String entryFqn = entryClassFor(info.getModId(), scanResults);
             // Per-mod registration (manifest read, library resolution, ModClassLoader build)
             // runs via ensureRegistered, from McdpModContainer's constructor.
             return (T) new McdpModContainer(info, entryFqn);

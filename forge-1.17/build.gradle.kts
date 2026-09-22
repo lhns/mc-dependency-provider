@@ -19,6 +19,9 @@ sourceSets {
         java.setSrcDirs(listOf(rootProject.file("forge-1.18/src/main/java")))
         resources.setSrcDirs(listOf("src/main/resources"))
     }
+    test {
+        java.setSrcDirs(listOf(rootProject.file("forge-1.18/src/test/java")))
+    }
 }
 
 dependencies {
@@ -38,8 +41,15 @@ dependencies {
     compileOnly(libs.asm)
     compileOnly(libs.maven.artifact)
 
+    // The shared unit tests (forge-1.18/src/test/java) run on this band's own coordinates; see
+    // forge-1.18/build.gradle.kts for why each of these is needed at test runtime.
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
-    testCompileOnly(libs.forge.spi.mc117)
-    testCompileOnly(libs.forge.fmlcore.mc117)
+    testImplementation(project(":core"))
+    testImplementation(project(":deps-lib"))
+    testImplementation(libs.forge.spi.mc117)
+    testImplementation(libs.forge.fmlcore.mc117)
+    testImplementation(libs.forge.eventbus.mc117)
+    testImplementation(libs.asm)
+    testImplementation(libs.maven.artifact)
 }

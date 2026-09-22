@@ -16,8 +16,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Forge {@code ModContainer} subclass for mcdp-loaded mods, shared by the MC 1.18.x
- * (forgespi 4.0.x / fmlcore 1.18.2) and MC 1.20.x (forgespi 7.x / fmlcore 1.20.1) bands.
+ * Forge {@code ModContainer} subclass for mcdp-loaded mods, shared by all four Forge bands:
+ * MC 1.17.x and 1.18.x (forgespi 4.0.x, eventbus 5.0.7), MC 1.19.x (forgespi 6.0.x) and
+ * MC 1.20.x (forgespi 7.x) — the last two on eventbus 6.x.
  * Constructed by {@link McdpLanguageProvider.McdpModLanguageLoader#loadMod} once per mod
  * that declares {@code modLoader = "mcdepprovider"} in its {@code mods.toml}.
  *
@@ -38,9 +39,11 @@ import java.util.logging.Logger;
  * onto that bus. Failures throw {@link IllegalStateException} with the mod ID in the message;
  * FML surfaces these in the loading-screen error sheet.
  *
- * <p><b>Status:</b> the 1.20 band is runtime-verified — {@code forge-example-1.20} boots in CI.
- * The 1.18 band has no CI cell yet and is compile-verified only; the source is shared, but the
- * forgespi 4.0.x / eventbus 5.0.7 pairing has not been exercised at runtime.
+ * <p><b>Status:</b> all four bands are runtime-verified — {@code forge-example-1.17},
+ * {@code -1.18}, {@code -1.19} and {@code -1.20} each boot a server in CI (the nightly
+ * {@code runserver-smoke-bands} job in {@code mc-smoke.yml}),
+ * so both the eventbus 5.0.7 and the 6.x pairing are exercised. The unit tests run on all four
+ * bands as well: each sibling points its test source set at this band's.
  *
  * <p><b>Known limitation.</b> {@code FMLJavaModLoadingContext.get()} does not work through mcdp
  * on Forge: its constructor is package-private in {@code javafmllanguage}, so
@@ -82,8 +85,10 @@ public final class McdpModContainer extends ModContainer {
         }
 
         // Per-mod mod-event bus. Same recipe as vanilla FMLModContainer, restricted to the
-        // BusBuilder methods that exist identically on eventbus 5.0.7 (1.18) and 6.x (1.20):
-        // builder(), setExceptionHandler(), markerType(), build().
+        // BusBuilder methods that exist on both eventbus 5.0.7 (1.17/1.18) and 6.x (1.19/1.20):
+        // builder(), setExceptionHandler(), markerType(), build(). Same source, not the same
+        // bytecode: BusBuilder is a class on 5.0.7 and an interface on 6.x, so each band has to
+        // compile this against its own eventbus.
         this.eventBus = BusBuilder.builder()
                 .setExceptionHandler((bus, event, listeners, index, throwable) -> {
                     // Vanilla Forge only logs here. mcdp propagates as well, so a listener
@@ -123,8 +128,19 @@ public final class McdpModContainer extends ModContainer {
         Object[] bag = (dist != null)
                 ? new Object[] { eventBus, this, dist }
                 : new Object[] { eventBus, this };
+        EntrypointAdapter adapter;
         try {
-            this.mod = EntrypointAdapter.forLang(lang).construct(entryClass, bag);
+            adapter = EntrypointAdapter.forLang(lang);
+        } catch (IllegalArgumentException e) {
+            // An unknown `lang` in the mod's manifest. Wrapped like every other failure here, so
+            // FML's error sheet names the mod instead of showing a bare "unsupported lang".
+            throw new IllegalStateException("mcdepprovider: failed to instantiate entrypoint "
+                    + entryFqn + " for mod " + getModId() + ": its "
+                    + McdpLanguageProvider.MANIFEST_PATH + " declares lang = \"" + lang
+                    + "\", which mcdp does not support (" + e.getMessage() + ")", e);
+        }
+        try {
+            this.mod = adapter.construct(entryClass, bag);
         } catch (ReflectiveOperationException | LinkageError e) {
             throw new IllegalStateException("mcdepprovider: failed to instantiate entrypoint "
                     + entryFqn + " for mod " + getModId() + ": " + e, e);
