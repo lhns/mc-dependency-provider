@@ -19,6 +19,7 @@ import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModLanguageLoader;
 import net.neoforged.neoforgespi.language.ModFileScanData;
 
+import java.lang.annotation.ElementType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,13 +32,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * NeoForge language loader. Registered via
+ * NeoForge language loader for the MC 1.20.6 band (NeoForge 20.6.x, fancymodloader loader
+ * 3.0.x). Registered via
  * {@code META-INF/services/net.neoforged.neoforgespi.language.IModLanguageLoader}.
  * <p>
- * FML 4.0.x discovers language loaders on the PLUGIN module layer — the jar carrying this
+ * FML 3.0.x discovers language loaders on the PLUGIN module layer — the jar carrying this
  * class must declare {@code FMLModType: LIBRARY} in its manifest and must <em>not</em>
  * ship a {@code neoforge.mods.toml} (that would classify it as a MOD instead of a LIBRARY).
  * Mods opt in via their own mods.toml: {@code modLoader = "mcdepprovider"}.
+ *
+ * <p>Apart from this comment, the file is identical to the 1.21.1 band's ({@code neoforge/}),
+ * and the two bands share one test suite ({@code neoforge/src/test/java}). Loader 3.0.45 — what
+ * NeoForge 20.6 runs — bundles the same {@code neoforgespi} shape as 4.0.x:
+ * {@code IModInfo.getLoader()}, {@code ModFileScanData.getAnnotatedBy} and
+ * {@code IModFile.findResource} are all there, and {@code IModFile.getLoaders()} is not. This
+ * band once compiled against the standalone {@code neoforgespi:8.0.4} instead, whose
+ * {@code getLoaders()} walk linked against nothing at runtime ({@code NoSuchMethodError}).
+ * The one genuine 1.20.6 difference lives in {@link McdpModContainer}
+ * ({@code contextExtension}).
  */
 public final class McdpLanguageLoader implements IModLanguageLoader {
 
@@ -71,10 +83,10 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     @Override
     public ModContainer loadMod(IModInfo info, ModFileScanData scanResults, ModuleLayer gameLayer) {
         String modId = info.getModId();
-        // Idempotent path: classloader + bridges may already be registered if the eager static
-        // block at the bottom of this class walked LoadingModList successfully (the only way
-        // mods whose mixins fire during MC's Bootstrap.bootStrap can register before
-        // Blocks.<clinit>). loadMod is still called by FML; we just skip the redundant work.
+        // Idempotent path: classloader + bridges may already be registered if the lazy populator
+        // installed at the bottom of this class walked LoadingModList first (the only way mods
+        // whose mixins fire during MC's Bootstrap.bootStrap can register before Blocks.<clinit>).
+        // loadMod is still called by FML; we just skip the redundant work.
         Registered reg = ensureRegistered(info);
 
         // Mirror FMLModContainer's lifecycle: return an un-constructed container; FML drives
@@ -108,14 +120,15 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
      *
      * <p>This method is called from two places:
      * <ol>
-     *   <li>The eager static block at the bottom of this class, which walks {@link
-     *       LoadingModList} during early FML init. Mods whose mixins fire during MC's
-     *       {@code Bootstrap.bootStrap} (i.e. before FML reaches the {@link #loadMod} dispatch
-     *       phase) need their bridges registered before {@code Blocks.<clinit>} runs.
-     *   <li>{@link #loadMod} itself, which FML calls per-mod after MC bootstrap. For mods whose
-     *       eager-walk path completed, this is a cache hit; for mods that arrived too late for
-     *       the eager walk (e.g. PLUGIN-layer libraries discovered post-init), this is the
-     *       canonical registration.
+     *   <li>The lazy populator installed at the bottom of this class, which walks {@link
+     *       LoadingModList} on the first auto-bridge registry miss during early FML init. Mods
+     *       whose mixins fire during MC's {@code Bootstrap.bootStrap} (i.e. before FML reaches
+     *       the {@link #loadMod} dispatch phase) need their bridges registered before
+     *       {@code Blocks.<clinit>} runs.
+     *   <li>{@link #loadMod} itself, which FML calls per-mod after MC bootstrap. For mods the
+     *       populator already walked, this is a cache hit; for mods that arrived too late for it
+     *       (e.g. PLUGIN-layer libraries discovered post-init), this is the canonical
+     *       registration.
      * </ol>
      */
     private static Registered ensureRegistered(IModInfo info) {
@@ -199,25 +212,17 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         if (promotionSelection != null) return;
         synchronized (PROMOTION_LOCK) {
             if (promotionSelection != null) return;
-            List<Manifest> allManifests = new ArrayList<>();
-            try {
-                for (IModInfo info : LoadingModList.get().getMods()) {
-                    if (!isMcdpMod(info)) continue;
-                    Path modFile = info.getOwningFile().getFile().getFilePath();
-                    Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
-                    try {
-                        allManifests.add(readManifest(modFile, resource, info.getModId()));
-                    } catch (IllegalStateException ignored) {
-                        // skip mods we can't parse; loadMod will fail loud when they come through
-                    }
-                }
-            } catch (Throwable t) {
-                // If LoadingModList isn't accessible yet or throws, fall back to no-promotion.
+            LoadingModList list = LoadingModList.get();
+            if (list == null) {
+                // Unreachable in a real boot — loadMod and the lazy populator both run after FML
+                // has built the list — so this is a unit test or an FML change. Promotion needs
+                // every mod's manifest, so without the list the only safe choice is none at all.
+                LOG.warn("mcdepprovider: LoadingModList is not built; stdlib promotion is disabled");
                 promotionSelection = Collections.emptyMap();
                 return;
             }
 
-            Map<String, Manifest.Library> selected = PROMOTION_POLICY.selectPromotions(allManifests);
+            Map<String, Manifest.Library> selected = selectPromotions(list.getMods());
             if (!selected.isEmpty()) {
                 List<Path> jars = new ArrayList<>(selected.size());
                 List<String> shas = new ArrayList<>(selected.size());
@@ -237,20 +242,64 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     }
 
     /**
+     * The promotion selection over FML's mod list: one winning {@link Manifest.Library} per
+     * promoted stem, across every mcdepprovider mod whose manifest can take part.
+     *
+     * <p>A mod whose manifest cannot be read — corrupt TOML, a wrongly-typed field, a short
+     * SHA-256, a coordinate without a version — is left out with a WARN naming it, and nothing
+     * else changes. It used to take everyone down with it: the whole walk sat under one
+     * {@code catch (Throwable)} that fell back to an empty selection, so a single bad manifest
+     * silently turned promotion off for every mod. The excluded mod still fails loudly, in its
+     * own {@link #registerNow}, which reads the same manifest.
+     *
+     * <p>Each manifest is also run through {@link StdlibPromotion#selectPromotions} on its own:
+     * that is where a versionless coordinate throws, and doing it per mod keeps the throw
+     * attributable to the mod that caused it rather than to the combined selection below.
+     * Package-private for tests.
+     */
+    static Map<String, Manifest.Library> selectPromotions(List<? extends IModInfo> mods) {
+        List<Manifest> manifests = new ArrayList<>();
+        for (IModInfo info : mods) {
+            String modId = info.getModId();
+            try {
+                if (!isMcdpMod(info)) continue;
+                Path modFile = info.getOwningFile().getFile().getFilePath();
+                Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+                Manifest manifest = readManifest(modFile, resource, modId);
+                PROMOTION_POLICY.selectPromotions(List.of(manifest));
+                manifests.add(manifest);
+            } catch (RuntimeException e) {
+                LOG.warn("mcdepprovider: leaving {} out of stdlib promotion, its manifest is "
+                        + "unusable (its own registration will fail with the details): {}",
+                        modId, e.toString());
+            }
+        }
+        return PROMOTION_POLICY.selectPromotions(manifests);
+    }
+
+    /** Whether FML matched this mod to our language loader. Package-private for tests. */
+    static boolean isMcdpMod(IModInfo info) {
+        return LANGUAGE_ID.equals(info.getLoader().name());
+    }
+
+    /**
      * Pre-register mixin class FQNs → owning modId from this mod's {@code neoforge.mods.toml}
      * {@code [[mixins]]} entries (ADR-0008 path 2). Uses FML's own {@link IConfigurable} view so we
      * don't re-parse the TOML. Silent on any failure — the annotation {@code modId} path (path 1)
      * stays primary.
+     *
+     * @return the FQNs registered, for tests; empty when nothing was
      */
-    private static void registerMixinOwnersForNeoForgeMod(IModInfo info, String modId) {
+    static List<String> registerMixinOwnersForNeoForgeMod(IModInfo info, String modId) {
+        List<String> registered = new ArrayList<>();
         try {
             IConfigurable fileConfig = info.getOwningFile().getConfig();
-            if (fileConfig == null) return;
+            if (fileConfig == null) return registered;
             List<String> configPaths = new ArrayList<>();
             for (IConfigurable entry : fileConfig.getConfigList("mixins")) {
                 entry.<String>getConfigElement("config").ifPresent(configPaths::add);
             }
-            if (configPaths.isEmpty()) return;
+            if (configPaths.isEmpty()) return registered;
 
             List<Path> resolved = new ArrayList<>(configPaths.size());
             List<String> relative = new ArrayList<>(configPaths.size());
@@ -263,12 +312,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 }
             }
             for (int k = 0; k < resolved.size(); k++) {
-                MixinConfigScanner.registerMixinOwnersFromConfigs(
-                        modId, List.of(resolved.get(k)), List.of(relative.get(k)));
+                registered.addAll(MixinConfigScanner.registerMixinOwnersFromConfigs(
+                        modId, List.of(resolved.get(k)), List.of(relative.get(k))));
             }
         } catch (IllegalStateException | IllegalArgumentException | ClassCastException ignored) {
             // FML IConfigurable surface — wrong types or missing keys throw these.
         }
+        return registered;
     }
 
     private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
@@ -307,29 +357,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     }
 
     /**
-     * 8.0.x-compatible "is this mod loaded by mcdepprovider?" check. The 9.0.x SPI added
-     * {@code IModInfo.getLoader()} for this — earlier the only path was via
-     * {@code IModInfo.getOwningFile().getFile().getLoaders()} (returns the
-     * {@code List<IModLanguageProvider>} resolved against the mod jar's
-     * {@code requiredLanguageLoaders} declaration). Match by provider {@code name()}.
-     */
-    private static boolean isMcdpMod(IModInfo info) {
-        return info.getOwningFile().getFile().getLoaders().stream()
-                .anyMatch(p -> LANGUAGE_ID.equals(p.name()));
-    }
-
-    /**
      * Discover the entry class via {@code @Mod("modid")} annotation in the mod's scan results —
      * the same mechanism FML's vanilla {@code javafmlmod} loader uses. Mods declare exactly as
      * they would on a regular NeoForge mod; the only difference vs vanilla is
      * {@code modLoader = "mcdepprovider"} in {@code neoforge.mods.toml}.
      */
     private static Class<?> loadEntryClass(ModFileScanData scanResults, ModClassLoader loader, String modId) {
-        // 8.0.x SPI: ModFileScanData.getAnnotatedBy(...) was added in 9.0.x. Walk
-        // getAnnotations() and filter manually.
-        String modAnnoDesc = "Lnet/neoforged/fml/common/Mod;";
-        String fqn = scanResults.getAnnotations().stream()
-                .filter(a -> modAnnoDesc.equals(a.annotationType().getDescriptor()))
+        String fqn = scanResults.getAnnotatedBy(Mod.class, ElementType.TYPE)
                 .filter(a -> modId.equals(a.annotationData().get("value")))
                 .map(a -> a.clazz().getClassName())
                 .findFirst()
@@ -344,30 +378,43 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         }
     }
 
+    /**
+     * The lazy populator's body: walk {@link LoadingModList} and run {@link #ensureRegistered}
+     * for every mcdepprovider mod, populating both the per-mod ModClassLoader (via
+     * LoaderCoordinator) and the bridge registry. Package-private for tests.
+     *
+     * <p>A list that is not built yet is <em>thrown</em>, not returned from: McdpProvider marks
+     * its populator as done only when it returns normally, so a quiet return here would make
+     * every later bridge-registry miss report "no auto-bridge registered" instead of populating
+     * the registry once the list exists. Thrown, the populator stays retryable.
+     */
+    static void populateFromLoadingModList() {
+        LoadingModList list = LoadingModList.get();
+        if (list == null) {
+            throw new IllegalStateException("mcdepprovider: LoadingModList is not built yet; "
+                    + "the bridge registry will be populated on the next miss");
+        }
+        for (IModInfo info : list.getMods()) {
+            if (!isMcdpMod(info)) continue;
+            try {
+                ensureRegistered(info);
+            } catch (Throwable t) {
+                LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
+                        info.getModId(), t.getMessage());
+            }
+        }
+    }
+
     // Lazy populator wiring. `LoadingModList.get()` returns null at McdpLanguageLoader.<clinit>
     // time (we tested — FML constructs the LanguageProviderLoader before populating
     // LoadingModList.INSTANCE). So we can't eagerly walk now. Instead we INSTALL a populator
     // into McdpProvider that fires on the first registry miss. By the time a rewritten mixin's
     // <clinit> calls resolveAutoBridgeImpl during Bootstrap.bootStrap, LoadingModList IS
-    // populated even though FML hasn't reached its loadMod dispatch phase yet. The populator
-    // walks the list and runs ensureRegistered() for every mcdepprovider mod, populating both
-    // the per-mod ModClassLoader (via LoaderCoordinator) and the bridge registry.
+    // populated even though FML hasn't reached its loadMod dispatch phase yet.
     //
     // FML still calls our loadMod later for each mod; ensureRegistered is idempotent via the
     // REGISTERED cache, so loadMod is a no-op for mods the populator already handled.
     static {
-        McdpProvider.installLazyPopulator(() -> {
-            LoadingModList list = LoadingModList.get();
-            if (list == null) return;
-            for (IModInfo info : list.getMods()) {
-                if (!isMcdpMod(info)) continue;
-                try {
-                    ensureRegistered(info);
-                } catch (Throwable t) {
-                    LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
-                            info.getModId(), t.getMessage());
-                }
-            }
-        });
+        McdpProvider.installLazyPopulator(McdpLanguageLoader::populateFromLoadingModList);
     }
 }

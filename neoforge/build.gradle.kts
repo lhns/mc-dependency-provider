@@ -10,6 +10,15 @@ mcdpBand {
     fmlModType.set("LIBRARY")
 }
 
+// Tests: this band's own src/test/java (the McdpLanguageLoader suite, which neoforge-1.20.6
+// also compiles against its identical copy) plus the suite all three NeoForge trees share.
+// `srcDir`, not `setSrcDirs`.
+sourceSets {
+    test {
+        java.srcDir(rootProject.file("neoforge-shared/src/test/java"))
+    }
+}
+
 dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))

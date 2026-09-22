@@ -80,8 +80,17 @@ public final class McdpModContainer extends ModContainer {
         Object[] bag = (dist != null)
                 ? new Object[] { eventBus, this, dist }
                 : new Object[] { eventBus, this };
+        EntrypointAdapter adapter;
         try {
-            this.modInstance = EntrypointAdapter.forLang(lang).construct(entryClass, bag);
+            adapter = EntrypointAdapter.forLang(lang);
+        } catch (IllegalArgumentException e) {
+            // A lang this build of mcdp has no adapter for. Left alone it escaped as a bare
+            // "unsupported lang: x" naming neither mcdp nor the mod.
+            throw new IllegalStateException("mcdepprovider: " + getModId()
+                    + " declares unsupported lang \"" + lang + "\" in META-INF/mcdepprovider.toml", e);
+        }
+        try {
+            this.modInstance = adapter.construct(entryClass, bag);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(
                     "mcdepprovider: failed to instantiate entrypoint for " + getModId(), e);

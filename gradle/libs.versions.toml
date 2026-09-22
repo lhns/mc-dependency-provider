@@ -11,7 +11,6 @@ fabric-loader-mc26 = "0.19.5"
 # Ships transitively with every fabric-loader line this repo targets; pinned only so the
 # adapter can import LoggerFactory at compile time.
 slf4j = "2.0.9"
-neoforge-spi-mc1206 = "8.0.4"     # NeoForge 20.6.x (MC 1.20.6)
 neoforge-fml-loader = "4.0.42"
 # FML 10 line (MC 1.21.10/1.21.11 and, via the shared port, the whole 26.x line). The
 # SPI broke at 9.0 -> 10.0: IModFile.findResource removed in favour of JarContents, and
@@ -62,7 +61,6 @@ jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "j
 fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
 fabric-loader-mc26 = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader-mc26" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
-neoforge-spi-mc1206 = { module = "net.neoforged:neoforgespi", version.ref = "neoforge-spi-mc1206" }
 neoforge-fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader" }
 neoforge-fml-loader-mc12111 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc12111" }
 neoforge-fml-loader-mc1206 = { module = "net.neoforged.fancymodloader:loader", version.ref = "neoforge-fml-loader-mc1206" }

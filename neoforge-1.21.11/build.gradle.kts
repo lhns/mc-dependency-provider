@@ -20,6 +20,15 @@ mcdpBand {
     fmlModType.set("LIBRARY")
 }
 
+// Tests: this tree's own src/test/java (FML 10's JarContents surface needs its own loader
+// suite) plus the suite all three NeoForge trees share. neoforge-26 compiles this tree's *main*
+// source only and carries no tests: JDK 21 cannot load the loader 11/12 jars it runs on.
+sourceSets {
+    test {
+        java.srcDir(rootProject.file("neoforge-shared/src/test/java"))
+    }
+}
+
 dependencies {
     compileOnly(project(":core"))
     compileOnly(project(":deps-lib"))
@@ -30,4 +39,11 @@ dependencies {
     // net.neoforged:neoforge:21.11.45 (the newest 21.11 release) declares in its POM.
     compileOnly(libs.neoforge.fml.loader.mc12111)
     compileOnly(libs.neoforge.bus)
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(project(":core"))
+    testImplementation(project(":deps-lib"))
+    testImplementation(libs.neoforge.fml.loader.mc12111)
+    testImplementation(libs.neoforge.bus)
 }

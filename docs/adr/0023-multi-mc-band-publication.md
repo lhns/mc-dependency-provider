@@ -265,6 +265,15 @@ is 7 cells × 2 OSes, and the bands added today have no cells (their test mods a
 > exclusion (a client cell for `forge-example-1.17`). The authoritative account is the comment
 > block heading that job in `mc-smoke.yml`, and `mc-client-nightly.yml`'s header for Tier 3.
 
+> **Corrected.** `neoforge-1.20.6/` was built against standalone `neoforgespi` 8.0.4, the SPI this
+> ADR calls "8.0.x". NeoForge 20.6 does not run that: its loader, fancymodloader 3.0.45, bundles
+> its own `neoforgespi` with the 1.21 shape (`IModInfo.getLoader()`, no
+> `IModFile.getLoaders()`). The tree compiled cleanly and threw `NoSuchMethodError` at boot the
+> first time a mod's bootstrap-time mixin reached the lazy populator. It now compiles against
+> the loader jar alone, like the other NeoForge trees, and the 8.0.x-specific workarounds are
+> gone. Read "NeoForge 8.0.x" in this ADR as "the loader-3.0.45 SPI". `contextExtension` is the
+> one genuine 1.20.6 difference that remains.
+
 ## Cross-references
 
 - ADR-0001 — per-mod URLClassLoaders (the underlying isolation model, version-agnostic)
