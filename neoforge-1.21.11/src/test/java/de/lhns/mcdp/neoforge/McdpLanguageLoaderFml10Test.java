@@ -37,6 +37,7 @@ import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static de.lhns.mcdp.neoforge.NeoForgeTestSupport.call;
 import static de.lhns.mcdp.neoforge.NeoForgeTestSupport.read;
 import static de.lhns.mcdp.neoforge.NeoForgeTestSupport.stub;
@@ -446,5 +447,31 @@ class McdpLanguageLoaderFml10Test {
             assertFalse(System.nanoTime() > deadline, "condition not reached within 30 s");
             Thread.onSpinWait();
         }
+    }
+
+    /**
+     * Once the body has registered the mod's loader, a retry cannot succeed — the coordinator and
+     * McdpProvider reject a second registration — so the retry must report the first failure,
+     * not an "already registered" that hides it. The lazy populator retries by design.
+     */
+    @Test
+    void aFailureAfterTheLoaderIsRegisteredIsWhatARetryReports(@TempDir Path tmp) throws Exception {
+        String modId = "retry_after_register_" + Long.toHexString(System.nanoTime());
+        Path root = Files.createDirectories(tmp.resolve(modId));
+        writeText(root, MANIFEST_PATH, "lang = \"java\"\n");
+        writeText(root, "META-INF/mcdp-bridges.toml", "this is [[ not toml");
+        JarContents contents = open(root);
+        IModInfo info = modInfo(modId, "mcdepprovider", stub(IModFile.class, Map.of(
+                "getFilePath", a -> root,
+                "getContents", a -> contents)), null);
+
+        RuntimeException first = assertThrows(RuntimeException.class, () -> call(McdpLanguageLoader.class,
+                "ensureRegistered", registeredType(), new Class<?>[] {IModInfo.class}, info));
+        assertNotNull(McdpProvider.loaderFor(modId),
+                "premise: the body failed after registering the loader");
+        RuntimeException retry = assertThrows(RuntimeException.class, () -> call(McdpLanguageLoader.class,
+                "ensureRegistered", registeredType(), new Class<?>[] {IModInfo.class}, info));
+        assertSame(first, retry.getCause(),
+                "the retry must carry the first failure, got: " + retry);
     }
 }

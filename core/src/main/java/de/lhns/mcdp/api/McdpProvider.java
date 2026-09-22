@@ -39,9 +39,19 @@ public final class McdpProvider {
      * runtime. Called by platform adapters once per mod during boot. Auto-bridge entries live in
      * a separate per-mod TOML manifest; adapters call {@link #registerAutoBridgeManifestToml}
      * after this method.
+     *
+     * @throws IllegalStateException if {@code modId} is already registered. A second
+     *         registration is an adapter bug: replacing the loader would leave mixin owners and
+     *         auto-bridges already registered against the first one pointing at a loader nobody
+     *         else uses.
      */
     public static void registerMod(String modId, ModClassLoader loader) {
-        MOD_LOADERS_BY_ID.put(Objects.requireNonNull(modId), Objects.requireNonNull(loader));
+        ModClassLoader existing = MOD_LOADERS_BY_ID.putIfAbsent(
+                Objects.requireNonNull(modId), Objects.requireNonNull(loader));
+        if (existing != null) {
+            throw new IllegalStateException("mcdepprovider: modId '" + modId
+                    + "' is already registered; each mod may be registered only once");
+        }
     }
 
     /**
@@ -228,6 +238,16 @@ public final class McdpProvider {
     /** Lookup for tests and platform adapters. */
     public static ModClassLoader loaderFor(String modId) {
         return MOD_LOADERS_BY_ID.get(modId);
+    }
+
+    /**
+     * The loader {@link #registerMixinOwner} recorded for a mixin class, or {@code null} if none
+     * was. Lookup for tests and platform adapters, mirroring {@link #loaderFor(String)}; it reads
+     * only the owner map, never the {@code @McdpMixin(modId)} or single-mod fallbacks that
+     * {@link #loadMixinImpl} also uses.
+     */
+    public static ModClassLoader loaderForMixin(String mixinClassFqn) {
+        return MOD_LOADERS_BY_MIXIN_FQN.get(mixinClassFqn);
     }
 
     /**

@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -207,6 +208,30 @@ class McdpPreLaunchTest {
 
         assertEquals(BridgeImpl.class.getName(),
                 McdpProvider.resolveAutoBridgeImpl(mixin, "LOGIC").getClass().getName());
+    }
+
+    /**
+     * Catches run() not registering mixin owners, or registering them against the wrong mod.
+     * Two mods, so {@code loadMixinImpl}'s single-mod fallback could not hide a missing owner
+     * anyway; the owner map is read directly, which also tells the right mod from the wrong one.
+     */
+    @Test
+    void registersEachModsMixinOwnersAgainstItsOwnLoader(@TempDir Path tmp) throws Exception {
+        Path mixinRoot = modRoot(tmp, "pl-mixin-mod", new Manifest("java", List.of(), List.of()));
+        Files.writeString(mixinRoot.resolve("fabric.mod.json"),
+                "{\"id\":\"pl-mixin-mod\",\"mixins\":[\"pl-mixin-mod.mixins.json\"]}");
+        Files.writeString(mixinRoot.resolve("pl-mixin-mod.mixins.json"),
+                "{\"package\":\"com.example.plmixin\",\"mixins\":[\"OwnedMixin\"]}");
+        Path otherRoot = modRoot(tmp, "pl-mixin-other-mod", new Manifest("java", List.of(), List.of()));
+
+        // The other mod comes first, so it is already registered when the owner's configs are
+        // read: an owner recorded against it is a wrong answer here, not a crash.
+        run(tmp, FabricStubs.mod("pl-mixin-other-mod", otherRoot),
+                FabricStubs.mod("pl-mixin-mod", mixinRoot));
+
+        ModClassLoader owner = registered("pl-mixin-mod");
+        registered("pl-mixin-other-mod");
+        assertSame(owner, McdpProvider.loaderForMixin("com.example.plmixin.OwnedMixin"));
     }
 
     // --- selectModPaths ---
