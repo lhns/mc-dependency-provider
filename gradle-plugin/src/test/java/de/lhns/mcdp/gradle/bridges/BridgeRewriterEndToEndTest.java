@@ -3,14 +3,20 @@ package de.lhns.mcdp.gradle.bridges;
 import de.lhns.mcdp.api.McdpProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -164,7 +170,23 @@ class BridgeRewriterEndToEndTest {
         Class<?> mixinClass = loader.loadClass("com.example.MixinC");
         Class<?> targetClass = loader.loadClass("com.example.TargetC");
         Class<?> implClass = loader.loadClass(implEmitter.implFqn("com/example/TargetC"));
-        Object bridgeInstance = implClass.getDeclaredConstructor().newInstance();
+        Class<?> ifaceClass = loader.loadClass(ifaceEmitter.interfaceFqn("com/example/TargetC"));
+        Object realImpl = implClass.getDeclaredConstructor().newInstance();
+        // TargetC is visible to the mixin through the same loader, so an un-rewritten
+        // NEW/DUP/INVOKESPECIAL would also return a TargetC and pass the two assertions on `out`.
+        // Counting calls on the bridge's constructor method proves dispatch went through the
+        // bridge.
+        AtomicInteger newCalls = new AtomicInteger();
+        Object bridgeInstance = Proxy.newProxyInstance(loader, new Class<?>[]{ifaceClass},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("_new")) newCalls.incrementAndGet();
+                    try {
+                        return implClass.getMethod(method.getName(), method.getParameterTypes())
+                                .invoke(realImpl, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
         McdpProvider.registerForTest("com.example.MixinC",
                 BridgeRewriter.logicFieldName("com/example/TargetC"), bridgeInstance);
 
@@ -173,6 +195,34 @@ class BridgeRewriterEndToEndTest {
         assertNotNull(out);
         assertTrue(targetClass.isInstance(out),
                 "expected Object returned by handler to be an instance of TargetC");
+        assertEquals(1, newCalls.get(), "expected exactly one call to the bridge's _new");
+
+        // The rewritten mixin must not be able to load TargetC itself. The raw substring check in
+        // rewrittenClassHasNoModPrivateReferences does not work here: since PR #41 the bridge
+        // call's descriptor is ()Lcom/example/TargetC;, and that UTF8 entry is legitimate -- a
+        // descriptor is never resolved through the referencing class's loader. What must be gone
+        // is the CONSTANT_Class entry that NEW and INVOKESPECIAL TargetC.<init> require.
+        Set<String> classRefs = classConstants(rewritten);
+        assertFalse(classRefs.contains("com/example/TargetC"),
+                "expected no CONSTANT_Class for com/example/TargetC in the rewritten mixin, got "
+                        + classRefs);
+        assertTrue(classRefs.contains(BridgePolicy.toInternal(
+                        ifaceEmitter.interfaceFqn("com/example/TargetC"))),
+                "expected a CONSTANT_Class for the bridge interface, got " + classRefs);
+    }
+
+    /** Internal names of every CONSTANT_Class entry in a class file's constant pool. */
+    private static Set<String> classConstants(byte[] classBytes) {
+        ClassReader reader = new ClassReader(classBytes);
+        char[] buf = new char[reader.getMaxStringLength()];
+        Set<String> names = new HashSet<>();
+        for (int i = 1; i < reader.getItemCount(); i++) {
+            int offset = reader.getItem(i); // just past the tag byte; 0 for a long/double's 2nd slot
+            if (offset > 0 && reader.readByte(offset - 1) == 7 /* CONSTANT_Class */) {
+                names.add(reader.readUTF8(offset, buf));
+            }
+        }
+        return names;
     }
 
     @Test

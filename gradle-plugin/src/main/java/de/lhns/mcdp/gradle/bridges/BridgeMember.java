@@ -81,8 +81,7 @@ public final class BridgeMember {
      *   <li>{@code STATIC_FIELD_SET} — {@code (T)V}; {@code INSTANCE_FIELD_SET} —
      *       {@code (L<owner>;T)V}.</li>
      *   <li>{@code CONSTRUCTOR} — original {@code <init>} args, return type rewritten from
-     *       {@code V} to {@code java.lang.Object} (the constructed instance is opaque to the
-     *       game-layer-loaded mixin code).</li>
+     *       {@code V} to {@code L<owner>;}, the constructed type (see the comment below).</li>
      *   <li>{@code CLASS_LITERAL} — {@code ()Ljava/lang/Class;}.</li>
      * </ul>
      */

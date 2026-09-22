@@ -443,7 +443,7 @@ public final class BridgeRewriter {
 
     /**
      * Rewrite a {@code NEW T / DUP / args / INVOKESPECIAL T.<init>(args)V} triplet into a single
-     * bridged call returning the constructed object as {@code Object}. Removes the NEW and DUP;
+     * bridged call returning the constructed object as its own type. Removes the NEW and DUP;
      * replaces the INVOKESPECIAL with a stack-juggle to push LOGIC under the args and an
      * INVOKEINTERFACE on the bridge. Code that holds the result as the mod-private type would
      * have separately tripped the locals-typing limit (CHECKCAST/ASTORE-as-T) — those cases are
