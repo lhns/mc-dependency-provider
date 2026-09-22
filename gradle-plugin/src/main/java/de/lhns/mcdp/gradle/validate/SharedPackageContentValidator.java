@@ -27,13 +27,30 @@ import java.util.Set;
 public final class SharedPackageContentValidator {
 
     private final List<String> sharedPackages;
+    private final String bridgePackage;
 
     /**
      * @param sharedPackages dotted package prefixes (with or without trailing dot;
      *                       both accepted, normalized internally to dotted-with-dot)
      */
     public SharedPackageContentValidator(List<String> sharedPackages) {
+        this(sharedPackages, null);
+    }
+
+    /**
+     * @param sharedPackages dotted package prefixes (with or without trailing dot;
+     *                       both accepted, normalized internally to dotted-with-dot)
+     * @param bridgePackage  the project's {@code bridges.bridgePackage} (dotted, trailing dot
+     *                       optional), or {@code null}/empty when bridge codegen is off. It has
+     *                       to be passed in rather than inferred: the codegen auto-adds it to
+     *                       {@code sharedPackages}, so from the list alone there is no way to
+     *                       tell which prefix is the bridge one. See
+     *                       {@link ClassRefCollector#collect(org.objectweb.asm.tree.ClassNode, String)}
+     *                       for exactly what knowing it buys and how narrow the effect is.
+     */
+    public SharedPackageContentValidator(List<String> sharedPackages, String bridgePackage) {
         this.sharedPackages = BridgePolicy.normalizeSharedPackages(sharedPackages);
+        this.bridgePackage = bridgePackage;
     }
 
     /**
@@ -49,7 +66,7 @@ public final class SharedPackageContentValidator {
         String dottedFqn = BridgePolicy.toDotted(cn.name);
         if (!isInSharedPackage(dottedFqn)) return List.of();
 
-        Set<String> refs = ClassRefCollector.collect(cn);
+        Set<String> refs = ClassRefCollector.collect(cn, bridgePackage);
         List<String> offending = new ArrayList<>();
         for (String ref : refs) {
             String dotted = BridgePolicy.toDotted(ref);

@@ -266,6 +266,18 @@ public final class McdpProviderPlugin implements Plugin<Project> {
                         t.getCompiledClassesDirs().from(compilerOutputDirs(project, main));
                         t.getSharedPackages().set(ext.getSharedPackages());
                         t.getCrossLoaderAnnotations().set(ext.getBridges().getCrossLoaderAnnotations());
+                        // The bridge package cannot be inferred from sharedPackages -- the block
+                        // above auto-adds it, so by task-execution time it is indistinguishable
+                        // from a user entry. Validator A needs to know which prefix it is: the
+                        // rewritten mixins we DO scan call through the generated interfaces, and
+                        // those call sites carry the mod-private types in the bridge's own method
+                        // descriptors. Same reasoning as the paragraph above, applied to the
+                        // caller instead of the callee. Left unset when codegen is off, so a
+                        // project using the hand-written @McdpMixin pattern gets no exemption.
+                        t.getBridgePackage().set(project.provider(() ->
+                                Boolean.TRUE.equals(ext.getBridges().getEnabled().getOrElse(true))
+                                        ? ext.getBridges().getBridgePackage().getOrNull()
+                                        : null));
                     });
             project.getTasks().named("check").configure(c -> c.dependsOn(validate));
         });
