@@ -201,25 +201,17 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         if (promotionSelection != null) return;
         synchronized (PROMOTION_LOCK) {
             if (promotionSelection != null) return;
-            List<Manifest> allManifests = new ArrayList<>();
-            try {
-                for (IModInfo info : LoadingModList.get().getMods()) {
-                    if (!LANGUAGE_ID.equals(info.getLoader().name())) continue;
-                    Path modFile = info.getOwningFile().getFile().getFilePath();
-                    Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
-                    try {
-                        allManifests.add(readManifest(modFile, resource, info.getModId()));
-                    } catch (IllegalStateException ignored) {
-                        // skip mods we can't parse; loadMod will fail loud when they come through
-                    }
-                }
-            } catch (Throwable t) {
-                // If LoadingModList isn't accessible yet or throws, fall back to no-promotion.
+            LoadingModList list = LoadingModList.get();
+            if (list == null) {
+                // Unreachable in a real boot — loadMod and the lazy populator both run after FML
+                // has built the list — so this is a unit test or an FML change. Promotion needs
+                // every mod's manifest, so without the list the only safe choice is none at all.
+                LOG.warn("mcdepprovider: LoadingModList is not built; stdlib promotion is disabled");
                 promotionSelection = Collections.emptyMap();
                 return;
             }
 
-            Map<String, Manifest.Library> selected = PROMOTION_POLICY.selectPromotions(allManifests);
+            Map<String, Manifest.Library> selected = selectPromotions(list.getMods());
             if (!selected.isEmpty()) {
                 List<Path> jars = new ArrayList<>(selected.size());
                 List<String> shas = new ArrayList<>(selected.size());
@@ -239,20 +231,64 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
     }
 
     /**
+     * The promotion selection over FML's mod list: one winning {@link Manifest.Library} per
+     * promoted stem, across every mcdepprovider mod whose manifest can take part.
+     *
+     * <p>A mod whose manifest cannot be read — corrupt TOML, a wrongly-typed field, a short
+     * SHA-256, a coordinate without a version — is left out with a WARN naming it, and nothing
+     * else changes. It used to take everyone down with it: the whole walk sat under one
+     * {@code catch (Throwable)} that fell back to an empty selection, so a single bad manifest
+     * silently turned promotion off for every mod. The excluded mod still fails loudly, in its
+     * own {@link #registerNow}, which reads the same manifest.
+     *
+     * <p>Each manifest is also run through {@link StdlibPromotion#selectPromotions} on its own:
+     * that is where a versionless coordinate throws, and doing it per mod keeps the throw
+     * attributable to the mod that caused it rather than to the combined selection below.
+     * Package-private for tests.
+     */
+    static Map<String, Manifest.Library> selectPromotions(List<? extends IModInfo> mods) {
+        List<Manifest> manifests = new ArrayList<>();
+        for (IModInfo info : mods) {
+            String modId = info.getModId();
+            try {
+                if (!isMcdpMod(info)) continue;
+                Path modFile = info.getOwningFile().getFile().getFilePath();
+                Path resource = info.getOwningFile().getFile().findResource(MANIFEST_PATH);
+                Manifest manifest = readManifest(modFile, resource, modId);
+                PROMOTION_POLICY.selectPromotions(List.of(manifest));
+                manifests.add(manifest);
+            } catch (RuntimeException e) {
+                LOG.warn("mcdepprovider: leaving {} out of stdlib promotion, its manifest is "
+                        + "unusable (its own registration will fail with the details): {}",
+                        modId, e.toString());
+            }
+        }
+        return PROMOTION_POLICY.selectPromotions(manifests);
+    }
+
+    /** Whether FML matched this mod to our language loader. Package-private for tests. */
+    static boolean isMcdpMod(IModInfo info) {
+        return LANGUAGE_ID.equals(info.getLoader().name());
+    }
+
+    /**
      * Pre-register mixin class FQNs → owning modId from this mod's {@code neoforge.mods.toml}
      * {@code [[mixins]]} entries (ADR-0008 path 2). Uses FML's own {@link IConfigurable} view so we
      * don't re-parse the TOML. Silent on any failure — the annotation {@code modId} path (path 1)
      * stays primary.
+     *
+     * @return the FQNs registered, for tests; empty when nothing was
      */
-    private static void registerMixinOwnersForNeoForgeMod(IModInfo info, String modId) {
+    static List<String> registerMixinOwnersForNeoForgeMod(IModInfo info, String modId) {
+        List<String> registered = new ArrayList<>();
         try {
             IConfigurable fileConfig = info.getOwningFile().getConfig();
-            if (fileConfig == null) return;
+            if (fileConfig == null) return registered;
             List<String> configPaths = new ArrayList<>();
             for (IConfigurable entry : fileConfig.getConfigList("mixins")) {
                 entry.<String>getConfigElement("config").ifPresent(configPaths::add);
             }
-            if (configPaths.isEmpty()) return;
+            if (configPaths.isEmpty()) return registered;
 
             List<Path> resolved = new ArrayList<>(configPaths.size());
             List<String> relative = new ArrayList<>(configPaths.size());
@@ -265,12 +301,13 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
                 }
             }
             for (int k = 0; k < resolved.size(); k++) {
-                MixinConfigScanner.registerMixinOwnersFromConfigs(
-                        modId, List.of(resolved.get(k)), List.of(relative.get(k)));
+                registered.addAll(MixinConfigScanner.registerMixinOwnersFromConfigs(
+                        modId, List.of(resolved.get(k)), List.of(relative.get(k))));
             }
         } catch (IllegalStateException | IllegalArgumentException | ClassCastException ignored) {
             // FML IConfigurable surface — wrong types or missing keys throw these.
         }
+        return registered;
     }
 
     private static Manifest readManifest(Path modFile, Path manifestResource, String modId) {
@@ -330,30 +367,43 @@ public final class McdpLanguageLoader implements IModLanguageLoader {
         }
     }
 
+    /**
+     * The lazy populator's body: walk {@link LoadingModList} and run {@link #ensureRegistered}
+     * for every mcdepprovider mod, populating both the per-mod ModClassLoader (via
+     * LoaderCoordinator) and the bridge registry. Package-private for tests.
+     *
+     * <p>A list that is not built yet is <em>thrown</em>, not returned from: McdpProvider marks
+     * its populator as done only when it returns normally, so a quiet return here would make
+     * every later bridge-registry miss report "no auto-bridge registered" instead of populating
+     * the registry once the list exists. Thrown, the populator stays retryable.
+     */
+    static void populateFromLoadingModList() {
+        LoadingModList list = LoadingModList.get();
+        if (list == null) {
+            throw new IllegalStateException("mcdepprovider: LoadingModList is not built yet; "
+                    + "the bridge registry will be populated on the next miss");
+        }
+        for (IModInfo info : list.getMods()) {
+            if (!isMcdpMod(info)) continue;
+            try {
+                ensureRegistered(info);
+            } catch (Throwable t) {
+                LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
+                        info.getModId(), t.getMessage());
+            }
+        }
+    }
+
     // Lazy populator wiring. `LoadingModList.get()` returns null at McdpLanguageLoader.<clinit>
     // time (we tested — FML constructs the LanguageProviderLoader before populating
     // LoadingModList.INSTANCE). So we can't eagerly walk now. Instead we INSTALL a populator
     // into McdpProvider that fires on the first registry miss. By the time a rewritten mixin's
     // <clinit> calls resolveAutoBridgeImpl during Bootstrap.bootStrap, LoadingModList IS
-    // populated even though FML hasn't reached its loadMod dispatch phase yet. The populator
-    // walks the list and runs ensureRegistered() for every mcdepprovider mod, populating both
-    // the per-mod ModClassLoader (via LoaderCoordinator) and the bridge registry.
+    // populated even though FML hasn't reached its loadMod dispatch phase yet.
     //
     // FML still calls our loadMod later for each mod; ensureRegistered is idempotent via the
     // REGISTERED cache, so loadMod is a no-op for mods the populator already handled.
     static {
-        McdpProvider.installLazyPopulator(() -> {
-            LoadingModList list = LoadingModList.get();
-            if (list == null) return;
-            for (IModInfo info : list.getMods()) {
-                if (!LANGUAGE_ID.equals(info.getLoader().name())) continue;
-                try {
-                    ensureRegistered(info);
-                } catch (Throwable t) {
-                    LOG.warn("mcdepprovider: lazy-register failed for {}; loadMod will retry: {}",
-                            info.getModId(), t.getMessage());
-                }
-            }
-        });
+        McdpProvider.installLazyPopulator(McdpLanguageLoader::populateFromLoadingModList);
     }
 }

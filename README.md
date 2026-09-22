@@ -155,7 +155,7 @@ The first time a player launches a mod that uses `mcdp`, the adapter downloads a
 
 - **Server / log file** (always): `latest.log` carries `mcdp[<modId>]: resolving N libraries`, per-library completion lines with byte counts, and a closing `resolved in N ms`. Per-library start lines are at DEBUG (enable in `log4j2.xml` if you want them).
 - **Client UI**:
-  - **NeoForge** — short progress messages flicker on the FML loading screen (via `StartupNotificationManager`). The eager download path may run before the screen exists; in that case the adapter no-ops the UI side and the log channel still carries the same content.
+  - **NeoForge** — the adapter also pushes short progress messages into FML's `StartupNotificationManager` (`net.neoforged.fml.loading.progress`), the message rail the early loading screen draws from. That hand-off is unit-tested against each NeoForge band's real loader jar; no CI job looks at the screen itself. Where the screen is not up (a dedicated server, or the early window disabled) nothing is shown, and the log carries the same content. Releases before this fix looked the class up under a name no FML version has, so they never showed anything on screen.
   - **Fabric** — Fabric's `PreLaunchEntrypoint` runs *before* any in-game UI, so the splash never sees these events. The launcher window's stdout/stderr tail and `latest.log` are the feedback channels; the adapter prints one stderr banner at the start of the download phase to signal the wait.
 
 Subsequent launches hit the cache and skip the network entirely.

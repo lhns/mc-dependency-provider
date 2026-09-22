@@ -28,6 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * runtime not on the unit-test classpath. {@link ModFileScanData} is constructed empty —
  * {@code AutomaticEventSubscriber.inject} accepts it and finds zero subscribers, which is what we
  * want here (it would otherwise need scanned annotation data).
+ * <p>
+ * Shared by all three NeoForge trees (1.21.1, 1.20.6, 1.21.11), each compiling it against its own
+ * container and loader jar (4.0.42, 3.0.45, 10.0.36): the containers differ in how they read the
+ * dist and in 1.20.6's {@code contextExtension}, and this suite runs against each.
  */
 class McdpModContainerTest {
 
@@ -91,6 +95,26 @@ class McdpModContainerTest {
         assertNull(container.getModInstance(), "failed construction must not populate modInstance");
     }
 
+    /**
+     * A manifest {@code lang} with no entrypoint adapter. {@code EntrypointAdapter.forLang}
+     * throws {@link IllegalArgumentException}, which used to escape {@code constructMod} as a bare
+     * "unsupported lang: cobol" naming neither mcdp nor the mod.
+     */
+    @Test
+    void constructModWrapsUnknownLangWithTheModId() {
+        IModInfo info = stubInfo("unknown_lang_mod");
+        McdpModContainer container = new McdpModContainer(
+                info, NoArgCapture.class, "cobol", emptyScan());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> invokeConstructMod(container));
+        assertTrue(ex.getMessage().startsWith("mcdepprovider: "), ex.getMessage());
+        assertTrue(ex.getMessage().contains("unknown_lang_mod"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("cobol"), ex.getMessage());
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
+        assertNull(container.getModInstance());
+    }
+
     @Test
     void wrapperExposesContainerIdentity() {
         IModInfo info = stubInfo("identity_mod");
@@ -106,8 +130,9 @@ class McdpModContainerTest {
 
     /**
      * Captures the two args we can verify in unit tests. The Dist arg is exercised live via
-     * the kotlin-example smoke (FMLEnvironment.dist is null in unit tests because nothing
-     * went through FML init, and the field is static-final so reflection can't backfill it).
+     * the kotlin-example smoke: nothing went through FML init here, so the dist is null
+     * ({@code FMLEnvironment.dist} on FML 3/4, a static-final field reflection can't backfill;
+     * {@code FMLEnvironment.getDist()} throws on FML 10, which the 1.21.11 container maps to null).
      */
     public static final class BusAndContainerCapture {
         final IEventBus bus;

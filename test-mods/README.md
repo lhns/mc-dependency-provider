@@ -35,7 +35,7 @@ canonical — this table follows their matrices, not the other way round.
 | `fabric-example-1.20` | Fabric 1.20.1 | java | `runserver-smoke-bands`, `runclient-smoke` |
 | `forge-example-1.20` | Forge 1.20.1 | java | `runserver-smoke-bands`, `runclient-smoke` (the one cell asserting `dist=CLIENT` and a client-side mixin) |
 | `fabric-example-1.20.6` | Fabric 1.20.6 | java | `runserver-smoke-bands`, `runclient-smoke` |
-| `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands`, `runclient-smoke` |
+| `neoforge-example-1.20.6` | NeoForge 20.6 / MC 1.20.6 | java | `runserver-smoke-bands` (incl. its mixin-bridge assertion), `runclient-smoke` |
 | `fabric-example-1.21.11` | Fabric 1.21.11 (loader 0.19.5) | java | `runserver-smoke-bands`, `runclient-smoke` |
 | `neoforge-example-1.21.11` | NeoForge 21.11.45 / MC 1.21.11 | java | `runserver-smoke-bands`, `runclient-smoke` |
 | `fabric-example-26.3` | Fabric / MC 26.3 | java | `runserver-smoke-bands`, `runclient-smoke` (`daemon_jdk: 25`) |

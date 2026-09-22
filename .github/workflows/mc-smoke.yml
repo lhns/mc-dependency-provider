@@ -423,6 +423,23 @@ jobs:
             exit 1
           }
 
+      - name: Assert the NeoForge 1.20.6 mixin-bridge path ran (neoforge-1.20.6 only)
+        # BlocksClinitMixin fires inside Blocks.<clinit>, before FML's loadMod sweep, so its
+        # bridge resolves only through the adapter's lazy populator. That populator is where the
+        # 1.20.6 adapter once called IModFile.getLoaders() — compiled against standalone
+        # neoforgespi 8.0.4, absent from the loader 3.0.45 NeoForge 20.6 runs on — and threw
+        # NoSuchMethodError. No 1.20.6 test mod had a mixin then, so nothing here ran that path.
+        if: matrix.cell.name == 'neoforge-1.20.6'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-${{ matrix.cell.name }}-${{ runner.os }}.log
+          grep -q '\[mcdp-smoke\] mixin=BlocksClinitMixin mod=neoforge_example_1206 ok' "$LOG" || {
+            echo "ERROR: NeoForge 1.20.6 mixin marker missing — the bridge did not resolve"
+            grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
       - name: Assert Forge lifecycle + mixin-bridge markers (forge-1.20 only)
         # forge-example-1.20 is the only Forge cell carrying a mixin, and it is the only
         # end-to-end proof of three things that are otherwise verified by javap alone:

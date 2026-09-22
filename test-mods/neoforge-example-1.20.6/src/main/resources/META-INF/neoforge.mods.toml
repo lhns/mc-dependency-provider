@@ -21,3 +21,8 @@ type = "required"
 versionRange = "[1.20.6,1.21)"
 ordering = "NONE"
 side = "BOTH"
+
+# Registered from this block alone: FML 3.0 reads it and hands the config to Mixin, and mcdp's
+# McdpLanguageLoader re-reads it through IConfigurable to map the mixin back to this modId.
+[[mixins]]
+config = "neoforge_example_1206.mixins.json"

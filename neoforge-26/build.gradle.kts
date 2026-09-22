@@ -3,9 +3,10 @@ plugins {
 }
 
 // NeoForge for Mojang's calendar-versioning line (MC 26.1 / 26.2 / 26.3) — one band for the
-// whole line (ADR-0032): `IModLanguageLoader`, `ModContainer`, `IModInfo` and
-// `ModFileScanData` are byte-identical (same SHA-1) across fancymodloader 11.0.15
+// whole line (ADR-0032): every SPI member the adapter links against is unchanged from
+// fancymodloader 10.0.36 (what this band compiles against, below) through 11.0.15
 // (NeoForge 26.1.2.109), 11.0.16 (26.2.0.88) and 12.0.0 (26.3.0.7-beta).
+// scripts/verify_spi_identity.py checks exactly that linkage in CI.
 //
 // It shares `neoforge-1.21.11/`'s FML-10 port and must NOT share `neoforge/`'s 21.x source:
 // the rest of the surface broke at FML 10.0 (`IModFile.findResource` removed, SecureJar ->
@@ -31,8 +32,8 @@ dependencies {
     compileOnly(libs.jetbrains.annotations)
     // The FML-10 pin (10.0.36), not a 26.x one: the 26.x fancymodloader jars are class-file
     // major 69 (Java 25) and javac on the root JDK 21 toolchain cannot read them at all
-    // ("class file has wrong version 69.0"). The SPI classes are byte-for-byte identical
-    // apart from that recompile, so this links correctly against loader 11.x/12.x at
+    // ("class file has wrong version 69.0"). The members the adapter references are the same
+    // in 10.0.36 and loader 11.x/12.x (verify_spi_identity.py), so this links correctly at
     // runtime. Re-pin to `loader:12.0.0` once the root build has a JDK 25 toolchain —
     // cosmetic, not a fix.
     compileOnly(libs.neoforge.fml.loader.mc12111)
