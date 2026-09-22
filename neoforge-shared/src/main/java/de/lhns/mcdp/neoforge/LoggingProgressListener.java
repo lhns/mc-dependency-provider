@@ -3,6 +3,7 @@ package de.lhns.mcdp.neoforge;
 import de.lhns.mcdp.deps.ProgressListener;
 import org.slf4j.Logger;
 
+import java.util.Collection;
 import java.util.Locale;
 
 /**
@@ -26,6 +27,7 @@ final class LoggingProgressListener implements ProgressListener {
     private final String modId;
     private long startNanos;
     private final boolean snmAvailable;
+    private boolean railReported;
 
     LoggingProgressListener(Logger log, String modId) {
         this.log = log;
@@ -44,13 +46,36 @@ final class LoggingProgressListener implements ProgressListener {
 
     private void notifyUi(String message) {
         if (!snmAvailable) return;
+        Class<?> snm;
         try {
             // Reflective call avoids a hard link: even with the class
             // loadable, addModMessage may throw if FML's notification rail isn't initialized yet.
-            Class<?> snm = Class.forName(SNM_FQN);
+            snm = Class.forName(SNM_FQN);
             snm.getMethod("addModMessage", String.class).invoke(null, message);
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
             // Best-effort UI surface — log channel still carries the same content.
+            return;
+        }
+        if (!railReported) {
+            railReported = true;
+            reportRail(snm);
+        }
+    }
+
+    /**
+     * Logs, once per listener, that a message really landed on FML's rail, with the rail's size
+     * read back through {@code StartupNotificationManager.getMessages()} — the list the
+     * early-display renderer draws from. The client nightly greps for this line on the NeoForge
+     * cells, so a real boot proves the reflective call links and the message is where the
+     * loading screen reads it. Never throws: any reflective failure is a debug line and a no-op.
+     */
+    private void reportRail(Class<?> snm) {
+        try {
+            Object messages = snm.getMethod("getMessages").invoke(null);
+            int n = ((Collection<?>) messages).size();
+            log.info("mcdp[{}]: loading-screen message posted ({} on the rail)", modId, n);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            log.debug("mcdp[{}]: could not read FML's startup notification rail back", modId, e);
         }
     }
 

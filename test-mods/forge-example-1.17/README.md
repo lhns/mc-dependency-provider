@@ -3,8 +3,7 @@
 Forge test mod for **MC 1.17.1**, targeting `de.lhns.mcdp:mcdp-1.17`.
 
 In the nightly `runserver-smoke-bands` matrix (`forge-1.17`, `daemon_jdk: "17"`), on both
-OSes. There is no Tier-3 `runClient` cell — that one exclusion, and its reasoning, is in
-`.github/workflows/mc-client-nightly.yml`'s header.
+OSes, and in the Tier-3 `runClient` nightly (`.github/workflows/mc-client-nightly.yml`).
 
 The band is **not** a stub. Forge 1.17.1-37.1.2 requires `forgespi 4.0.+`, so `forge-1.17`
 compiles `forge-1.18`'s adapter source verbatim and pins only its own coordinates and the
