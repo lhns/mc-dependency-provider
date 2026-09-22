@@ -3,6 +3,8 @@ package de.lhns.mcdp.fabric;
 import de.lhns.mcdp.deps.ProgressListener;
 import org.slf4j.Logger;
 
+import java.util.Locale;
+
 /**
  * SLF4J-backed {@link ProgressListener} for the Fabric adapter. Every event is emitted as a
  * structured log line keyed by mod id; per-library start lines land at DEBUG (avoid wall-of-text
@@ -54,9 +56,10 @@ final class LoggingProgressListener implements ProgressListener {
         log.info("mcdp[{}]: resolved in {} ms", modId, elapsedMs);
     }
 
+    // Locale.ROOT: the default locale would log "1,5 KB" on a de_DE machine.
     static String humanBytes(long bytes) {
         if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024L * 1024L) return String.format("%.1f KB", bytes / 1024.0);
-        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        if (bytes < 1024L * 1024L) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 }

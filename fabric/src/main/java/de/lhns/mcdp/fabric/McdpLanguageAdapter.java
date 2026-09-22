@@ -40,11 +40,22 @@ public final class McdpLanguageAdapter implements LanguageAdapter {
             throw new LanguageAdapterException("mcdepprovider: entrypoint class not found: " + value, e);
         }
 
+        // An unknown manifest `lang` is IllegalArgumentException from forLang. Fabric reports
+        // only LanguageAdapterException with the mod it belongs to, so an unwrapped one
+        // surfaced as a bare crash naming neither the mod nor mcdepprovider.
+        EntrypointAdapter adapter;
+        try {
+            adapter = EntrypointAdapter.forLang(lang);
+        } catch (IllegalArgumentException e) {
+            throw new LanguageAdapterException("mcdepprovider: unsupported lang '" + lang
+                    + "' in the manifest of '" + modId + "' (entrypoint " + value + ")", e);
+        }
+
         // Fabric entrypoints are usually no-arg objects or classes with a no-arg ctor. Our
         // EntrypointAdapter falls back to the 0-arg constructor after any singleton check.
         Object instance;
         try {
-            instance = EntrypointAdapter.forLang(lang).construct(entryClass);
+            instance = adapter.construct(entryClass);
         } catch (ReflectiveOperationException e) {
             throw new LanguageAdapterException("mcdepprovider: failed to instantiate " + value, e);
         }
