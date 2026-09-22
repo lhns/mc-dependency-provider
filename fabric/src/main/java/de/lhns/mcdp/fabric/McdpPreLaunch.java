@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,10 +50,11 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
 
     @Override
     public void onPreLaunch() {
-        FabricLoader fabric = FabricLoader.getInstance();
-        LibraryCache cache = LibraryCache.defaultCache();
-        ManifestConsumer consumer = new ManifestConsumer(cache);
+        run(FabricLoader.getInstance(), new ManifestConsumer(LibraryCache.defaultCache()));
+    }
 
+    /** The whole pre-launch pass, over an injectable loader and library source (tests). */
+    static void run(FabricLoader fabric, ManifestConsumer consumer) {
         // Two-pass: collect every mod's manifest + resolved libs first so StdlibPromotion can
         // see the full union before we build any classloader. Adding mods in a single loop
         // would force stdlib-version decisions per-mod, undoing cross-mod promotion.
@@ -65,7 +67,11 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
             Manifest manifest;
             try (InputStream in = Files.newInputStream(manifestPath.get())) {
                 manifest = ManifestIo.read(in);
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
+                // RuntimeException too: ManifestIo casts TOML values unchecked (a string where a
+                // [[libraries]] table belongs is a ClassCastException) and Manifest.Library
+                // rejects a short SHA with IllegalArgumentException. Unwrapped, either crashed
+                // boot without naming the mod whose manifest is broken.
                 throw new IllegalStateException("mcdepprovider: failed to read manifest for " + modId, e);
             }
 
@@ -76,22 +82,7 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                 throw new IllegalStateException("mcdepprovider: failed to download libs for " + modId, e);
             }
 
-            // Source-set output dirs the manifest captured at build time. In a shipped jar this
-            // list is either absent or contains absolute paths to the build machine that don't
-            // exist on the consumer's filesystem; we filter those out and fall back to the
-            // loader's reported rootPaths.
-            List<Path> manifestDevRoots = manifest.devRoots().stream()
-                    .map(Path::of)
-                    .filter(Files::isDirectory)
-                    .toList();
-            List<Path> modPaths;
-            if (!manifestDevRoots.isEmpty()) {
-                modPaths = manifestDevRoots;
-            } else if (!mod.getRootPaths().isEmpty()) {
-                modPaths = mod.getRootPaths();
-            } else {
-                modPaths = List.of(manifestPath.get().getFileSystem().getPath(""));
-            }
+            List<Path> modPaths = selectModPaths(modId, manifest.devRoots(), mod.getRootPaths());
 
             entries.add(new ModEntry(modId, manifest, libs, modPaths));
         }
@@ -143,8 +134,34 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
                 LOG.info("mcdepprovider: registered {} auto-bridge entries for {}", registered, e.modId);
             }
             LANG_BY_MOD.put(e.modId, e.manifest.lang());
-            registerMixinOwnersForFabricMod(e);
+            registerMixinOwnersForFabricMod(e.modId, e.modPaths);
         }
+    }
+
+    /**
+     * Source-set output dirs the manifest captured at build time. In a shipped jar this list is
+     * either absent or contains absolute paths to the build machine that don't exist on the
+     * consumer's filesystem; we filter those out and fall back to the loader's reported
+     * rootPaths. An entry this OS cannot even parse as a path (a Windows build's devRoot read on
+     * Linux, or the reverse) is skipped the same way instead of failing boot.
+     *
+     * <p>{@code rootPaths} is never empty here: the caller found the manifest through
+     * {@code ModContainer.findPath}, which only walks {@code getRootPaths()}.
+     */
+    static List<Path> selectModPaths(String modId, List<String> devRoots, List<Path> rootPaths) {
+        List<Path> existing = new ArrayList<>(devRoots.size());
+        for (String devRoot : devRoots) {
+            Path p;
+            try {
+                p = Path.of(devRoot);
+            } catch (InvalidPathException e) {
+                LOG.warn("mcdepprovider: ignoring devRoot of {} that is not a valid path here: {}",
+                        modId, e.getMessage());
+                continue;
+            }
+            if (Files.isDirectory(p)) existing.add(p);
+        }
+        return existing.isEmpty() ? rootPaths : List.copyOf(existing);
     }
 
     /**
@@ -152,21 +169,24 @@ public final class McdpPreLaunch implements PreLaunchEntrypoint {
      * {@link McdpProvider#loadMixinImpl} can route correctly under multi-mod configurations
      * without relying on {@code @McdpMixin(modId = "...")} at the callsite. See ADR-0008 path 2.
      * Silent on any parse/read failure — the annotation path remains the primary guarantee.
+     *
+     * @return the FQNs actually registered (for tests)
      */
-    private static void registerMixinOwnersForFabricMod(ModEntry e) {
+    static List<String> registerMixinOwnersForFabricMod(String modId, List<Path> modPaths) {
         try {
             Path fmj = null;
-            for (Path r : e.modPaths) {
+            for (Path r : modPaths) {
                 Path c = r.resolve("fabric.mod.json");
                 if (Files.exists(c)) { fmj = c; break; }
             }
-            if (fmj == null) return;
+            if (fmj == null) return List.of();
             String text = Files.readString(fmj);
             List<String> configs = MixinConfigScanner.parseFabricMixinConfigs(text);
-            if (configs.isEmpty()) return;
-            MixinConfigScanner.registerMixinOwnersFromConfigs(e.modId, e.modPaths, configs);
+            if (configs.isEmpty()) return List.of();
+            return MixinConfigScanner.registerMixinOwnersFromConfigs(modId, modPaths, configs);
         } catch (IOException | IllegalArgumentException ignored) {
             // IOException: fabric.mod.json read failure. IllegalArgumentException: MiniJson parse error.
+            return List.of();
         }
     }
 

@@ -12,7 +12,15 @@ mcdpBand {
 dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
-    testCompileOnly(libs.fabric.loader)
+    // Not testCompileOnly: the convention's compileOnly surface never reaches the test
+    // configurations, and the classes under test link against all four at runtime --
+    // McdpPreLaunch's static initializer builds a LoaderCoordinator and an slf4j Logger, and
+    // the tests proxy fabric-loader's FabricLoader / ModContainer / ModMetadata interfaces.
+    // Only `fabric/` runs these: every other fabric-* band compiles the same source.
+    testImplementation(project(":core"))
+    testImplementation(project(":deps-lib"))
+    testImplementation(libs.fabric.loader)
+    testImplementation(libs.slf4j.api)
 }
 
 // This subproject (`:fabric-1.21`) is not published on its own. The band
