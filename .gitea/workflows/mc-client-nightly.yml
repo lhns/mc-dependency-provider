@@ -49,35 +49,40 @@ name: CI — Tier 3 (runClient nightly via xvfb)
 # `"mixins"` array and therefore fires on both dists — which is why forge-1.20 is the only
 # cell here with a mixin assertion.
 #
-# Every test mod's entry point IS reachable client-side: all nine fabric.mod.json files use
-# the side-neutral `main` entrypoint with `"environment": "*"`, and all eight Forge/NeoForge
-# mods.toml files declare `side = "BOTH"`. No cell below is waiting on an entrypoint that
+# Every test mod's entry point IS reachable client-side: all eleven fabric.mod.json files in
+# test-mods/ use the side-neutral `main` entrypoint with `"environment": "*"`, and all nine
+# Forge/NeoForge mods.toml / neoforge.mods.toml files (the eight mods with a cell below, plus
+# kotlin-example) declare `side = "BOTH"`. No cell below is waiting on an entrypoint that
 # cannot run.
 #
 # ---------------------------------------------------------------------------
 # COVERAGE AND THE ONE DELIBERATE EXCLUSION
 # ---------------------------------------------------------------------------
 # 15 cells: all eight bands (1.17, 1.18, 1.19, 1.20, 1.20.6, 1.21, 1.21.11, 26) on both
-# loaders each band ships, minus one.
+# loaders each band ships, minus one — 7 Fabric, 4 Forge, 4 NeoForge.
 #
-#   EXCLUDED: forge-1.17. Not because the band is broken — the adapter works (ADR-0029).
-#   test-mods/forge-example-1.17 is the single MC version Forge never regenerated an FG6 MDK
-#   for, so it still carries a Gradle 7.6 wrapper, omits includeBuild("../.."), consumes mcdp
-#   from mavenLocal, pins `toolchain { languageVersion = 16 }`, and has no foojay resolver in
-#   its settings.gradle.kts — so it needs BOTH a daemon_jdk override AND a `16` in the
-#   setup-java list below. The reason this cell was held back — no CI cell of any kind had
-#   ever built that mod — no longer holds: mc-smoke.yml's runserver-smoke-bands job now boots
-#   it (setup-java does install JDK 16; the old claim that runners cannot was wrong). The
-#   client cell simply has not been added yet. The 1.17 BAND is still covered here, by
-#   fabric-1.17, and the mod's `client` run config is already in its build file, so turning
-#   this cell on is one matrix row plus `16` in setup-java.
+#   EXCLUDED: fabric-26.3. Not because of mcdp: MC 26.3 ships Mojang's new render abstraction,
+#   whose GL backend refuses to create a device on llvmpipe and whose Vulkan backend reports
+#   "Vulkan is not supported", so Minecraft.<init> throws BackendCreationException before any
+#   mod code runs — the cell could only ever test the runner's GPU. LIBGL_ALWAYS_SOFTWARE and
+#   MESA_GL_VERSION_OVERRIDE (set on the runClient step) do not help. Measured in run
+#   35615852118, where every other cell passed. The 26 BAND is still covered here, by
+#   neoforge-26.2, which passed in that same run; fabric-26.3 is still booted server-side by
+#   mc-smoke.yml. Details at the spot in the matrix where its row would be.
 #
-# The 26.x pair (fabric-26.3, neoforge-26.2) is included but is the highest-risk pair in the
-# file: no CI run has ever booted MC 26.x on ANY dist, the cells carry their own Gradle
-# 9.7.1 wrapper on a JDK 25 daemon, and mc_smoke.py's default client marker (the texture
-# atlas line) has not been confirmed to exist in 26.x's log output. Nightly gates nothing,
-# so a red 26.x cell is information rather than an outage — but read a first failure there
-# as "the band was never proven", not as a regression.
+# forge-1.17 used to be the exclusion and is now a cell, but an unusual one:
+# test-mods/forge-example-1.17 is the single MC version Forge never regenerated an
+# FG6 MDK for, so it carries its own Gradle 7.6 wrapper (mc_smoke.py's walk-up picks it),
+# omits includeBuild("../.."), consumes mcdp from mavenLocal and pins
+# `toolchain { languageVersion = 16 }`. Hence its `daemon_jdk: "17"` (Gradle 7.6 cannot run on
+# 21) and the `16` in the setup-java list below — the same recipe mc-smoke.yml's
+# runserver-smoke-bands job boots it with. Its client leg (FG5's client asset download,
+# Forge 1.17.1's LWJGL on JDK 16 under llvmpipe) had never run in CI when the row was added,
+# so read a first failure there as "never proven", not as a regression.
+#
+# neoforge-26.2 is the other high-risk cell: it carries its own Gradle 9.7.1 wrapper on a
+# JDK 25 daemon, and runs a 26.x fancymodloader that no unit test compiles against. Nightly
+# gates nothing, so a red cell is information rather than an outage.
 #
 # Cache policy: the keys here are deliberately IDENTICAL to mc-smoke.yml's, so a client cell
 # restores the MC artifacts the Tier-2 nightly populated 90 minutes earlier for the same
@@ -130,8 +135,11 @@ jobs:
           # not enough. Measured in run 35615852118, where every other cell passed -- including
           # neoforge-26.2, so the 26 band does have client evidence, just on MC 26.2.
           # Revisit if the runners gain a GPU or MC 26.x gains a headless/software path.
-          # ---- Forge (bands 1.18–1.20; 1.17 excluded, see header) --------------------
-          - { name: forge-1.18,      dir: test-mods/forge-example-1.18,      modid: forge_example_118,      cache_key: 1.18.2,  loader: forge,    daemon_jdk: "" }
+          # ---- Forge (bands 1.17–1.20) ----------------------------------------------
+          # forge-1.17: own Gradle 7.6 wrapper on a JDK 17 daemon, JDK 16 toolchain from the
+          # `16` in setup-java — the mc-smoke.yml row verbatim. See the header.
+          - { name: forge-1.17,      dir: test-mods/forge-example-1.17,      modid: forge_example_117,      cache_key: 1.17.1,  loader: forge,    daemon_jdk: "17" }
+          - { name: forge-1.18,     dir: test-mods/forge-example-1.18,      modid: forge_example_118,      cache_key: 1.18.2,  loader: forge,    daemon_jdk: "" }
           - { name: forge-1.19,      dir: test-mods/forge-example-1.19,      modid: forge_example_119,      cache_key: 1.19.2,  loader: forge,    daemon_jdk: "" }
           - { name: forge-1.20,      dir: test-mods/forge-example-1.20,      modid: forge_example_120,      cache_key: 1.20.1,  loader: forge,    daemon_jdk: "" }
           # ---- NeoForge (bands 1.20.6 and up) ---------------------------------------
@@ -153,22 +161,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDKs (21 default, 17 as a toolchain for the Forge cells, 25 for the MC 26.x band)
+      - name: Set up JDKs (21 default, 16 + 17 for the Forge cells, 25 for the MC 26.x band)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          # Same mechanism and same ordering constraint as mc-smoke.yml's
-          # runserver-smoke-bands: setup-java installs each version and exports
+          # Same list, same order and same mechanism as mc-smoke.yml's runserver-smoke-bands
+          # (`16 17 25 21`): setup-java installs each version and exports
           # JAVA_HOME_<major>_X64 for it, and the LAST entry wins JAVA_HOME/PATH. 21 must
           # stay LAST so the repo build and every Gradle-8 cell keep JDK 21 with no per-cell
-          # handling; the two 26.x cells pick JAVA_HOME_25_X64 back up explicitly in the
-          # runClient step via `daemon_jdk`. 17 is nobody's daemon JDK — it is here because
-          # forge-example-1.18/-1.19/-1.20 declare `toolchain { languageVersion = 17 }` and a
-          # JDK-21 daemon resolves that from JAVA_HOME_17_X64. Dropping 17 breaks all three
-          # Forge cells. (No `16` here: that is only needed by the excluded forge-1.17 cell —
-          # the fabric-1.17 cell auto-provisions its JDK 16 toolchain through the foojay
-          # resolver in its settings.gradle.kts, which forge-example-1.17 does not have.)
+          # handling; the cells with a `daemon_jdk` pick theirs back up explicitly in the
+          # runClient step (neoforge-26.2 → JAVA_HOME_25_X64, forge-1.17 → JAVA_HOME_17_X64).
+          # 17 is also a toolchain: forge-example-1.18/-1.19/-1.20 declare
+          # `toolchain { languageVersion = 17 }` and a JDK-21 daemon resolves that from the
+          # JDK 17 install. Dropping 17 breaks all four Forge cells.
+          # 16 is forge-1.17's toolchain (`languageVersion = 16`), resolved by its Gradle 7.6
+          # daemon exactly as in the Tier-2 cell that boots the same mod; forge-example-1.17 has
+          # no foojay resolver in its settings.gradle.kts. (fabric-1.17 does not need this entry:
+          # it auto-provisions its JDK 16 toolchain through its own foojay resolver.)
           java-version: |
+            16
             17
             25
             21
@@ -224,7 +235,7 @@ jobs:
       - name: Publish mcdp aggregator + plugin to mavenLocal
         # Same universal preflight as mc-smoke.yml's band job: the composite-included mods
         # (fabric, neoforge) do not need it, the mavenLocal-consuming mods (the forge bands
-        # and the whole 26.x pair) do, and publishing covers both. Cheaper than `build`,
+        # and neoforge-26.2) do, and publishing covers both. Cheaper than `build`,
         # which would also run the repo's full unit-test suite on every one of these cells.
         run: ./gradlew publishToMavenLocal --no-daemon --stacktrace
         shell: bash
@@ -240,14 +251,16 @@ jobs:
         # DEFAULT_CLIENT_MARKER (`Created: <w>x<h>x<d> minecraft:textures/atlas...`), the first
         # line MC logs once the texture atlas is stitched — i.e. the renderer really ran, not
         # just the mod loader. It then kills the whole process tree, which runClient has no
-        # self-exit flag for. Wrapper selection is the script's own walk-up from --cwd, so the
-        # two 26.x cells get their committed Gradle 9.7.1 wrapper and everything else falls
-        # through to the repo-root 8.11.1.
+        # self-exit flag for. Wrapper selection is the script's own walk-up from --cwd, so
+        # neoforge-26.2 gets its committed Gradle 9.7.1 wrapper, forge-1.17 its Gradle 7.6 one,
+        # and everything else falls through to the repo-root 8.11.1.
         run: |
           set -euo pipefail
           # Cells with their own Gradle distribution need their own daemon JDK: the MC 26.x
-          # band runs Gradle 9.7.1 on JDK 25. Swap JAVA_HOME to the JDK this cell asked for;
-          # mc_smoke.py inherits it through to the wrapper. Identical to mc-smoke.yml's.
+          # band runs Gradle 9.7.1 on JDK 25, forge-1.17 runs Gradle 7.6 on JDK 17. Swap
+          # JAVA_HOME to the JDK this cell asked for (JAVA_HOME_<daemon_jdk>_X64, exported by
+          # setup-java above); mc_smoke.py inherits it through to the wrapper. Identical to
+          # mc-smoke.yml's.
           JDK='${{ matrix.cell.daemon_jdk }}'
           if [ -n "$JDK" ]; then
             VAR="JAVA_HOME_${JDK}_X64"
@@ -276,6 +289,27 @@ jobs:
           grep -q "\[mcdp-smoke\] mod=${{ matrix.cell.modid }} " "$LOG" || {
             echo "ERROR: mcdp smoke marker for ${{ matrix.cell.modid }} not in log"
             grep '\[mcdp-smoke\]' "$LOG" || true
+            exit 1
+          }
+
+      - name: Assert the loading-screen message reached FML's rail (NeoForge only)
+        # neoforge-shared's LoggingProgressListener posts "mcdp: resolving deps for <mod>" to
+        # StartupNotificationManager reflectively, then reads the rail back through
+        # getMessages() — the list the early-display renderer draws — and logs this line once.
+        # Unit tests pin it against loader 3.0.45/4.0.42/10.0.36 jars; this is the proof it
+        # links and lands on a real client boot. The post happens in started(), which returns
+        # early for a mod with no libraries — all four NeoForge test mods declare an
+        # mcdepImplementation dependency, so every NeoForge cell must produce it.
+        # Forge has no such rail call, and Fabric has no loading screen.
+        if: matrix.cell.loader == 'neoforge'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=client-${{ matrix.cell.name }}.log
+          test -f "$LOG" || { echo "log missing"; exit 1; }
+          grep -F "mcdp[${{ matrix.cell.modid }}]: loading-screen message posted (" "$LOG" || {
+            echo "ERROR: no loading-screen rail line for ${{ matrix.cell.modid }}"
+            grep -F "mcdp[" "$LOG" || true
             exit 1
           }
 
