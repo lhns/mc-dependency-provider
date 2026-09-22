@@ -58,19 +58,17 @@ name: CI — Tier 3 (runClient nightly via xvfb)
 # 15 cells: all eight bands (1.17, 1.18, 1.19, 1.20, 1.20.6, 1.21, 1.21.11, 26) on both
 # loaders each band ships, minus one.
 #
-#   EXCLUDED: forge-1.17. Not because the band is broken — the adapter works (ADR-0029) —
-#   but because a client cell for it would be the *first* CI cell of any kind for that mod.
-#   test-mods/forge-example-1.17 is the one test mod with no runServer cell in mc-smoke.yml
-#   either: it is the single MC version Forge never regenerated an FG6 MDK for, so it still
-#   carries a Gradle 7.6 wrapper, omits includeBuild("../.."), consumes mcdp from mavenLocal,
-#   pins `toolchain { languageVersion = 16 }`, and has no foojay resolver in its
-#   settings.gradle.kts — so it needs BOTH a daemon_jdk override AND a `16` in the
-#   setup-java list below, and GitHub runners ship no JDK 16. A red cell there would be
-#   reporting "this mod has never been built by CI", not "the client path regressed", and
-#   the cheapest way to distinguish those is to land its runServer cell in Tier-2 first.
-#   The 1.17 BAND is still covered here, by fabric-1.17. Its `client` run config has been
-#   added to the build file regardless, so turning this cell on later is one matrix row
-#   plus `16` in setup-java.
+#   EXCLUDED: forge-1.17. Not because the band is broken — the adapter works (ADR-0029).
+#   test-mods/forge-example-1.17 is the single MC version Forge never regenerated an FG6 MDK
+#   for, so it still carries a Gradle 7.6 wrapper, omits includeBuild("../.."), consumes mcdp
+#   from mavenLocal, pins `toolchain { languageVersion = 16 }`, and has no foojay resolver in
+#   its settings.gradle.kts — so it needs BOTH a daemon_jdk override AND a `16` in the
+#   setup-java list below. The reason this cell was held back — no CI cell of any kind had
+#   ever built that mod — no longer holds: mc-smoke.yml's runserver-smoke-bands job now boots
+#   it (setup-java does install JDK 16; the old claim that runners cannot was wrong). The
+#   client cell simply has not been added yet. The 1.17 BAND is still covered here, by
+#   fabric-1.17, and the mod's `client` run config is already in its build file, so turning
+#   this cell on is one matrix row plus `16` in setup-java.
 #
 # The 26.x pair (fabric-26.3, neoforge-26.2) is included but is the highest-risk pair in the
 # file: no CI run has ever booted MC 26.x on ANY dist, the cells carry their own Gradle
