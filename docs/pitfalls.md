@@ -317,7 +317,7 @@ crashing.
 **Symptom.** `Unresolved reference: dependency` in the test-mod's
 `build.gradle.kts`.
 
-**Fix.** Use `implementation("de.lhns.mcdp:mcdp-<band>:0.1.0-SNAPSHOT")` — the
+**Fix.** Use `implementation("de.lhns.mcdp:mcdp-<band>:<version>")` — the
 band aggregator is the published coordinate (ADR-0023); `de.lhns.mcdp:neoforge`
 is an internal, unpublished subproject. FML auto-discovers the adapter on the
 runtime classpath via its bundled `META-INF/services/` entry.
