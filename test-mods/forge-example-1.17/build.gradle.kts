@@ -11,7 +11,7 @@ buildscript {
 
 plugins {
     `java-library`
-    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
+    id("de.lhns.mcdp") version "0.2.1-SNAPSHOT"
 }
 
 apply(plugin = "net.minecraftforge.gradle")
@@ -25,7 +25,7 @@ java {
     }
 }
 
-// mavenLocal FIRST: no includeBuild("../.."), so `de.lhns.mcdp:mcdp-1.17:0.1.0-SNAPSHOT`
+// mavenLocal FIRST: no includeBuild("../.."), so `de.lhns.mcdp:mcdp-1.17:0.2.1-SNAPSHOT`
 // only exists in the parent build's publishToMavenLocal output. settings.gradle.kts has
 // mavenLocal under `pluginManagement` only, which does not cover dependency resolution.
 repositories {
@@ -74,7 +74,7 @@ dependencies {
     // in gradle/libs.versions.toml (and ADR-0029) are deliberately 37.1.2 — those artifacts
     // do exist at 37.1.2; only `forge` itself does not.
     "minecraft"("net.minecraftforge:forge:1.17.1-37.1.1")
-    implementation("de.lhns.mcdp:mcdp-1.17:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-1.17:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

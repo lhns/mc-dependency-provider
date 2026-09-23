@@ -16,7 +16,7 @@ allprojects {
     // vanniktech routes to the release endpoint. automaticRelease=true (set in
     // buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts, not here — see ADR-0026)
     // then publishes without a Portal click.
-    version = providers.gradleProperty("version").orElse("0.1.0-SNAPSHOT").get()
+    version = providers.gradleProperty("version").orElse("0.2.1-SNAPSHOT").get()
 }
 
 subprojects {

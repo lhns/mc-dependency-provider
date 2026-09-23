@@ -9,7 +9,7 @@ assertion below is an assertion about jar/POM *contents*, not about the build su
 
 Run after `./gradlew publishToMavenLocal`:
 
-    python3 scripts/verify_artifacts.py --version 0.1.0-SNAPSHOT
+    python3 scripts/verify_artifacts.py --version 0.2.1-SNAPSHOT
 
 Or against any Maven repository layout — the release dry run publishes to a local file
 repository so it can exercise the signed, non-SNAPSHOT path without uploading anything:
@@ -302,7 +302,7 @@ def verify_band_list(settings: Path, rep: Report) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Assert the release contract on published artifacts.")
-    ap.add_argument("--version", required=True, help="Published version, e.g. 0.1.0-SNAPSHOT")
+    ap.add_argument("--version", required=True, help="Published version, e.g. 0.2.1-SNAPSHOT")
     ap.add_argument("--m2", default=str(Path.home() / ".m2" / "repository"),
                     help="Local Maven repository root")
     ap.add_argument("--settings", default="settings.gradle.kts",

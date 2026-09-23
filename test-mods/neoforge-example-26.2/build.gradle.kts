@@ -17,12 +17,12 @@ plugins {
     // MDG and NeoForge must be pinned together, not independently — ADR-0023's
     // "MDG ↔ NeoForge version pairing" finding. 2.0.147 is the current MDG release.
     id("net.neoforged.moddev") version "2.0.147"
-    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
+    id("de.lhns.mcdp") version "0.2.1-SNAPSHOT"
 }
 
 repositories {
     // mavenLocal FIRST and non-optional — no includeBuild("../.."), so this is the only
-    // source of `de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT`.
+    // source of `de.lhns.mcdp:mcdp-26:0.2.1-SNAPSHOT`.
     mavenLocal()
     mavenCentral()
     maven("https://maven.neoforged.net/releases/")
@@ -52,7 +52,7 @@ neoForge {
 }
 
 dependencies {
-    implementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-26:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

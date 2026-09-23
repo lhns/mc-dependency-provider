@@ -7,7 +7,7 @@ name: CI — Release dry run (signed, no upload)
 # What had never run before this job existed:
 #   * a non-SNAPSHOT, tag-shaped version through the publish path. `published-artifacts.yml`
 #     computes one on `release: published` but cannot get past signing (see below), and
-#     everything else publishes `0.1.0-SNAPSHOT`.
+#     everything else publishes `0.2.1-SNAPSHOT`.
 #   * `signAllPublications()`. It is configured in
 #     buildSrc/src/main/kotlin/mcdp.band-aggregator.gradle.kts and gradle-plugin/build.gradle.kts
 #     and only ever executed inside publish.yml with the production key — so a broken signing

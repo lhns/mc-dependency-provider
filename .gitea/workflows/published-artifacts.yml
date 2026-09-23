@@ -16,7 +16,7 @@ name: CI — Published artifact check
 # Runs on PRs too, not just push:main — a bad band adapter is a PR-review-time problem, and
 # the job is one Gradle build plus a few seconds of zip reading.
 #
-# This job publishes `0.1.0-SNAPSHOT` and nothing else. It used to also trigger on
+# This job publishes `0.2.1-SNAPSHOT` and nothing else. It used to also trigger on
 # `release: published` and compute the tag version, and that path could never have passed:
 #   * vanniktech's signAllPublications() sets `signing.required` to
 #     `!version.endsWith("-SNAPSHOT")`, so a tag version makes signing mandatory;
@@ -82,7 +82,7 @@ jobs:
         # see the header.
         run: |
           set -euo pipefail
-          version="0.1.0-SNAPSHOT"
+          version="0.2.1-SNAPSHOT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Verifying version: $version"
 

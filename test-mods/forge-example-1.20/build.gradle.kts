@@ -72,7 +72,7 @@ dependencies {
     // Brings org.spongepowered:mixin:0.8.5 transitively at compile scope — hence no explicit
     // mixin dependency here. 0.8.5's highest compatibilityLevel is JAVA_17.
     "minecraft"("net.minecraftforge:forge:1.20.1-47.4.20")
-    implementation("de.lhns.mcdp:mcdp-1.20:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-1.20:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

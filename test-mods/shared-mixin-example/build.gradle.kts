@@ -29,7 +29,7 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
     // The unified mcdpprovider jar — composite-substituted to :mcdp-1.21.
-    modImplementation("de.lhns.mcdp:mcdp-1.21:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.21:0.2.1-SNAPSHOT")
 
     // One representative mcdep so the manifest pipeline isn't a no-op and the mod really
     // gets a per-mod ModClassLoader — without one there is no loader boundary for the

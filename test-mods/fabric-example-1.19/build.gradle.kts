@@ -31,7 +31,7 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
     // mcdp-1.19 — composite-substituted to :mcdp-1.19 (Fabric + Forge for 1.19.2).
-    modImplementation("de.lhns.mcdp:mcdp-1.19:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.19:0.2.1-SNAPSHOT")
 
     // Mod's own Maven dep, served by mcdp at runtime.
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
