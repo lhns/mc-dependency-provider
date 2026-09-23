@@ -141,9 +141,9 @@ jobs:
             version="${tag#v}"
           else
             # Snapshot path (workflow_run / workflow_dispatch). build.gradle.kts's default
-            # already supplies 0.1.0-SNAPSHOT, but pass it explicitly so the log shows the
+            # already supplies 0.2.1-SNAPSHOT, but pass it explicitly so the log shows the
             # exact version used for upload.
-            version="0.1.0-SNAPSHOT"
+            version="0.2.1-SNAPSHOT"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Publishing as version: $version"

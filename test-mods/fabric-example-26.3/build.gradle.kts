@@ -20,12 +20,12 @@ plugins {
     // No includeBuild("../..") here, so the plugin needs an explicit version. Populate it
     // with `../../gradlew :gradle-plugin:publishToMavenLocal`, or let it resolve from the
     // Sonatype snapshot repo listed in settings.gradle.kts.
-    id("de.lhns.mcdp") version "0.1.0-SNAPSHOT"
+    id("de.lhns.mcdp") version "0.2.1-SNAPSHOT"
 }
 
 repositories {
     // mavenLocal FIRST and non-optional: with no includeBuild("../.."), the only source of
-    // `de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT` is the parent build's publishToMavenLocal.
+    // `de.lhns.mcdp:mcdp-26:0.2.1-SNAPSHOT` is the parent build's publishToMavenLocal.
     mavenLocal()
     mavenCentral()
     maven("https://maven.fabricmc.net/")
@@ -59,7 +59,7 @@ dependencies {
     // ("Could not find namespace \"named\" in provided tiny tree"). Nothing here needs remapping
     // anyway — MC 26.x is already deobfuscated — and Fabric's ClasspathModCandidateFinder
     // discovers mcdp from the plain classpath in a dev run.
-    implementation("de.lhns.mcdp:mcdp-26:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-26:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

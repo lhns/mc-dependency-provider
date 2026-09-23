@@ -37,7 +37,7 @@ neoForge {
 }
 
 dependencies {
-    implementation("de.lhns.mcdp:mcdp-1.20.6:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-1.20.6:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 

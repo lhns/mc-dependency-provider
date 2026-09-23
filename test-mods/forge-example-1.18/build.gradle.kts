@@ -63,7 +63,7 @@ dependencies {
     "minecraft"("net.minecraftforge:forge:1.18.2-40.3.12")
 
     // mcdpprovider runtime jar — composite-substituted to :mcdp-1.18 by mc-scala root.
-    implementation("de.lhns.mcdp:mcdp-1.18:0.1.0-SNAPSHOT")
+    implementation("de.lhns.mcdp:mcdp-1.18:0.2.1-SNAPSHOT")
 
     // Mod's own Maven dep, served by mcdp at runtime.
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")

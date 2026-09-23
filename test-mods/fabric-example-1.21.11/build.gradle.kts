@@ -27,7 +27,7 @@ dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
     mappings(loom.officialMojangMappings())
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
-    modImplementation("de.lhns.mcdp:mcdp-1.21.11:0.1.0-SNAPSHOT")
+    modImplementation("de.lhns.mcdp:mcdp-1.21.11:0.2.1-SNAPSHOT")
     mcdepImplementation("org.apache.commons:commons-lang3:3.12.0")
 }
 
