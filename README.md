@@ -4,7 +4,7 @@ A JVM-language mod provider for **Fabric**, **Forge** and **NeoForge** (Minecraf
 
 First-class support for **Java, Scala, Kotlin** — one provider, one pipeline, pluggable entry points.
 
-**Status:** v0.1.2 is published to Maven Central as a single `de.lhns.mcdp:mcdp` runtime jar (plus `de.lhns.mcdp:gradle-plugin`). The next release publishes **per-MC-band** instead: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26`. All eight are wired in `settings.gradle.kts`; **they are not equally proven** — see the table below. Every band now boots a real server in CI on both Linux and Windows, on every loader it supports, and all but two of those cells also boot a real client (nightly, Linux + xvfb). MC 1.21.1 has the most coverage: mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
+**Status:** v0.2.0 is published to Maven Central **per MC band**: `mcdp-1.17`, `mcdp-1.18`, `mcdp-1.19`, `mcdp-1.20`, `mcdp-1.20.6`, `mcdp-1.21`, `mcdp-1.21.11`, `mcdp-26` (plus the `de.lhns.mcdp` Gradle plugin). v0.1.x shipped a single `de.lhns.mcdp:mcdp` jar; see [CHANGELOG.md](CHANGELOG.md) for migrating. **The bands are not equally proven** — see the table below. Every band now boots a real server in CI on both Linux and Windows, on every loader it supports, and all but two of those cells also boot a real client (nightly, Linux + xvfb). MC 1.21.1 has the most coverage: mixin-bridge codegen is verified end-to-end against three real consumer mods plus the in-tree `mixin-example` test mod (Java + Scala + Kotlin handlers, including `@Inject(at=HEAD)` on a target class's `<clinit>`).
 
 ## Why
 
@@ -55,10 +55,14 @@ Apply the Gradle plugin and declare deps like you would in any JVM project:
 plugins {
     `java-library`
     scala
-    id("de.lhns.mcdp") version "0.1.2"
+    id("de.lhns.mcdp") version "0.2.0"
 }
 
 dependencies {
+    // The mcdp runtime for your MC band (table above): modImplementation on Loom (Fabric),
+    // implementation under ModDevGradle / ForgeGradle — and on MC 26.x Fabric too.
+    modImplementation("de.lhns.mcdp:mcdp-1.21:0.2.0")
+
     // Opt-in bucket: anything declared here (plus its transitive closure) is emitted
     // into META-INF/mcdepprovider.toml and served at runtime by mcdepprovider's
     // per-mod URLClassLoader. Platform deps stay on their normal configurations
@@ -74,8 +78,8 @@ mcdepprovider {
 }
 ```
 
-(The trailing dot is load-bearing: entries are matched as raw name prefixes, so `"com.example.api"`
-would also capture unrelated siblings like `com.example.apiInternal`. Always end an entry with `.`.)
+(Entries match whole packages: a missing trailing dot is added, so `"com.example.api"` shares
+`com.example.api.*` but not a sibling like `com.example.apiInternal`.)
 
 At build time, the plugin:
 
