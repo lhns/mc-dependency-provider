@@ -35,9 +35,11 @@ configure<net.minecraftforge.gradle.userdev.UserDevExtension> {
         //   * `--mixin.config` is repeated from `server` on purpose: BlocksClinitMixin sits in
         //     the side-neutral "mixins" array of forge_example_120.mixins.json, so it applies
         //     on a client boot too and is the one mixin marker a client cell can assert.
-        //   * `fml.earlyprogresswindow=false` — FML opens a second GLFW window before the game
-        //     window; on the software rasterizer CI runs under that is the most common cause of
-        //     a dev client that never reaches the title screen.
+        //   * `fml.earlyprogresswindow=false` switches off the early progress window of Forge
+        //     1.17-1.19. Forge 1.20 (FML 47) ignores it: its newer early window is controlled by
+        //     `earlyWindowControl` in run/config/fml.toml, which the client nightly sets to false
+        //     before booting, because that window can time out creating its GL context under
+        //     CI's software rasterizer and leave the client hung.
         create("client") {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")

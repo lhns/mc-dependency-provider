@@ -59,7 +59,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDK 21 (Temurin)
+        id: setup_java
+        # One retry below: the JDK download itself has failed with HTTP 500 on a
+        # nightly; a second attempt a minute later is cheaper than a red cell.
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Wait a minute before retrying the JDK download
+        if: steps.setup_java.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up JDK 21 (Temurin) (retry)
+        if: steps.setup_java.outcome == 'failure'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -305,7 +338,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDKs (21 default, 17 as a toolchain for the MC 1.18 cell, 25 for the MC 26.x band)
+        id: setup_java
+        # One retry below: the JDK download itself has failed with HTTP 500 on a
+        # nightly; a second attempt a minute later is cheaper than a red cell.
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -317,6 +371,22 @@ jobs:
           # test-mods/forge-example-1.18 declares `toolchain { languageVersion = 17 }`, and a
           # JDK-21 daemon resolves that toolchain from JAVA_HOME_17_X64. Dropping 17 breaks
           # the forge-1.18 cell.
+          java-version: |
+            16
+            17
+            25
+            21
+
+      - name: Wait a minute before retrying the JDK download
+        if: steps.setup_java.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up JDKs (21 default, 17 as a toolchain for the MC 1.18 cell, 25 for the MC 26.x band) (retry)
+        if: steps.setup_java.outcome == 'failure'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
           java-version: |
             16
             17
@@ -523,7 +593,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDK 21 (Temurin)
+        id: setup_java
+        # One retry below: the JDK download itself has failed with HTTP 500 on a
+        # nightly; a second attempt a minute later is cheaper than a red cell.
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Wait a minute before retrying the JDK download
+        if: steps.setup_java.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up JDK 21 (Temurin) (retry)
+        if: steps.setup_java.outcome == 'failure'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -645,7 +748,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDK 21 (Temurin)
+        id: setup_java
+        # One retry below: the JDK download itself has failed with HTTP 500 on a
+        # nightly; a second attempt a minute later is cheaper than a red cell.
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Wait a minute before retrying the JDK download
+        if: steps.setup_java.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up JDK 21 (Temurin) (retry)
+        if: steps.setup_java.outcome == 'failure'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -735,7 +871,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDK 21 (Temurin)
+        id: setup_java
+        # One retry below: the JDK download itself has failed with HTTP 500 on a
+        # nightly; a second attempt a minute later is cheaper than a red cell.
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Wait a minute before retrying the JDK download
+        if: steps.setup_java.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up JDK 21 (Temurin) (retry)
+        if: steps.setup_java.outcome == 'failure'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
