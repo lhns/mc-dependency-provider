@@ -34,6 +34,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Retry transient repository errors in Gradle
+        shell: bash
+        run: |
+          # Nightlies on unchanged code failed on one-off repository errors: a 502 from
+          # maven.neoforged.net, read timeouts, a plugin that briefly would not resolve.
+          # Gradle already retries a transient HTTP failure; give it more attempts and a
+          # longer backoff so a short outage is waited out instead of failing the cell.
+          # ~/.gradle covers every build on the runner, including test mods with their own
+          # Gradle wrappers; the Gradle cache step restores only caches/ and wrapper/.
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.http.connectionTimeout=60000
+          EOF
+
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
